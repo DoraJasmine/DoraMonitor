@@ -66,7 +66,7 @@ export async function fetchPrices() {
 }
 
 /** GET /api/summary or invoke get_summary */
-export async function fetchSummary(home, range = "30d", refresh = false) {
+export async function fetchSummary(home, range = "30d", refresh = false, tool = "all") {
   const invoke = await getInvoke();
   if (invoke) {
     return invoke("get_summary", {
@@ -77,7 +77,19 @@ export async function fetchSummary(home, range = "30d", refresh = false) {
   }
   const qs = withHome({ range }, home);
   if (refresh) qs.set("refresh", "1");
+  if (tool && tool !== "all") qs.set("tool", tool);
   return httpJson(`/api/summary?${qs.toString()}`);
+}
+
+/** GET /api/quota — Kimi 5-hour / weekly quota windows with reset times */
+export async function fetchQuota(refresh = false) {
+  const qs = refresh ? "?refresh=1" : "";
+  return httpJson(`/api/quota${qs}`);
+}
+
+/** GET /api/tools — provider availability list */
+export async function fetchTools() {
+  return httpJson("/api/tools");
 }
 
 /** GET /api/sessions or invoke list_sessions */

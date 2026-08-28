@@ -9,8 +9,12 @@ const { URL } = require("url");
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
 const { loadModelMap } = require("./model-map");
 const { scanUsage } = require("./scanner");
-const { aggregate, summaryAllRanges, buildHeatmap } = require("./aggregate");
+const { collect, invalidate: invalidateCollect } = require("./collect");
+const { listProviders } = require("./providers");
+const { aggregate, summaryAllRanges, aggregateByTool, buildHeatmap } = require("./aggregate");
 const { listPrices } = require("./pricing");
+const { fetchQuota } = require("./quota");
+const { toolMeta } = require("./providers/base");
 const { detectLocale, messages } = require("./i18n");
 const {
   listSessions,
@@ -80,6 +84,9 @@ const cache = {
   modelMap: null,
 };
 
+// Aggregation cache — reused while the collected records are unchanged.
+const aggCache = { version: -1, data: null };
+
 function getHome(queryHome, cliHome) {
   if (queryHome) return resolveKimiHome(queryHome);
   if (cliHome) return resolveKimiHome(cliHome);
@@ -105,6 +112,28 @@ function ensureScan(home, force = false) {
   cache.modelMap = modelMap;
   return cache;
 }
+
+/**
+ * Aggregated dashboard data for all ranges + heatmap, cached per scan
+ * generation. Aggregating 4 ranges over ~16k records on every request would
+ * waste tens of milliseconds; this runs once per scan instead.
+ */
+function ensureAggregates(collected) {
+  const version = collected.scannedAt;
+  if (aggCache.version === version && aggCache.data) {
+    return aggCache.data;
+  }
+  const data = {
+    all: summaryAllRanges(collected.records, Date.now(), "all"),
+    heatmap: buildHeatmap(collected.records, Date.now(), 53, "all"),
+  };
+  aggCache.version = version;
+  aggCache.data = data;
+  return data;
+}
+
+/** Range filter keys allowed on /api/summary. */
+const TOOL_IDS = () => listProviders().map((t) => t.id);
 
 function json(res, status, body) {
   const data = JSON.stringify(body);
@@ -176,30 +205,51 @@ async function runConfig(res, fn) {
   }
 }
 
-function sendFile(res, filePath) {
+const CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
+  ".json": "application/json; charset=utf-8",
+};
+
+// Vite emits content-hashed asset names, so they can be cached forever.
+const IMMUTABLE_RE = /-[A-Za-z0-9_-]{8,}\.(js|css|woff2|png|svg|webp|jpg|jpeg)$/;
+
+function sendFile(res, filePath, reqHeaders) {
   const ext = path.extname(filePath).toLowerCase();
-  const types = {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "application/javascript; charset=utf-8",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".ico": "image/x-icon",
-    ".webp": "image/webp",
-    ".json": "application/json; charset=utf-8",
-  };
   fs.readFile(filePath, (err, buf) => {
     if (err) {
       res.writeHead(404);
       res.end("Not found");
       return;
     }
-    res.writeHead(200, {
-      "Content-Type": types[ext] || "application/octet-stream",
-      "Cache-Control": "no-cache",
-    });
+    const headers = {
+      "Content-Type": CONTENT_TYPES[ext] || "application/octet-stream",
+      "Cache-Control": IMMUTABLE_RE.test(path.basename(filePath))
+        ? "public, max-age=31536000, immutable"
+        : "no-cache",
+    };
+    // gzip text assets — the JS bundle dominates page weight on slow links.
+    const accept = String((reqHeaders && reqHeaders["accept-encoding"]) || "");
+    if (accept.includes("gzip") && /\.(js|css|html|svg|json)$/i.test(ext) && buf.length > 1024) {
+      const { gzipSync } = require("zlib");
+      try {
+        buf = gzipSync(buf);
+        headers["Content-Encoding"] = "gzip";
+      } catch {
+        // fall through uncompressed
+      }
+    }
+    headers["Content-Length"] = buf.length;
+    res.writeHead(200, headers);
     res.end(buf);
   });
 }
@@ -228,6 +278,7 @@ async function handleApi(req, res, url, cliHome) {
       current: home,
       valid: isKimiHome(home),
       candidates,
+      tools: listProviders(),
       env: {
         KIMI_CODE_HOME: process.env.KIMI_CODE_HOME || null,
         KIMI_MODEL_NAME: process.env.KIMI_MODEL_NAME || null,
@@ -240,51 +291,78 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   if (url.pathname === "/api/summary") {
-    if (!isKimiHome(home)) {
-      return json(res, 400, {
-        error: "invalid_home",
+    const force = url.searchParams.get("refresh") === "1";
+    const collected = collect({ force });
+    if (!collected.tools.length) {
+      return json(res, 200, {
+        valid: false,
         home,
-        message: "Directory is not a Kimi Code home (need sessions/ or config.toml)",
+        tools: [],
+        message: "No AI tool data directories found",
       });
     }
-    const force = url.searchParams.get("refresh") === "1";
-    const c = ensureScan(home, force);
     const range = url.searchParams.get("range") || "30d";
-    const stats = aggregate(c.records, range);
-    const all = summaryAllRanges(c.records);
-    const heatmap = buildHeatmap(c.records);
-    // Always expose all-time model roster so UI can explain range filtering
-    const allModels = (all.all.models || []).map((m) => ({
+    const toolParam = url.searchParams.get("tool") || "all";
+    const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
+
+    const aggs = ensureAggregates(collected);
+    const rangeAgg = tool === "all"
+      ? aggs.all[range] || aggregate(collected.records, range, Date.now(), tool)
+      : aggregate(collected.records, range, Date.now(), tool);
+    const heatmap = tool === "all"
+      ? aggs.heatmap
+      : buildHeatmap(collected.records, Date.now(), 53, tool);
+    const allForTool = tool === "all"
+      ? aggs.all.all
+      : summaryAllRanges(collected.records, Date.now(), tool).all;
+
+    // All-time model roster so UI can explain range filtering
+    const allModels = (allForTool.models || []).map((m) => ({
       model: m.model,
       modelDisplay: m.modelDisplay,
+      tool: m.tool,
       requests: m.requests,
       totalTokens: m.totalTokens,
       costUsd: m.costUsd,
+      credits: m.credits,
       costEstimated: m.costEstimated,
       cacheHitRate: m.cacheHitRate,
     }));
+
+    const providerList = listProviders();
+    const byToolRange = aggregateByTool(collected.records, range, toolMeta);
+
     return json(res, 200, {
-      home,
       valid: true,
-      scannedAt: c.scannedAt,
-      meta: c.meta,
-      modelMap: {
-        defaultModel: c.modelMap.defaultModel,
-        envModel: c.modelMap.envModel,
-        aliasCount: Object.keys(c.modelMap.aliases || {}).length,
-      },
+      home,
+      scannedAt: collected.scannedAt,
+      fromCache: collected.fromCache,
+      meta: Object.fromEntries(collected.tools.map((t) => [t.id, t.meta])),
       range,
-      stats,
+      tool,
+      tools: providerList,
+      byTool: byToolRange,
+      stats: rangeAgg,
       heatmap,
       allModels,
       allModelCount: allModels.length,
       rangeTotals: {
-        today: all.today.totals,
-        "7d": all["7d"].totals,
-        "30d": all["30d"].totals,
-        all: all.all.totals,
+        today: aggs.all.today.totals,
+        "7d": aggs.all["7d"].totals,
+        "30d": aggs.all["30d"].totals,
+        all: aggs.all.all.totals,
       },
     });
+  }
+
+  if (url.pathname === "/api/quota") {
+    const force = url.searchParams.get("refresh") === "1";
+    const quota = await fetchQuota(getHome(null, cliHome), { force });
+    return json(res, 200, quota);
+  }
+
+  if (url.pathname === "/api/tools") {
+    return json(res, 200, { tools: listProviders() });
   }
 
   // --- Session management (workspace-isolated) ---
@@ -306,6 +384,7 @@ async function handleApi(req, res, url, cliHome) {
       const out = archiveSession(home, body.workspaceId, body.sessionId);
       // Invalidate usage cache — files moved
       if (cache.home === home) cache.scannedAt = 0;
+      invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
       return json(res, mapSessionError(err), {
@@ -321,6 +400,7 @@ async function handleApi(req, res, url, cliHome) {
       const body = await readBody(req);
       const out = unarchiveSession(home, body.workspaceId, body.sessionId);
       if (cache.home === home) cache.scannedAt = 0;
+      invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
       return json(res, mapSessionError(err), {
@@ -347,6 +427,7 @@ async function handleApi(req, res, url, cliHome) {
         body.status || null
       );
       if (cache.home === home) cache.scannedAt = 0;
+      invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
       return json(res, mapSessionError(err), {
@@ -386,6 +467,7 @@ async function handleApi(req, res, url, cliHome) {
         force: body.force === true,
       });
       if (cache.home === home) cache.scannedAt = 0;
+      invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
       const status = err.code === "not_empty" ? 409 : mapSessionError(err);
@@ -495,7 +577,7 @@ function createServer(cliHome) {
         res.writeHead(403);
         return res.end("Forbidden");
       }
-      sendFile(res, filePath);
+      sendFile(res, filePath, req.headers);
     } catch (err) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: String(err.message || err) }));
@@ -523,10 +605,13 @@ function main() {
   const server = createServer(opts.home);
   server.listen(opts.port, opts.host, () => {
     const url = `http://${opts.host}:${opts.port}/`;
-    console.log(`Kimi Code Dashboard`);
+    console.log(`AI Usage Monitor`);
     console.log(`  URL:  ${url}`);
-    console.log(`  Home: ${home} (${isKimiHome(home) ? "ok" : "not found"})`);
-    console.log(`  Privacy: usage.record only — no prompts, keys, or credentials`);
+    const tools = listProviders()
+      .map((t) => `${t.label}${t.available ? "" : " (not found)"}`)
+      .join(", ");
+    console.log(`  Tools: ${tools}`);
+    console.log(`  Privacy: usage metadata only — no prompts, keys, or credentials`);
     if (opts.open) openBrowser(url);
   });
 }

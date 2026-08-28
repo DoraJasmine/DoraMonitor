@@ -23,6 +23,25 @@ export default defineConfig({
     commonjsOptions: {
       include: [/node_modules/],
     },
+    // Split the big vendor deps so app code changes don't bust the whole
+    // bundle cache; hashed chunks stay immutable-cacheable on the server.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "scheduler"],
+          motion: ["framer-motion"],
+          icons: ["lucide-react"],
+          radix: [
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-select",
+            "@radix-ui/react-tabs",
+            "@radix-ui/react-tooltip",
+            "@radix-ui/react-scroll-area",
+          ],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
   server: {
     host: "127.0.0.1",

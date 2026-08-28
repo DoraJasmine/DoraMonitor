@@ -49,3 +49,11 @@ export function fmtTimeShort(ms, locale = "en") {
     hour12: false,
   });
 }
+
+/** Credits (QoderCN CLI billing unit) */
+export function fmtCredits(n) {
+  const v = Number(n) || 0;
+  if (v === 0) return "0";
+  if (v < 1) return v.toFixed(3);
+  return v.toFixed(2);
+}

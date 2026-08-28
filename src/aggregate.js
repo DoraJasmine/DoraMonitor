@@ -3,9 +3,11 @@
 /**
  * Build dashboard stats for a period.
  * ranges: today | 7d | 30d | all
+ * tool: "all" or a provider id ("kimi-code", "zcode", ...).
  */
-function aggregate(records, range = "30d", nowMs = Date.now()) {
-  const filtered = filterByRange(records, range, nowMs);
+function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
+  const scoped = tool !== "all" ? records.filter((r) => r.tool === tool) : records;
+  const filtered = filterByRange(scoped, range, nowMs);
   const totals = emptyTotals();
   const byDay = new Map();
   const byModel = new Map();
@@ -27,6 +29,8 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
         modelResolved: r.modelResolved,
         priceId: r.priceId,
         costEstimated: r.costEstimated,
+        tool: r.tool,
+        credits: 0,
         ...emptyTotals(),
       });
     }
@@ -64,6 +68,7 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
   const RECENT_LIMIT = 500;
   const recent = filtered.slice(0, RECENT_LIMIT).map((r) => ({
     time: r.time,
+    tool: r.tool,
     model: r.model,
     modelDisplay: r.modelDisplay,
     modelResolved: r.modelResolved,
@@ -74,14 +79,18 @@ function aggregate(records, range = "30d", nowMs = Date.now()) {
     totalTokens:
       r.inputOther + r.output + r.inputCacheRead + r.inputCacheCreation,
     costUsd: r.costUsd,
+    credits: r.credits,
     costEstimated: r.costEstimated,
     priceId: r.priceId,
+    project: r.project,
+    session: r.session,
     sessionHint: r.sessionHint,
     fromEnv: r.fromEnv,
   }));
 
   return {
     range,
+    tool,
     totals: {
       ...totals,
       cacheHitRate,
@@ -120,6 +129,7 @@ function emptyTotals() {
     inputCacheRead: 0,
     inputCacheCreation: 0,
     costUsd: 0,
+    credits: 0,
     totalTokens: 0,
   };
 }
@@ -131,6 +141,7 @@ function addTo(t, r) {
   t.inputCacheRead += r.inputCacheRead;
   t.inputCacheCreation += r.inputCacheCreation;
   t.costUsd += r.costUsd || 0;
+  t.credits += r.credits || 0;
   t.totalTokens =
     t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
 }
@@ -234,22 +245,62 @@ function dayKey(ms) {
   return `${y}-${m}-${day}`;
 }
 
-function summaryAllRanges(records, nowMs = Date.now()) {
+function summaryAllRanges(records, nowMs = Date.now(), tool = "all") {
   const ranges = ["today", "7d", "30d", "all"];
   const out = {};
   for (const r of ranges) {
-    out[r] = aggregate(records, r, nowMs);
+    out[r] = aggregate(records, r, nowMs, tool);
   }
   return out;
+}
+
+/**
+ * Per-tool totals for a range — drives the tool switcher badges.
+ * Returns [{id, label, color, requests, totalTokens, costUsd, credits}].
+ */
+function aggregateByTool(records, range, toolMeta, nowMs = Date.now()) {
+  const filtered = filterByRange(records, range, nowMs);
+  const byTool = new Map();
+  for (const r of filtered) {
+    const id = r.tool || "unknown";
+    if (!byTool.has(id)) {
+      const meta = toolMeta(id);
+      byTool.set(id, {
+        id,
+        label: meta.label,
+        color: meta.color,
+        requests: 0,
+        inputOther: 0,
+        output: 0,
+        inputCacheRead: 0,
+        inputCacheCreation: 0,
+        costUsd: 0,
+        credits: 0,
+        totalTokens: 0,
+      });
+    }
+    const t = byTool.get(id);
+    t.requests += 1;
+    t.inputOther += r.inputOther;
+    t.output += r.output;
+    t.inputCacheRead += r.inputCacheRead;
+    t.inputCacheCreation += r.inputCacheCreation;
+    t.costUsd += r.costUsd || 0;
+    t.credits += r.credits || 0;
+    t.totalTokens =
+      t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
+  }
+  return [...byTool.values()].sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 /**
  * GitHub-style contribution heatmap for the last `weeks` weeks (default 53).
  * Cells are local calendar days with totalTokens / cost / requests.
  */
-function buildHeatmap(records, nowMs = Date.now(), weeks = 53) {
+function buildHeatmap(records, nowMs = Date.now(), weeks = 53, tool = "all") {
+  const scoped = tool !== "all" ? records.filter((r) => r.tool === tool) : records;
   const byDay = new Map();
-  for (const r of records) {
+  for (const r of scoped) {
     if (!r.time) continue;
     const key = dayKey(r.time);
     if (!byDay.has(key)) byDay.set(key, emptyTotals());
@@ -325,6 +376,7 @@ module.exports = {
   aggregate,
   filterByRange,
   summaryAllRanges,
+  aggregateByTool,
   buildHeatmap,
   dayKey,
   rangeStart,

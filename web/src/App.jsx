@@ -42,9 +42,10 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
-import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtUsd } from "@/format";
+import { QuotaCard } from "@/components/QuotaCard";
+import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtUsd, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchPrices, fetchSummary, openExternal } from "@/lib/backend";
+import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
 const GITHUB_URL = "https://github.com/JochenYang/kimicode-dashboard";
@@ -107,6 +108,9 @@ export default function App() {
   const [range, setRange] = useState(
     () => localStorage.getItem("kcd_range") || "all"
   );
+  const [tool, setTool] = useState(
+    () => localStorage.getItem("aum_tool") || "all"
+  );
   const [loading, setLoading] = useState(false);
   const [refreshFlash, setRefreshFlash] = useState(false);
   const [data, setData] = useState(null);
@@ -147,7 +151,12 @@ export default function App() {
 
   const loadSummary = useCallback(
     async (opts = {}) => {
-      const { refresh = false, nextHome = home, nextRange = range } = opts;
+      const {
+        refresh = false,
+        nextHome = home,
+        nextRange = range,
+        nextTool = tool,
+      } = opts;
       // Ignore double-clicks while a refresh is in flight
       if (loadingRef.current && refresh) return;
       loadingRef.current = true;
@@ -156,7 +165,7 @@ export default function App() {
       setError(null);
       const started = Date.now();
       try {
-        const summary = await fetchSummary(nextHome, nextRange, refresh);
+        const summary = await fetchSummary(nextHome, nextRange, refresh, nextTool);
         setData(summary);
         setHome(summary.home || nextHome);
         setHomeInput(summary.home || nextHome);
@@ -179,7 +188,7 @@ export default function App() {
         entered.current = true;
       }
     },
-    [home, range, t]
+    [home, range, tool, t]
   );
 
   useEffect(() => {
@@ -211,6 +220,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
+  useEffect(() => {
+    localStorage.setItem("aum_tool", tool);
+    if (!rangeReady.current) return;
+    setRecentPage(1);
+    loadSummary({ refresh: false, nextTool: tool });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
+
+  const switchTool = (next) => {
+    setTool(next);
+  };
+
   const totals = data?.stats?.totals || {};
   const stats = data?.stats || { daily: [], models: [], recent: [] };
   const rangeTotals = data?.rangeTotals || {};
@@ -220,6 +241,20 @@ export default function App() {
   const allModels = data?.allModels || [];
   const allModelCount = data?.allModelCount ?? allModels.length;
   const rangeModelCount = (stats.models || []).length;
+  const toolsList = data?.tools || [];
+  const availableTools = toolsList.filter((x) => x.available);
+  const byTool = data?.byTool || [];
+  const byToolMap = useMemo(() => {
+    const m = new Map();
+    for (const b of byTool) m.set(b.id, b);
+    return m;
+  }, [byTool]);
+  const showToolColumn = tool === "all" && availableTools.length > 1;
+  const toolById = useMemo(() => {
+    const m = new Map();
+    for (const x of toolsList) m.set(x.id, x);
+    return m;
+  }, [toolsList]);
   const rangeLabelKey =
     RANGE_KEYS.find((r) => r.value === range)?.labelKey || "rangeAll";
 
@@ -273,8 +308,8 @@ export default function App() {
     if (recentPage > recentPages) setRecentPage(recentPages);
   }, [recentPage, recentPages]);
 
-  const kpiItems = useMemo(
-    () => [
+  const kpiItems = useMemo(() => {
+    const items = [
       { title: t("requests"), value: fmtInt(totals.requests, locale) },
       {
         title: t("inputOther"),
@@ -303,9 +338,15 @@ export default function App() {
         sub: fmtInt(totals.totalTokens, locale),
       },
       { title: t("estCost"), value: fmtUsd(totals.costUsd) },
-    ],
-    [totals, t, locale]
-  );
+    ];
+    if ((totals.credits || 0) > 0) {
+      items.push({
+        title: t("credits"),
+        value: fmtCredits(totals.credits),
+      });
+    }
+    return items;
+  }, [totals, t, locale]);
 
   const applyHome = () => {
     const next = homeInput.trim();
@@ -504,6 +545,49 @@ export default function App() {
 
       {page === "usage" ? (
       <>
+      {/* Tool switcher */}
+      {availableTools.length > 0 ? (
+        <motion.div
+          className="mb-4"
+          custom={1}
+          initial={reduceMotion || entered.current ? false : "hidden"}
+          animate="show"
+          variants={fadeUp}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs value={tool} onValueChange={switchTool}>
+              <TabsList>
+                {availableTools.length > 1 ? (
+                  <TabsTrigger value="all">{t("toolAll")}</TabsTrigger>
+                ) : null}
+                {availableTools.map((x) => {
+                  const b = byToolMap.get(x.id);
+                  return (
+                    <TabsTrigger key={x.id} value={x.id} title={x.home || x.label}>
+                      <span
+                        className="mr-1.5 inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: x.color }}
+                        aria-hidden
+                      />
+                      {x.label}
+                      {b && b.totalTokens > 0 ? (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground num">
+                          {fmtTokens(b.totalTokens)}
+                        </span>
+                      ) : b && b.credits > 0 ? (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground num">
+                          {fmtCredits(b.credits)} cr
+                        </span>
+                      ) : null}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </Tabs>
+          </div>
+        </motion.div>
+      ) : null}
+
       {/* Range tabs */}
       <motion.div
         className="mb-4"
@@ -610,6 +694,20 @@ export default function App() {
         ))}
       </div>
 
+      {/* Kimi quota (5-hour + weekly windows) */}
+      {(tool === "all" || tool === "kimi-code") &&
+      availableTools.some((x) => x.id === "kimi-code") ? (
+        <motion.div
+          className="mb-5"
+          custom={3}
+          initial={reduceMotion || entered.current ? false : "hidden"}
+          animate="show"
+          variants={fadeUp}
+        >
+          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} />
+        </motion.div>
+      ) : null}
+
       {/* Heatmap */}
       <motion.div
         custom={3}
@@ -685,6 +783,7 @@ export default function App() {
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>{t("model")}</TableHead>
+                    {showToolColumn ? <TableHead>{t("tool")}</TableHead> : null}
                     <TableHead className="text-right">{t("requests")}</TableHead>
                     <TableHead className="text-right">{t("tokens")}</TableHead>
                     <TableHead className="text-right">{t("cacheHitRate")}</TableHead>
@@ -695,7 +794,7 @@ export default function App() {
                   {(stats.models || []).length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={showToolColumn ? 6 : 5}
                         className="text-center text-muted-foreground"
                       >
                         {t("noData")}
@@ -704,7 +803,7 @@ export default function App() {
                   ) : (
                     (stats.models || []).map((m) => (
                       <TableRow
-                        key={m.model}
+                        key={`${m.tool}-${m.model}`}
                         className="cursor-pointer"
                         tabIndex={0}
                         role="button"
@@ -733,12 +832,27 @@ export default function App() {
                               ) : null}
                               {m.costEstimated ? (
                                 <Badge variant="warn">{t("estimated")}</Badge>
-                              ) : (
+                              ) : m.priceId ? (
                                 <Badge variant="success">{t("official")}</Badge>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         </TableCell>
+                        {showToolColumn ? (
+                          <TableCell>
+                            <span
+                              className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                              title={toolById.get(m.tool)?.label || m.tool}
+                            >
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ backgroundColor: toolById.get(m.tool)?.color }}
+                                aria-hidden
+                              />
+                              {toolById.get(m.tool)?.label || m.tool}
+                            </span>
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-right num">
                           {fmtInt(m.requests, locale)}
                         </TableCell>
@@ -749,7 +863,9 @@ export default function App() {
                           {fmtPct(m.cacheHitRate)}
                         </TableCell>
                         <TableCell className="text-right num">
-                          {fmtUsd(m.costUsd)}
+                          {m.credits > 0
+                            ? `${fmtCredits(m.credits)} cr`
+                            : fmtUsd(m.costUsd)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -888,90 +1004,114 @@ export default function App() {
         </CardHeader>
         <CardContent className="px-0 pb-3">
           <div className="max-h-[420px] overflow-auto thin-scroll border-y border-border/60">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-card">
-                <TableRow>
-                  <TableHead className="w-[170px]">{t("time")}</TableHead>
-                  <TableHead>{t("model")}</TableHead>
-                  <TableHead>{t("session")}</TableHead>
-                  <TableHead className="text-right">{t("inputOther")}</TableHead>
-                  <TableHead className="text-right">{t("output")}</TableHead>
-                  <TableHead className="text-right">{t("cacheRead")}</TableHead>
-                  <TableHead className="text-right">{t("cacheCreate")}</TableHead>
-                  <TableHead className="text-right">{t("cost")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pageSlice.length === 0 ? (
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center text-muted-foreground"
-                    >
-                      {t("noData")}
-                    </TableCell>
+                    <TableHead className="w-[170px]">{t("time")}</TableHead>
+                    {showToolColumn ? <TableHead>{t("tool")}</TableHead> : null}
+                    <TableHead>{t("model")}</TableHead>
+                    <TableHead>{t("session")}</TableHead>
+                    <TableHead className="text-right">{t("inputOther")}</TableHead>
+                    <TableHead className="text-right">{t("output")}</TableHead>
+                    <TableHead className="text-right">{t("cacheRead")}</TableHead>
+                    <TableHead className="text-right">{t("cacheCreate")}</TableHead>
+                    <TableHead className="text-right">{t("cost")}</TableHead>
                   </TableRow>
-                ) : (
-                  pageSlice.map((r, i) => (
-                    <TableRow key={`${r.time}-${r.model}-${i}`}>
-                      <TableCell className="num whitespace-nowrap text-muted-foreground">
-                        {fmtTime(r.time, locale)}
-                      </TableCell>
-                      <TableCell className="max-w-[200px]">
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <span className="truncate font-medium" title={r.model}>
-                            {modelLabel(r)}
-                          </span>
-                          <div className="flex flex-wrap items-center gap-1">
-                            {r.modelDisplay && r.modelDisplay !== r.model ? (
-                              <span className="truncate text-[11px] text-muted-foreground">
-                                {r.modelDisplay}
-                              </span>
-                            ) : null}
-                            {r.costEstimated ? (
-                              <Badge variant="warn">{t("estimated")}</Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[160px]">
-                        <span
-                          className="block truncate text-[11px] text-muted-foreground"
-                          title={
-                            typeof r.sessionHint === "string"
-                              ? r.sessionHint
-                              : [r.sessionHint?.workspace, r.sessionHint?.session]
-                                  .filter(Boolean)
-                                  .join("/") || "—"
-                          }
-                        >
-                          {typeof r.sessionHint === "string"
-                            ? r.sessionHint
-                            : [r.sessionHint?.workspace, r.sessionHint?.session]
-                                .filter(Boolean)
-                                .join("/") || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right num">
-                        {fmtTokens(r.inputOther)}
-                      </TableCell>
-                      <TableCell className="text-right num">
-                        {fmtTokens(r.output)}
-                      </TableCell>
-                      <TableCell className="text-right num">
-                        {fmtTokens(r.inputCacheRead)}
-                      </TableCell>
-                      <TableCell className="text-right num">
-                        {fmtTokens(r.inputCacheCreation)}
-                      </TableCell>
-                      <TableCell className="text-right num">
-                        {fmtUsd(r.costUsd)}
+                </TableHeader>
+                <TableBody>
+                  {pageSlice.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={showToolColumn ? 9 : 8}
+                        className="text-center text-muted-foreground"
+                      >
+                        {t("noData")}
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    pageSlice.map((r, i) => (
+                      <TableRow key={`${r.tool}-${r.time}-${r.model}-${i}`}>
+                        <TableCell className="num whitespace-nowrap text-muted-foreground">
+                          {fmtTime(r.time, locale)}
+                        </TableCell>
+                        {showToolColumn ? (
+                          <TableCell>
+                            <span
+                              className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                              title={toolById.get(r.tool)?.label || r.tool}
+                            >
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ backgroundColor: toolById.get(r.tool)?.color }}
+                                aria-hidden
+                              />
+                              {toolById.get(r.tool)?.label || r.tool}
+                            </span>
+                          </TableCell>
+                        ) : null}
+                        <TableCell className="max-w-[200px]">
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <span className="truncate font-medium" title={r.model}>
+                              {modelLabel(r)}
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {r.modelDisplay && r.modelDisplay !== r.model ? (
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {r.modelDisplay}
+                                </span>
+                              ) : null}
+                              {r.costEstimated ? (
+                                <Badge variant="warn">{t("estimated")}</Badge>
+                              ) : null}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[160px]">
+                          <span
+                            className="block truncate text-[11px] text-muted-foreground"
+                            title={
+                              [r.project, r.session]
+                                .filter(Boolean)
+                                .join("/") ||
+                              (typeof r.sessionHint === "string"
+                                ? r.sessionHint
+                                : [r.sessionHint?.workspace, r.sessionHint?.session]
+                                    .filter(Boolean)
+                                    .join("/") || "—")
+                            }
+                          >
+                            {[r.project, r.session]
+                              .filter(Boolean)
+                              .join("/") ||
+                              (typeof r.sessionHint === "string"
+                                ? r.sessionHint
+                                : [r.sessionHint?.workspace, r.sessionHint?.session]
+                                    .filter(Boolean)
+                                    .join("/") || "—")}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right num">
+                          {fmtTokens(r.inputOther)}
+                        </TableCell>
+                        <TableCell className="text-right num">
+                          {fmtTokens(r.output)}
+                        </TableCell>
+                        <TableCell className="text-right num">
+                          {fmtTokens(r.inputCacheRead)}
+                        </TableCell>
+                        <TableCell className="text-right num">
+                          {fmtTokens(r.inputCacheCreation)}
+                        </TableCell>
+                        <TableCell className="text-right num">
+                          {r.credits > 0
+                            ? `${fmtCredits(r.credits)} cr`
+                            : fmtUsd(r.costUsd)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
           </div>
           <div className="flex flex-col gap-2 px-4 pt-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground">
@@ -1037,25 +1177,39 @@ export default function App() {
 
       <footer className="text-xs text-muted-foreground">
         {[
-          `${t("filesScanned")}: ${meta.filesScanned ?? "—"}`,
-          `${t("linesScanned")}: ${meta.linesSeen ?? "—"}`,
-          `${t("records")}: ${meta.recordCount ?? "—"}`,
-          `${t("modelAliases")}: ${modelMap.aliasCount ?? 0}`,
-          (meta.errors && meta.errors.length > 0
-            ? `${t("parseErrors")}: ${meta.errors.length}`
-            : null),
+          (() => {
+            // Aggregate scan metadata across providers
+            const metas = Object.values(meta || {});
+            const files = metas.reduce((s, m) => s + (m.filesScanned || 0), 0);
+            const lines = metas.reduce((s, m) => s + (m.linesSeen || 0), 0);
+            const recs = metas.reduce((s, m) => s + (m.recordCount || 0), 0);
+            const errs = metas.reduce((s, m) => s + ((m.errors && m.errors.length) || 0), 0);
+            return [
+              `${t("filesScanned")}: ${files}`,
+              `${t("linesScanned")}: ${lines}`,
+              `${t("records")}: ${recs}`,
+              errs ? `${t("parseErrors")}: ${errs}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+          })(),
           data?.scannedAt
             ? `${t("lastScan")}: ${fmtTime(data.scannedAt, locale)} (${scannedAgo})`
             : null,
         ]
           .filter(Boolean)
           .join(" · ")}
-        {meta.errors && meta.errors.length > 0 ? (
-          <div className="mt-1 max-w-[720px] truncate text-amber-400/90" title={meta.errors.join("\n")}>
-            {meta.errors[0]}
-            {meta.errors.length > 1 ? ` (+${meta.errors.length - 1})` : ""}
-          </div>
-        ) : null}
+        {(() => {
+          const errs = Object.values(meta || {})
+            .flatMap((m) => m.errors || [])
+            .slice(0, 5);
+          return errs.length > 0 ? (
+            <div className="mt-1 max-w-[720px] truncate text-amber-400/90" title={errs.map((e) => `${e.file || ""} ${e.message || e}`).join("\n")}>
+              {errs[0]?.message || errs[0]}
+              {errs.length > 1 ? ` (+${errs.length - 1})` : ""}
+            </div>
+          ) : null;
+        })()}
       </footer>
       </>
       ) : null}

@@ -1,11 +1,12 @@
 {
-  "name": "kimicode-dashboard",
-  "version": "1.6.4",
-  "description": "Local privacy-safe usage dashboard for Kimi Code CLI (~/.kimi-code)",
+  "name": "ai-usage-monitor",
+  "version": "1.0.0",
+  "description": "Local, privacy-safe usage dashboard for AI coding tools (Kimi Code, ZCode, QoderCN, QoderCN CLI)",
   "main": "src/server.js",
   "type": "commonjs",
   "bin": {
-    "kimicode-dashboard": "src/server.js"
+    "ai-usage-monitor": "src/server.js",
+    "ai-usage-monitor-status": "src/cli.js"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -16,7 +17,9 @@
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
     "tauri:dev": "cd desktop/src-tauri && cargo tauri dev",
-    "tauri:build": "cd desktop/src-tauri && cargo tauri build --ci --no-sign"
+    "tauri:build": "cd desktop/src-tauri && cargo tauri build --ci --no-sign",
+    "status": "node src/cli.js",
+    "daemon": "node src/cli.js daemon"
   },
   "keywords": [
     "kimi-code",
