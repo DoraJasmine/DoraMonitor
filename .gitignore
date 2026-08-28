@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+*.log
+.idea/
+.vscode/
+dist/
+coverage/
+
+# Tauri / Rust
+**/target/
+desktop/src-tauri/gen/

@@ -1,0 +1,26 @@
+[package]
+name = "kimicode-dashboard"
+version = "1.6.4"
+description = "Kimi Code Usage Dashboard - Local Token & Session Stats"
+authors = ["Jochen"]
+edition = "2021"
+
+[lib]
+name = "kimicode_dashboard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+dirs = "6"
+walkdir = "2"
+fs_extra = "1"
+toml = "0.8"
+ureq = { version = "3", features = ["json"] }
