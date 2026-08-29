@@ -40,6 +40,7 @@ function parseArgs(argv) {
     if (a === "daemon") opts.mode = "daemon";
     else if (a === "--tool") opts.tool = argv[++i];
     else if (a === "--style") opts.style = argv[++i];
+    else if (a === "--local") opts.local = true;
     else if (a === "--plan-price") opts.planPrice = Number(argv[++i]);
     else if (a === "--currency") opts.currencySymbol = argv[++i];
     else if (a === "--range") opts.range = argv[++i];
@@ -177,7 +178,14 @@ function renderOnce(opts) {
     opts.currencySymbol || settings.currencySymbol || plan.currencySymbol || "$";
   const planPrice = opts.planPrice ?? plan.planPrice ?? null;
   const { records } = collect();
-  const totals = toolTotals(records, opts.range);
+  // Sync enabled → the status line shows the merged view like the dashboard.
+  // --local opts out; peers come from the on-disk cache (never blocks).
+  let allRecords = records;
+  if (settings.sync && settings.sync.enabled && !opts.local) {
+    const { peerRecordsCached } = require("./sync");
+    allRecords = [...records, ...peerRecordsCached()];
+  }
+  const totals = toolTotals(allRecords, opts.range);
   // Costs are computed in USD internally; convert for display and leverage.
   if (settings.currency === "CNY") {
     for (const t of totals.values()) {
