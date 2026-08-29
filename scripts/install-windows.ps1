@@ -1,4 +1,9 @@
 ﻿# ai-usage-monitor Windows 一键安装
+# 打包方式（Ubuntu 侧维护者参考）：
+#   git ls-files > /tmp/fl.txt
+#   tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
+# dist/ 是 Web UI 构建产物；node_modules/smol-toml 是唯一运行时第三方依赖。
+
 # 在 Windows PowerShell 中执行：
 #   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -WithWeb
 # 可选参数：
