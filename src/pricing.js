@@ -25,7 +25,8 @@ const KIMI_PRICES = [
   },
   {
     id: "kimi-k2.7-code",
-    patterns: [/^kimi-k2\.7-code$/i, /kimi[_-]?k2\.7[_-]?code/i, /k2\.7[_-]?code/i],
+    // kimi-for-coding is the Coding Plan model id — priced as k2.7-code.
+    patterns: [/^kimi-k2\.7-code$/i, /kimi[_-]?k2\.7[_-]?code/i, /k2\.7[_-]?code/i, /kimi[_-]?for[_-]?coding/i],
     cacheHit: 0.19,
     input: 0.95,
     output: 4.0,

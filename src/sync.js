@@ -69,9 +69,20 @@ function buildSummary(deviceName, records) {
   };
 }
 
-/** Merge peer summaries into synthetic records (device-attributed, day precision). */
+/**
+ * Merge peer summaries into synthetic records (device-attributed, day
+ * precision). Costs are computed here with the local pricing settings so
+ * peer tokens carry real cost figures like local records do.
+ */
 function summaryToRecords(summary) {
   const records = [];
+  let settings = null;
+  try {
+    settings = require("./settings").loadSettings();
+  } catch {
+    settings = null;
+  }
+  const { costForUsage } = require("./pricing");
   const device = String(summary.device || "peer");
   const days = summary.days || {};
   for (const day of Object.keys(days)) {
@@ -83,6 +94,12 @@ function summaryToRecords(summary) {
       const models = dayEntry[tool] || {};
       for (const model of Object.keys(models)) {
         const b = models[model] || {};
+        const cost = costForUsage(model, {
+          inputOther: b.i || 0,
+          output: b.o || 0,
+          inputCacheRead: b.cr || 0,
+          inputCacheCreation: b.cc || 0,
+        }, { settings });
         records.push({
           tool,
           time,
@@ -93,9 +110,9 @@ function summaryToRecords(summary) {
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
           inputCacheCreation: b.cc || 0,
-          costUsd: 0,
-          costEstimated: false,
-          priceId: null,
+          costUsd: b.credits > 0 ? 0 : cost.total,
+          costEstimated: cost.estimated,
+          priceId: cost.priceId,
           credits: b.credits || 0,
           project: null,
           session: null,

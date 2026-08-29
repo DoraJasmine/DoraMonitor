@@ -100,9 +100,14 @@ Info "First sync..."
 & $Node "$InstallDir\src\ai-usage.js" sync
 
 # ---------- 6. 登录自启（Register-ScheduledTask，无需管理员） ----------
+# daemon 通过 VBS 启动器隐藏运行，避免登录时弹出常驻黑窗口
 Info "Registering logon scheduled tasks..."
 $trigger = New-ScheduledTaskTrigger -AtLogOn
-$daemonAction = New-ScheduledTaskAction -Execute $Node -Argument "`"$InstallDir\src\ai-usage.js`" daemon"
+$vbs = "$InstallDir\daemon-hidden.vbs"
+$inner = '""{0}"" ""{1}\src\ai-usage.js"" daemon' -f $Node, $InstallDir
+$line = 'CreateObject("Wscript.Shell").Run "{0}", 0, False' -f $inner
+Set-Content -Path $vbs -Value $line -Encoding ASCII
+$daemonAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wscript.exe" -Argument "`"$vbs`""
 Register-ScheduledTask -TaskName "ai-usage-daemon" -Action $daemonAction -Trigger $trigger -Force | Out-Null
 if ($WithWeb) {
   $webAction = New-ScheduledTaskAction -Execute $Node -Argument "`"$InstallDir\src\server.js`" --host 127.0.0.1 --port 3847 --no-open"
