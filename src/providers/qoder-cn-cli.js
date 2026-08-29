@@ -131,6 +131,10 @@ function scanFile(file, projectDirName) {
 const provider = {
   id: "qoder-cn-cli",
   label: "QoderCN CLI",
+  // The CLI transcript logs token fields, but every build to date writes
+  // zeros — the real billed quantity is `usage.credits`. The UI uses this
+  // flag to show a credits-only hint instead of an empty token table.
+  creditsOnly: true,
 
   defaultHome() {
     if (process.env.QODER_CLI_HOME && process.env.QODER_CLI_HOME.trim()) {

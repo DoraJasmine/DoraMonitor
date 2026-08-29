@@ -1,10 +1,17 @@
 "use strict";
 
+const { loadSettings } = require("./settings");
+
 /**
  * Official Kimi API Platform list prices (USD per 1M tokens).
  * Sources: https://platform.kimi.ai/  and /docs/pricing/*
  * Fields: cacheHit (input cache read), input (non-cache / miss), output
  * cacheCreation is billed at the input rate when not separately listed.
+ *
+ * User-defined prices (settings.customPrices) take precedence: exact model
+ * match first, then case-insensitive substring. Prices entered in a non-USD
+ * currency are converted to USD at the configured fx rate so internal costs
+ * stay in one currency; the display layer converts back for CNY display.
  */
 const KIMI_PRICES = [
   {
@@ -94,13 +101,70 @@ function matchPrice(modelName) {
   return { ...FALLBACK_PRICE, match: bare, estimated: true };
 }
 
+/** USD per 1M for one custom-price component (null when not set). */
+function customComponentUsd(value, currency, fxRate) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return currency === "CNY" ? n / fxRate : n;
+}
+
 /**
- * Cost for one usage.record in USD.
+ * Try to match modelName against user-defined custom prices.
+ * Exact (case-insensitive) match first, then substring; longest pattern wins
+ * so "glm-5.3-flash" beats "glm-5.3".
+ */
+function matchCustomPrice(modelName, customPrices, fxRate) {
+  if (!Array.isArray(customPrices) || !customPrices.length || !modelName) return null;
+  const name = String(modelName).toLowerCase();
+  const bare = name.includes("/") ? name.split("/").pop() : name;
+  let best = null;
+  let bestLen = -1;
+  for (const p of customPrices) {
+    const pattern = String(p.model || "").toLowerCase();
+    if (!pattern) continue;
+    const hit = bare === pattern || name === pattern || bare.includes(pattern) || name.includes(pattern);
+    if (hit && pattern.length > bestLen) {
+      best = p;
+      bestLen = pattern.length;
+    }
+  }
+  if (!best) return null;
+  const fx = Number(fxRate) > 0 ? Number(fxRate) : 7.2;
+  const input = customComponentUsd(best.input, best.currency, fx);
+  const cacheHit = customComponentUsd(best.cacheHit, best.currency, fx);
+  const output = customComponentUsd(best.output, best.currency, fx);
+  // Missing components fall back to the official fallback row so partial
+  // price definitions still produce a full cost breakdown.
+  return {
+    id: `custom:${best.model}`,
+    input: input ?? FALLBACK_PRICE.input,
+    cacheHit: cacheHit ?? FALLBACK_PRICE.cacheHit,
+    output: output ?? FALLBACK_PRICE.output,
+    context: null,
+    estimated: false,
+    custom: true,
+    match: best.model,
+  };
+}
+
+/**
+ * Cost for one usage record, in USD.
  * usage fields from Kimi Code wire:
  *   inputOther, output, inputCacheRead, inputCacheCreation
+ * Custom prices from settings take precedence over the official table.
  */
-function costForUsage(modelName, usage) {
-  const price = matchPrice(modelName);
+function costForUsage(modelName, usage, options = {}) {
+  let settings = options.settings;
+  if (!settings && !options.skipSettings) {
+    try {
+      settings = loadSettings();
+    } catch {
+      settings = null;
+    }
+  }
+  const custom = settings ? matchCustomPrice(modelName, settings.customPrices, settings.fxRate) : null;
+  const price = custom || matchPrice(modelName);
   const u = usage || {};
   const inputOther = num(u.inputOther);
   const output = num(u.output);
@@ -124,6 +188,7 @@ function costForUsage(modelName, usage) {
     },
     priceId: price.id,
     estimated: !!price.estimated,
+    custom: !!price.custom,
   };
 }
 
@@ -148,6 +213,7 @@ module.exports = {
   KIMI_PRICES,
   FALLBACK_PRICE,
   matchPrice,
+  matchCustomPrice,
   costForUsage,
   listPrices,
 };

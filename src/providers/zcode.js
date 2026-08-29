@@ -4,6 +4,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { n, openReadOnly, emptyRecord } = require("./base");
+const { costForUsage } = require("../pricing");
+const { loadSettings } = require("../settings");
 
 /**
  * ZCode provider — reads model_usage from ~/.zcode/cli/db/db.sqlite
@@ -24,7 +26,7 @@ ORDER BY started_at DESC
 
 // Rows without a finished status still carry usage; count them like
 // kimicode-dashboard counts in-flight kimi turns — a request happened.
-function providerRowToRecord(row) {
+function providerRowToRecord(row, settings) {
   const rec = emptyRecord("zcode");
   const startedMs = n(row.started_at);
   // zcode stores ms epoch already; guard against second-precision rows.
@@ -38,6 +40,15 @@ function providerRowToRecord(row) {
   rec.inputCacheCreation = n(row.cache_creation_input_tokens);
   rec.session = row.session_id ? String(row.session_id) : null;
   rec.sessionHint = { session: rec.session };
+  const cost = costForUsage(rec.model, {
+    inputOther: rec.inputOther,
+    output: rec.output,
+    inputCacheRead: rec.inputCacheRead,
+    inputCacheCreation: rec.inputCacheCreation,
+  }, { settings });
+  rec.costUsd = cost.total;
+  rec.costEstimated = cost.estimated;
+  rec.priceId = cost.priceId;
   return rec;
 }
 
@@ -64,13 +75,20 @@ const provider = {
     const errors = [];
     let rowCount = 0;
 
+    const settings = (() => {
+      try {
+        return loadSettings();
+      } catch {
+        return null;
+      }
+    })();
     try {
       const db = openReadOnly(dbPath);
       try {
         const rows = db.prepare(SQL_ALL).all();
         rowCount = rows.length;
         for (const row of rows) {
-          records.push(providerRowToRecord(row));
+          records.push(providerRowToRecord(row, settings));
         }
       } finally {
         db.close();

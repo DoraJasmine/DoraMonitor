@@ -1,0 +1,123 @@
+"use strict";
+
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+/**
+ * Global settings — currency display and custom model prices.
+ * Stored at ~/.ai-usage-monitor/config.json (best-effort; defaults on any
+ * read/write failure so the dashboard never breaks because of config).
+ *
+ * Cost model: token costs are computed in USD internally (official Kimi
+ * prices); custom prices entered in another currency are converted to USD at
+ * the configured fx rate before matching. The display layer converts USD
+ * costs to the display currency with the same rate, so changing the rate
+ * keeps everything consistent.
+ *
+ * customPrices entry:
+ *   { model: "glm-5.3", input: 6.5, cacheHit: 1.3, output: 27,
+ *     currency: "CNY", label: "GLM-5.3" }
+ * `model` is matched case-insensitively: exact match first, then substring.
+ */
+
+const DEFAULTS = {
+  currency: "USD", // display currency: "USD" | "CNY"
+  currencySymbol: "$", // display symbol (auto-set from currency, overridable)
+  fxRate: 7.2, // USD -> CNY
+  customPrices: [], // see module doc
+};
+
+const CURRENCY_SYMBOLS = { USD: "$", CNY: "¥" };
+
+let cache = { path: null, mtimeMs: 0, data: null };
+
+function configDir() {
+  return path.join(os.homedir(), ".ai-usage-monitor");
+}
+
+function configPath() {
+  return path.join(configDir(), "config.json");
+}
+
+function sanitizeSettings(raw) {
+  const out = { ...DEFAULTS, customPrices: [] };
+  if (!raw || typeof raw !== "object") return out;
+
+  if (raw.currency === "CNY" || raw.currency === "USD") {
+    out.currency = raw.currency;
+    out.currencySymbol = CURRENCY_SYMBOLS[raw.currency];
+  }
+  if (typeof raw.currencySymbol === "string" && raw.currencySymbol.trim()) {
+    out.currencySymbol = raw.currencySymbol.trim().slice(0, 4);
+  }
+  const fx = Number(raw.fxRate);
+  if (Number.isFinite(fx) && fx > 0 && fx < 100000) {
+    out.fxRate = fx;
+  }
+  if (Array.isArray(raw.customPrices)) {
+    for (const p of raw.customPrices) {
+      if (!p || typeof p !== "object") continue;
+      const model = String(p.model || "").trim();
+      if (!model) continue;
+      const entry = {
+        model: model.slice(0, 120),
+        input: posNum(p.input),
+        cacheHit: posNum(p.cacheHit),
+        output: posNum(p.output),
+        currency: p.currency === "CNY" ? "CNY" : "USD",
+        label: String(p.label || "").trim().slice(0, 120),
+      };
+      if (entry.input === null && entry.cacheHit === null && entry.output === null) continue;
+      out.customPrices.push(entry);
+    }
+  }
+  return out;
+}
+
+function posNum(v) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function loadSettings() {
+  const p = configPath();
+  try {
+    const st = fs.statSync(p);
+    if (cache.data && cache.path === p && st.mtimeMs === cache.mtimeMs) {
+      return cache.data;
+    }
+    const data = sanitizeSettings(JSON.parse(fs.readFileSync(p, "utf8")));
+    cache = { path: p, mtimeMs: st.mtimeMs, data };
+    return data;
+  } catch {
+    return { ...DEFAULTS, customPrices: [] };
+  }
+}
+
+function saveSettings(raw) {
+  const data = sanitizeSettings(raw);
+  fs.mkdirSync(configDir(), { recursive: true });
+  const tmp = `${configPath()}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+  fs.renameSync(tmp, configPath());
+  cache = { path: configPath(), mtimeMs: fs.statSync(configPath()).mtimeMs, data };
+  return data;
+}
+
+/** Cost in USD -> display currency value (number, no symbol). */
+function toDisplay(usdCost, settings) {
+  const s = settings || loadSettings();
+  return s.currency === "CNY" ? usdCost * s.fxRate : usdCost;
+}
+
+module.exports = {
+  DEFAULTS,
+  CURRENCY_SYMBOLS,
+  loadSettings,
+  saveSettings,
+  sanitizeSettings,
+  toDisplay,
+  configPath,
+};

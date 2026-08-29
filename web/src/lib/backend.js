@@ -87,6 +87,20 @@ export async function fetchQuota(refresh = false) {
   return httpJson(`/api/quota${qs}`);
 }
 
+/** GET /api/settings — currency display + custom model prices */
+export async function fetchSettings() {
+  return httpJson("/api/settings");
+}
+
+/** POST /api/settings — save currency display + custom model prices */
+export async function saveSettings(body) {
+  return httpJson("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** GET /api/tools — provider availability list */
 export async function fetchTools() {
   return httpJson("/api/tools");

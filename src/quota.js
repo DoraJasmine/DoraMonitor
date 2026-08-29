@@ -19,11 +19,15 @@ const path = require("path");
  */
 
 const USAGES_URL = "https://api.kimi.com/coding/v1/usages";
+// Discovered from the kimi CLI binary: refresh endpoint + public client id.
+const TOKEN_URL = "https://auth.kimi.ai/api/oauth/token";
+const OAUTH_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 const FETCH_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 60_000;
 
 const DETAIL_USED_KEYS = ["used", "usedValue", "used_value", "usedAmount", "used_amount", "currentValue", "current_value"];
 const DETAIL_LIMIT_KEYS = ["limit", "limitValue", "limit_value", "total", "totalValue", "total_value", "quota", "max"];
+const DETAIL_REMAINING_KEYS = ["remaining", "remainingValue", "remaining_value"];
 const DETAIL_PERCENT_KEYS = ["percent", "percentage", "usedPercent", "used_percent", "usagePercentage"];
 const DETAIL_RESET_KEYS = ["reset_at", "resetAt", "resetTime", "reset_time"];
 const LIMITS_ARRAY_KEYS = ["limits", "limitInfos", "limit_infos", "rateLimits", "rate_limits"];
@@ -38,15 +42,81 @@ function credentialsPath(home) {
   return path.join(home, "credentials", "kimi-code.json");
 }
 
-function readAccessToken(home) {
+function readCredentials(home) {
   try {
     const raw = JSON.parse(fs.readFileSync(credentialsPath(home), "utf8"));
-    const token = String(raw.access_token || "").trim();
-    const expiresAt = Number(raw.expires_at) || 0;
-    if (!token) return { token: null, expiresAt: 0 };
-    return { token, expiresAt };
+    return {
+      accessToken: String(raw.access_token || "").trim(),
+      refreshToken: String(raw.refresh_token || "").trim(),
+      expiresAt: Number(raw.expires_at) || 0,
+    };
   } catch {
-    return { token: null, expiresAt: 0 };
+    return { accessToken: null, refreshToken: null, expiresAt: 0 };
+  }
+}
+
+/**
+ * Exchange the refresh token for a fresh access token and persist it back to
+ * the credentials file (same shape the kimi CLI writes). Best-effort: on
+ * failure the caller sees the refresh error and local stats keep working.
+ */
+async function refreshAccessToken(home) {
+  const creds = readCredentials(home);
+  if (!creds.refreshToken) {
+    return { ok: false, reason: "no_credentials" };
+  }
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: creds.refreshToken,
+    client_id: OAUTH_CLIENT_ID,
+  });
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const resp = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      return { ok: false, reason: `refresh_http_${resp.status}` };
+    }
+    const data = await resp.json();
+    const accessToken = String(data.access_token || "").trim();
+    const refreshToken = String(data.refresh_token || "").trim() || creds.refreshToken;
+    const expiresIn = Number(data.expires_in) || 900;
+    if (!accessToken) {
+      return { ok: false, reason: "refresh_empty_token" };
+    }
+    // Persist in the kimi CLI's format so both tools share one token rotation.
+    try {
+      fs.mkdirSync(path.dirname(credentialsPath(home)), { recursive: true });
+      const tmp = `${credentialsPath(home)}.${process.pid}.tmp`;
+      fs.writeFileSync(
+        tmp,
+        JSON.stringify(
+          {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+            scope: String(data.scope || "kimi-code"),
+            token_type: String(data.token_type || "Bearer"),
+            expires_in: expiresIn,
+          },
+          null,
+          2
+        ),
+        { encoding: "utf8", mode: 0o600 }
+      );
+      fs.renameSync(tmp, credentialsPath(home));
+    } catch {
+      // Persistence failure is not fatal for this request.
+    }
+    return { ok: true, accessToken };
+  } catch (err) {
+    return { ok: false, reason: String((err && err.message) || err) };
   }
 }
 
@@ -92,8 +162,15 @@ function usedPercentFromDetail(detail) {
   if (!detail || typeof detail !== "object") return null;
   const used = pickNumber(detail, DETAIL_USED_KEYS);
   const limit = pickNumber(detail, DETAIL_LIMIT_KEYS);
-  if (used !== null && limit !== null && limit > 0) {
-    return Math.max(0, Math.min(100, (used / limit) * 100));
+  if (limit !== null && limit > 0) {
+    if (used !== null) {
+      return Math.max(0, Math.min(100, (used / limit) * 100));
+    }
+    // Canonical Kimi payload reports remaining instead of used.
+    const remaining = pickNumber(detail, DETAIL_REMAINING_KEYS);
+    if (remaining !== null) {
+      return Math.max(0, Math.min(100, ((limit - remaining) / limit) * 100));
+    }
   }
   const percent = pickNumber(detail, DETAIL_PERCENT_KEYS);
   if (percent !== null) return Math.max(0, Math.min(100, percent));
@@ -146,7 +223,14 @@ function parseUsageBody(body) {
     });
   }
 
-  return windows;
+  // De-duplicate: the top-level usage block and a 7-day limits[] entry can
+  // describe the same weekly quota; prefer the entry with a reset time.
+  const seen = new Map();
+  for (const w of windows) {
+    const prev = seen.get(w.kind);
+    if (!prev || (!prev.resetsAt && w.resetsAt)) seen.set(w.kind, w);
+  }
+  return [...seen.values()];
 }
 
 async function fetchQuota(home, { force = false } = {}) {
@@ -155,25 +239,28 @@ async function fetchQuota(home, { force = false } = {}) {
     return cache.payload;
   }
 
-  const { token, expiresAt } = readAccessToken(home);
   const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code" };
-
-  if (!token) {
+  let creds = readAccessTokenForCall(home);
+  if (!creds) {
     cache = { fetchedAt: now, payload: { ...base, available: false, reason: "no_credentials", windows: [] } };
     return cache.payload;
   }
-  if (expiresAt && expiresAt < now) {
-    // The kimi CLI rotates this token every ~15 min while running; do not
-    // attempt a refresh ourselves — surface staleness and retry next call.
-    cache = { fetchedAt: now, payload: { ...base, available: false, reason: "token_expired", windows: [] } };
-    return cache.payload;
+
+  // Short-lived (~15 min) token: refresh when expired or about to expire.
+  if (creds.expiresAt && creds.expiresAt < now + 30_000) {
+    const refreshed = await refreshAccessToken(home);
+    if (!refreshed.ok) {
+      cache = { fetchedAt: now, payload: { ...base, available: false, reason: refreshed.reason, windows: [] } };
+      return cache.payload;
+    }
+    creds = { token: refreshed.accessToken, expiresAt: now + 900_000 };
   }
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const resp = await fetch(USAGES_URL, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${creds.token}` },
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -188,6 +275,12 @@ async function fetchQuota(home, { force = false } = {}) {
     cache = { fetchedAt: now, payload: { ...base, available: false, reason: String((err && err.message) || err), windows: [] } };
   }
   return cache.payload;
+}
+
+function readAccessTokenForCall(home) {
+  const creds = readCredentials(home);
+  if (!creds.accessToken) return null;
+  return { token: creds.accessToken, expiresAt: creds.expiresAt };
 }
 
 module.exports = { fetchQuota, parseUsageBody, credentialsPath };

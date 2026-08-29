@@ -19,6 +19,7 @@ const path = require("path");
 const os = require("os");
 const { collect } = require("./collect");
 const { toolMeta } = require("./providers/base");
+const { loadSettings, toDisplay } = require("./settings");
 
 const DEFAULT_STATUS_FILE = path.join(".ai-usage-monitor", "status.cache");
 
@@ -170,15 +171,25 @@ function renderLine(totals, opts) {
 
 function renderOnce(opts) {
   const plan = loadPlanConfig();
+  const settings = loadSettings();
+  // Precedence: CLI flag > settings > kimi-status.toml > default
+  const currencySymbol =
+    opts.currencySymbol || settings.currencySymbol || plan.currencySymbol || "$";
   const planPrice = opts.planPrice ?? plan.planPrice ?? null;
-  const currencySymbol = opts.currencySymbol || plan.currencySymbol || "$";
   const { records } = collect();
   const totals = toolTotals(records, opts.range);
+  // Costs are computed in USD internally; convert for display and leverage.
+  if (settings.currency === "CNY" && (!opts.currencySymbol || opts.currencySymbol === "$")) {
+    for (const t of totals.values()) {
+      t.costUsd = toDisplay(t.costUsd, settings);
+    }
+  }
+  const effOpts = { ...opts, planPrice, currencySymbol };
   if (opts.tool !== "all") {
     const only = totals.get(opts.tool);
-    return renderLine(only ? [[opts.tool, only]] : [], { ...opts, planPrice, currencySymbol });
+    return renderLine(only ? [[opts.tool, only]] : [], effOpts);
   }
-  return renderLine(totals, { ...opts, planPrice, currencySymbol });
+  return renderLine(totals, effOpts);
 }
 
 function atomicWrite(target, content) {

@@ -14,6 +14,7 @@ const { listProviders } = require("./providers");
 const { aggregate, summaryAllRanges, aggregateByTool, buildHeatmap } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { fetchQuota } = require("./quota");
+const { loadSettings, saveSettings, toDisplay } = require("./settings");
 const { toolMeta } = require("./providers/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -312,9 +313,27 @@ async function handleApi(req, res, url, cliHome) {
     const heatmap = tool === "all"
       ? aggs.heatmap
       : buildHeatmap(collected.records, Date.now(), 53, tool);
-    const allForTool = tool === "all"
-      ? aggs.all.all
-      : summaryAllRanges(collected.records, Date.now(), tool).all;
+    let allForTool;
+    let rangeTotals;
+    if (tool === "all") {
+      allForTool = aggs.all.all;
+      // Range cards reuse the cached all-tools aggregation.
+      rangeTotals = {
+        today: aggs.all.today.totals,
+        "7d": aggs.all["7d"].totals,
+        "30d": aggs.all["30d"].totals,
+        all: aggs.all.all.totals,
+      };
+    } else {
+      const perTool = summaryAllRanges(collected.records, Date.now(), tool);
+      allForTool = perTool.all;
+      rangeTotals = {
+        today: perTool.today.totals,
+        "7d": perTool["7d"].totals,
+        "30d": perTool["30d"].totals,
+        all: perTool.all.totals,
+      };
+    }
 
     // All-time model roster so UI can explain range filtering
     const allModels = (allForTool.models || []).map((m) => ({
@@ -346,12 +365,50 @@ async function handleApi(req, res, url, cliHome) {
       heatmap,
       allModels,
       allModelCount: allModels.length,
-      rangeTotals: {
-        today: aggs.all.today.totals,
-        "7d": aggs.all["7d"].totals,
-        "30d": aggs.all["30d"].totals,
-        all: aggs.all.all.totals,
+      rangeTotals,
+    });
+  }
+
+  if (url.pathname === "/api/settings" && req.method === "GET") {
+    return json(res, 200, loadSettings());
+  }
+
+  if (url.pathname === "/api/settings" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const saved = saveSettings(body);
+      // Costs are computed during scans — force a full rescan so saved
+      // custom prices take effect immediately.
+      invalidateCollect();
+      collect({ force: true });
+      return json(res, 200, saved);
+    } catch (err) {
+      return json(res, 400, {
+        error: "invalid_settings",
+        message: String((err && err.message) || err),
+      });
+    }
+  }
+
+  if (url.pathname === "/api/prices") {
+    const settings = loadSettings();
+    const prices = listPrices().map((p) => ({
+      ...p,
+      // display currency values alongside the USD list price
+      display: {
+        currency: settings.currency,
+        symbol: settings.currencySymbol,
+        cacheHit: toDisplay(p.cacheHit, settings),
+        input: toDisplay(p.input, settings),
+        output: toDisplay(p.output, settings),
       },
+    }));
+    return json(res, 200, {
+      prices,
+      currency: settings.currency,
+      currencySymbol: settings.currencySymbol,
+      fxRate: settings.fxRate,
+      customPrices: settings.customPrices,
     });
   }
 

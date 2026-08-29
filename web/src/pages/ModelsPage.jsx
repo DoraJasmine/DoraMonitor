@@ -47,6 +47,7 @@ import {
   setSecondaryModel,
 } from "@/lib/backend";
 import { cn } from "@/lib/utils";
+import { PricingTab } from "@/components/PricingTab";
 
 const PROVIDER_TYPES = [
   "kimi",
@@ -850,8 +851,11 @@ export default function ModelsPage({ home, t }) {
           <TabsTrigger value="providers">{t("tabProviders")}</TabsTrigger>
           <TabsTrigger value="models">{t("tabModels")}</TabsTrigger>
           <TabsTrigger value="secondary">{t("tabSecondary")}</TabsTrigger>
+          <TabsTrigger value="pricing">{t("tabPricing")}</TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {tab === "pricing" ? <PricingTab t={t} /> : null}
 
       {!config ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">

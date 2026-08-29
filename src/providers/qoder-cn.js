@@ -4,6 +4,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { n, openReadOnly, emptyRecord } = require("./base");
+const { costForUsage } = require("../pricing");
+const { loadSettings } = require("../settings");
 
 /**
  * QoderCN IDE provider — reads chat_message token_info from
@@ -95,7 +97,7 @@ function toMs(gmtCreate) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function rowToRecord(row) {
+function rowToRecord(row, settings) {
   const rec = emptyRecord("qoder-cn");
   const info = parseJsonSafe(row.token_info);
   if (!info) return null;
@@ -115,6 +117,15 @@ function rowToRecord(row) {
   const project = String(row.project_name || "").trim();
   rec.project = project === "." ? null : project || null;
   rec.sessionHint = { session: rec.session, project: rec.project };
+  const cost = costForUsage(rec.model, {
+    inputOther: rec.inputOther,
+    output: rec.output,
+    inputCacheRead: rec.inputCacheRead,
+    inputCacheCreation: rec.inputCacheCreation,
+  }, { settings });
+  rec.costUsd = cost.total;
+  rec.costEstimated = cost.estimated;
+  rec.priceId = cost.priceId;
   return rec;
 }
 
@@ -166,10 +177,17 @@ const provider = {
           hasProjectTable = false;
         }
 
+        const settings = (() => {
+          try {
+            return loadSettings();
+          } catch {
+            return null;
+          }
+        })();
         const rows = db.prepare(hasProjectTable ? SQL_WITH_PROJECT : SQL_NO_PROJECT).all();
         rowCount = rows.length;
         for (const row of rows) {
-          const rec = rowToRecord(row);
+          const rec = rowToRecord(row, settings);
           if (rec) records.push(rec);
         }
       } finally {

@@ -32,7 +32,7 @@ function listProviders() {
     } catch {
       available = false;
     }
-    return { id: p.id, label: p.label, ...toolMeta(p.id), home, available };
+    return { id: p.id, label: p.label, creditsOnly: !!p.creditsOnly, ...toolMeta(p.id), home, available };
   });
 }
 

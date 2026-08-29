@@ -43,9 +43,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
 import { QuotaCard } from "@/components/QuotaCard";
-import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtUsd, fmtCredits } from "@/format";
+import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, openExternal } from "@/lib/backend";
+import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
 const GITHUB_URL = "https://github.com/JochenYang/kimicode-dashboard";
@@ -111,6 +111,11 @@ export default function App() {
   const [tool, setTool] = useState(
     () => localStorage.getItem("aum_tool") || "all"
   );
+  const [settings, setSettings] = useState({
+    currency: "USD",
+    currencySymbol: "$",
+    fxRate: 7.2,
+  });
   const [loading, setLoading] = useState(false);
   const [refreshFlash, setRefreshFlash] = useState(false);
   const [data, setData] = useState(null);
@@ -195,6 +200,15 @@ export default function App() {
     fetchPrices()
       .then((d) => setPrices(d.prices || []))
       .catch(() => setPrices([]));
+    fetchSettings()
+      .then((s) =>
+        setSettings({
+          currency: s.currency || "USD",
+          currencySymbol: s.currencySymbol || "$",
+          fxRate: Number(s.fxRate) || 7.2,
+        })
+      )
+      .catch(() => {});
     fetchPaths()
       .then((d) => {
         if (!home) {
@@ -255,6 +269,17 @@ export default function App() {
     for (const x of toolsList) m.set(x.id, x);
     return m;
   }, [toolsList]);
+  // Tools that bill in credits only (no token detail in their logs).
+  const activeTool = tool === "all" ? null : toolById.get(tool);
+  const creditsOnlyTool = activeTool?.creditsOnly ? activeTool : null;
+  const moneyCfg = useMemo(
+    () => ({
+      currency: settings.currency,
+      symbol: settings.currencySymbol,
+      fxRate: settings.fxRate,
+    }),
+    [settings.currency, settings.currencySymbol, settings.fxRate]
+  );
   const rangeLabelKey =
     RANGE_KEYS.find((r) => r.value === range)?.labelKey || "rangeAll";
 
@@ -337,7 +362,7 @@ export default function App() {
         value: fmtTokens(totals.totalTokens),
         sub: fmtInt(totals.totalTokens, locale),
       },
-      { title: t("estCost"), value: fmtUsd(totals.costUsd) },
+      { title: `${t("estCost")} (${settings.currencySymbol})`, value: fmtMoney(totals.costUsd, moneyCfg) },
     ];
     if ((totals.credits || 0) > 0) {
       items.push({
@@ -588,6 +613,12 @@ export default function App() {
         </motion.div>
       ) : null}
 
+      {creditsOnlyTool ? (
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+          {t("toolNoTokenNote")}
+        </div>
+      ) : null}
+
       {/* Range tabs */}
       <motion.div
         className="mb-4"
@@ -654,7 +685,7 @@ export default function App() {
                 {fmtTokens(tot.totalTokens || 0)}
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground num">
-                {fmtInt(tot.requests || 0, locale)} · {fmtUsd(tot.costUsd || 0)} ·{" "}
+                {fmtInt(tot.requests || 0, locale)} · {fmtMoney(tot.costUsd || 0, moneyCfg)} ·{" "}
                 {fmtPct(tot.cacheHitRate || 0)}
               </div>
             </motion.button>
@@ -722,12 +753,7 @@ export default function App() {
             <CardDescription>{t("heatmapHint")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Heatmap
-              heatmap={heatmap}
-              locale={locale}
-              t={t}
-              reducedMotion={!!reduceMotion}
-            />
+            <Heatmap heatmap={heatmap} locale={locale} t={t} />
           </CardContent>
         </Card>
       </motion.div>
@@ -865,7 +891,7 @@ export default function App() {
                         <TableCell className="text-right num">
                           {m.credits > 0
                             ? `${fmtCredits(m.credits)} cr`
-                            : fmtUsd(m.costUsd)}
+                            : fmtMoney(m.costUsd, moneyCfg)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -930,7 +956,7 @@ export default function App() {
                         {fmtTokens(m.totalTokens)}
                       </TableCell>
                       <TableCell className="text-right num">
-                        {fmtUsd(m.costUsd)}
+                        {fmtMoney(m.costUsd, moneyCfg)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1105,7 +1131,7 @@ export default function App() {
                         <TableCell className="text-right num">
                           {r.credits > 0
                             ? `${fmtCredits(r.credits)} cr`
-                            : fmtUsd(r.costUsd)}
+                            : fmtMoney(r.costUsd, moneyCfg)}
                         </TableCell>
                       </TableRow>
                     ))

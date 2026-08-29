@@ -5,6 +5,7 @@ const path = require("path");
 const { expandHome, n, emptyRecord } = require("./base");
 const { resolveModel } = require("../model-map");
 const { costForUsage } = require("../pricing");
+const { loadSettings } = require("../settings");
 
 /**
  * Kimi Code provider — reads the sessions tree's wire.jsonl usage.record
@@ -48,6 +49,13 @@ const provider = {
     }
 
     const wireFiles = listWireFiles(root);
+    const settings = (() => {
+      try {
+        return loadSettings();
+      } catch {
+        return null;
+      }
+    })();
     for (const file of wireFiles) {
       filesScanned += 1;
       try {
@@ -72,7 +80,7 @@ const provider = {
           const modelRaw = obj.model || "unknown";
           const resolved = resolveModel(modelRaw, modelMap);
           const pricingModel = resolved.resolved || modelRaw;
-          const cost = costForUsage(pricingModel, usage);
+          const cost = costForUsage(pricingModel, usage, { settings });
 
           const rec = emptyRecord("kimi-code");
           rec.time = n(obj.time);

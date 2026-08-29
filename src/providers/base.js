@@ -61,10 +61,75 @@ function stampChanged(prev, filePath) {
   return cur.mtimeMs !== prev.mtimeMs || cur.size !== prev.size;
 }
 
-/** Open a SQLite database read-only via node:sqlite. Throws on failure. */
+/** Open a SQLite database read-only.
+ *
+ * Prefers node:sqlite (Node 22.5+). On older Node, falls back to the
+ * `sqlite3` CLI in read-only JSON mode; the CLI adapter exposes just
+ * prepare().all() which is all providers need.
+ */
+let _sqliteMode = null; // "builtin" | "cli" | null
+function sqliteMode() {
+  if (_sqliteMode) return _sqliteMode;
+  try {
+    require("node:sqlite");
+    _sqliteMode = "builtin";
+  } catch {
+    _sqliteMode = "cli";
+  }
+  return _sqliteMode;
+}
+
 function openReadOnly(dbPath) {
-  const { DatabaseSync } = require("node:sqlite");
-  return new DatabaseSync(dbPath, { readOnly: true });
+  if (sqliteMode() === "builtin") {
+    const { DatabaseSync } = require("node:sqlite");
+    return new DatabaseSync(dbPath, { readOnly: true });
+  }
+  return openCliDatabase(dbPath);
+}
+
+/** sqlite3-CLI-backed minimal DatabaseSync.prepare().all() shim. */
+function openCliDatabase(dbPath) {
+  const { execFileSync } = require("child_process");
+  const whichOptional = require("../which-optional");
+  const bin = whichOptional("sqlite3");
+  if (!bin) {
+    throw new Error(
+      "No SQLite backend: need Node >= 22.5 (node:sqlite) or the sqlite3 CLI in PATH"
+    );
+  }
+  const uri = `file:${dbPath}?mode=ro`;
+  return {
+    prepare(sql) {
+      return {
+        all(params = []) {
+          // Bind params as sqlite3 dot-command literals; no shell involved
+          // (execFileSync passes args directly). Empty params omit the
+          // .param command entirely (older sqlite3 rejects `[]`).
+          const args = [uri, "-readonly", "-json"];
+          if (params.length) {
+            args.push(".param", "json", JSON.stringify(params));
+          }
+          args.push(sql);
+          const out = execFileSync(bin, args, {
+            encoding: "utf8",
+            timeout: 30_000,
+            maxBuffer: 256 * 1024 * 1024,
+          });
+          const text = out.trim();
+          if (!text) return [];
+          try {
+            return JSON.parse(text);
+          } catch {
+            throw new Error(`sqlite3 output parse failed: ${text.slice(0, 200)}`);
+          }
+        },
+        get(params = []) {
+          return this.all(params)[0] ?? null;
+        },
+      };
+    },
+    close() {},
+  };
 }
 
 /** Empty record factory so every provider returns the same shape. */
