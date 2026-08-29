@@ -37,6 +37,8 @@ npm run dev
 ### 功能
 
 - **工具页签**：全部 / 单工具切换，页签上直接显示各自用量
+- **设备页签**：多设备时显示 合并 / 本机 / 各设备，数字随选择联动
+- **联网搜索统计**：解析 kimi 会话 `tool.call` 事件，统计 WebSearch / FetchURL 次数
 - **时间范围**：今天 / 近 7 天 / 近 30 天 / 全部
 - **范围 KPI 卡**：各范围 token、请求数、费用、命中率（随工具过滤联动）
 - **货币与自定义定价**：显示货币切换（USD/CNY + 汇率），为任意模型录入自定义单价（支持 CNY 录入），保存后自动重算全部费用
@@ -74,6 +76,29 @@ Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
 
 - 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
 - daemon 缓存文件默认 `~/.ai-usage-monitor/status.cache`，tmux 可直接读取。
+
+## Windows 一键安装
+
+在 Windows PowerShell 中（两行，逐行执行）：
+
+```powershell
+curl.exe -o install-windows.ps1 http://<ubuntu-ip>:8765/install-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -WithWeb
+```
+
+脚本自动完成：便携版 Node 22、应用安装、同步配置（CNY 显示 / 设备名 / 指向 Ubuntu）、
+SSH 免密推送（输入一次 Ubuntu 密码）、首次同步、登录自启（daemon 隐藏运行 +
+本地看板 http://127.0.0.1:3847）。安装后任意 PowerShell 可直接使用 `ai-usage` 命令。
+
+维护者打包方式（Ubuntu 侧）：
+
+```bash
+git ls-files > /tmp/fl.txt
+tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
+# python3 -m http.server 8765 --bind <ip> --directory <dir>  提供下载点
+```
+
+`node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
 
 ## 跨设备同步
 
