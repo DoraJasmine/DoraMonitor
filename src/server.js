@@ -11,10 +11,11 @@ const { loadModelMap } = require("./model-map");
 const { scanUsage } = require("./scanner");
 const { collect, invalidate: invalidateCollect } = require("./collect");
 const { listProviders } = require("./providers");
-const { aggregate, summaryAllRanges, aggregateByTool, buildHeatmap } = require("./aggregate");
+const { aggregate, summaryAllRanges, aggregateByTool, aggregateToolEvents, buildHeatmap } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { fetchQuota } = require("./quota");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
+const { runSync, peerRecordsCached, syncEnabled } = require("./sync");
 const { toolMeta } = require("./providers/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -85,8 +86,10 @@ const cache = {
   modelMap: null,
 };
 
-// Aggregation cache — reused while the collected records are unchanged.
-const aggCache = { version: -1, data: null };
+// Aggregation cache — keyed by scan generation | device set | tool filter.
+// Reused while the collected records are unchanged, so repeat requests cost
+// no recomputation even with peer/device filtering in play.
+const aggCache = new Map();
 
 function getHome(queryHome, cliHome) {
   if (queryHome) return resolveKimiHome(queryHome);
@@ -119,17 +122,17 @@ function ensureScan(home, force = false) {
  * generation. Aggregating 4 ranges over ~16k records on every request would
  * waste tens of milliseconds; this runs once per scan instead.
  */
-function ensureAggregates(collected) {
-  const version = collected.scannedAt;
-  if (aggCache.version === version && aggCache.data) {
-    return aggCache.data;
-  }
+function ensureAggregates(collected, key, records, tool) {
+  const cacheKey = `${collected.scannedAt}|${key}|${tool}`;
+  const hit = aggCache.get(cacheKey);
+  if (hit) return hit;
   const data = {
-    all: summaryAllRanges(collected.records, Date.now(), "all"),
-    heatmap: buildHeatmap(collected.records, Date.now(), 53, "all"),
+    perRange: summaryAllRanges(records, Date.now(), tool),
+    heatmap: buildHeatmap(records, Date.now(), 53, tool),
   };
-  aggCache.version = version;
-  aggCache.data = data;
+  // Bounded: a handful of device/tool combinations at most.
+  if (aggCache.size > 32) aggCache.clear();
+  aggCache.set(cacheKey, data);
   return data;
 }
 
@@ -306,34 +309,32 @@ async function handleApi(req, res, url, cliHome) {
     const toolParam = url.searchParams.get("tool") || "all";
     const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
 
-    const aggs = ensureAggregates(collected);
-    const rangeAgg = tool === "all"
-      ? aggs.all[range] || aggregate(collected.records, range, Date.now(), tool)
-      : aggregate(collected.records, range, Date.now(), tool);
-    const heatmap = tool === "all"
-      ? aggs.heatmap
-      : buildHeatmap(collected.records, Date.now(), 53, tool);
-    let allForTool;
-    let rangeTotals;
-    if (tool === "all") {
-      allForTool = aggs.all.all;
-      // Range cards reuse the cached all-tools aggregation.
-      rangeTotals = {
-        today: aggs.all.today.totals,
-        "7d": aggs.all["7d"].totals,
-        "30d": aggs.all["30d"].totals,
-        all: aggs.all.all.totals,
-      };
-    } else {
-      const perTool = summaryAllRanges(collected.records, Date.now(), tool);
-      allForTool = perTool.all;
-      rangeTotals = {
-        today: perTool.today.totals,
-        "7d": perTool["7d"].totals,
-        "30d": perTool["30d"].totals,
-        all: perTool.all.totals,
-      };
-    }
+    // Device dimension: local records are tagged device:"local"; peers come
+    // from the sync cache so requests never block on the network.
+    const localRecords = collected.records.map((r) => ({ ...r, device: "local" }));
+    const settingsNow = loadSettings();
+    const syncOn = syncEnabled(settingsNow);
+    const peerRecords = syncOn ? peerRecordsCached() : [];
+    const deviceParam = url.searchParams.get("device") || "all";
+    const peerDevices = [...new Set(peerRecords.map((r) => r.device))];
+    const aggRecords =
+      deviceParam === "local" ? localRecords
+      : deviceParam !== "all" && peerDevices.includes(deviceParam)
+        ? peerRecords.filter((r) => r.device === deviceParam)
+        : [...localRecords, ...peerRecords];
+
+    const deviceKey = deviceParam === "all" && !peerRecords.length ? "local" : `dev:${deviceParam}:${peerRecords.length}`;
+    const cached = ensureAggregates(collected, deviceKey, aggRecords, tool);
+    const perRange = cached.perRange;
+    const rangeAgg = perRange[range] || aggregate(aggRecords, range, Date.now(), tool);
+    const heatmap = cached.heatmap;
+    const allForTool = perRange.all;
+    const rangeTotals = {
+      today: perRange.today.totals,
+      "7d": perRange["7d"].totals,
+      "30d": perRange["30d"].totals,
+      all: perRange.all.totals,
+    };
 
     // All-time model roster so UI can explain range filtering
     const allModels = (allForTool.models || []).map((m) => ({
@@ -349,7 +350,7 @@ async function handleApi(req, res, url, cliHome) {
     }));
 
     const providerList = listProviders();
-    const byToolRange = aggregateByTool(collected.records, range, toolMeta);
+    const byToolRange = aggregateByTool(aggRecords, range, toolMeta);
 
     return json(res, 200, {
       valid: true,
@@ -362,6 +363,13 @@ async function handleApi(req, res, url, cliHome) {
       tools: providerList,
       byTool: byToolRange,
       stats: rangeAgg,
+      toolEvents: aggregateToolEvents(collected.events, range, Date.now(), tool),
+      device: deviceParam,
+      devices: [
+        { id: "local", label: "本机", available: true },
+        ...peerDevices.map((d) => ({ id: d, label: d, available: true, peer: true })),
+      ],
+      sync: { enabled: syncOn, peers: peerDevices.length },
       heatmap,
       allModels,
       allModelCount: allModels.length,
@@ -420,6 +428,28 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/tools") {
     return json(res, 200, { tools: listProviders() });
+  }
+
+  if (url.pathname === "/api/sync" && req.method === "POST") {
+    const settings = loadSettings();
+    if (!syncEnabled(settings)) {
+      return json(res, 400, { ok: false, error: "sync_disabled" });
+    }
+    try {
+      const collected = collect({ force: true });
+      const result = await runSync(collected.records, settings);
+      return json(res, 200, {
+        ok: result.uploaded || result.downloaded,
+        uploaded: result.uploaded,
+        uploadError: result.uploadError || null,
+        downloaded: result.downloaded,
+        fromCache: result.fromCache,
+        peers: (result.peers || []).map((p) => p.device),
+        error: result.error || null,
+      });
+    } catch (err) {
+      return json(res, 500, { ok: false, error: String((err && err.message) || err) });
+    }
   }
 
   // --- Session management (workspace-isolated) ---

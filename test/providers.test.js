@@ -181,3 +181,37 @@ test("quota: tolerates empty/unknown payloads", () => {
   assert.deepStrictEqual(parseUsageBody({}), []);
   assert.deepStrictEqual(parseUsageBody({ data: { usage: {} } }), []);
 });
+
+const sync = require("../src/sync");
+
+test("sync: summary build/merge round-trip preserves tokens", () => {
+  const records = [
+    record({ tool: "kimi-code", model: "k3", inputOther: 100, output: 50, inputCacheRead: 200, inputCacheCreation: 10, credits: 0, time: new Date(2026, 7, 28, 10, 0).getTime() }),
+    record({ tool: "zcode", model: "GLM-5.3", inputOther: 5, output: 1, inputCacheRead: 7, credits: 0, time: new Date(2026, 7, 28, 15, 0).getTime() }),
+    record({ tool: "qoder-cn-cli", model: "qfmodel", inputOther: 0, output: 0, credits: 2.5, time: new Date(2026, 7, 27, 8, 0).getTime() }),
+  ];
+  const summary = sync.buildSummary("dev-a", records);
+  assert.strictEqual(summary.device, "dev-a");
+  assert.strictEqual(Object.keys(summary.days).length, 2);
+
+  const peerRecords = sync.summaryToRecords(summary);
+  assert.strictEqual(peerRecords.length, 3);
+  assert.ok(peerRecords.every((r) => r.device === "dev-a" && r.peer === true));
+  const k3 = peerRecords.find((r) => r.model === "k3");
+  assert.strictEqual(k3.inputOther, 100);
+  assert.strictEqual(k3.inputCacheRead, 200);
+  const qc = peerRecords.find((r) => r.tool === "qoder-cn-cli");
+  assert.strictEqual(qc.credits, 2.5);
+});
+
+test("sync: summaryToRecords tolerates empty/broken input", () => {
+  assert.deepStrictEqual(sync.summaryToRecords({}), []);
+  assert.deepStrictEqual(sync.summaryToRecords({ days: null }), []);
+  const out = sync.summaryToRecords({ device: "x", days: { "2026-08-01": { kimi: {} } } });
+  assert.deepStrictEqual(out, []);
+});
+
+test("sync: buildSummary ignores event-kind records", () => {
+  const out = sync.buildSummary("d", [record({ kind: "event", eventName: "WebSearch", inputOther: 0, output: 0 })]);
+  assert.deepStrictEqual(out.days, {});
+});

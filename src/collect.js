@@ -48,8 +48,10 @@ function probeStamps(provider, home) {
 
 function scanProvider(provider, home) {
   const modelMap = provider.id === "kimi-code" ? loadModelMap(home) : null;
-  const { records, meta } = modelMap ? provider.scan(home, modelMap) : provider.scan(home);
-  return { records, meta, home };
+  const { records, meta, events } = modelMap
+    ? provider.scan(home, modelMap)
+    : provider.scan(home);
+  return { records, meta, events, home };
 }
 
 /**
@@ -109,13 +111,15 @@ function collect({ force = false } = {}) {
 function snapshot() {
   const byTool = new Map(cache.byTool);
   const records = [];
+  const events = [];
   const tools = [];
   for (const [id, entry] of byTool) {
     records.push(...entry.records);
+    if (entry.events) events.push(...entry.events);
     tools.push({ id, recordCount: entry.records.length, meta: entry.meta });
   }
   records.sort((a, b) => b.time - a.time);
-  return { byTool, records, tools, scannedAt: cache.scannedAt };
+  return { byTool, records, events, tools, scannedAt: cache.scannedAt };
 }
 
 function invalidate() {

@@ -5,8 +5,8 @@
   "main": "src/server.js",
   "type": "commonjs",
   "bin": {
-    "ai-usage-monitor": "src/server.js",
-    "ai-usage-monitor-status": "src/cli.js"
+    "ai-usage": "src/ai-usage.js",
+    "ai-usage-monitor": "src/server.js"
   },
   "scripts": {
     "start": "node src/server.js",

@@ -41,19 +41,29 @@ npm run dev
 - **范围 KPI 卡**：各范围 token、请求数、费用、命中率（随工具过滤联动）
 - **货币与自定义定价**：显示货币切换（USD/CNY + 汇率），为任意模型录入自定义单价（支持 CNY 录入），保存后自动重算全部费用
 - **Kimi 额度卡**：5 小时滚动窗口 + 每周额度（自订阅日每 7 天刷新），显示精确重置倒计时；OAuth 凭证过期自动续期
+- **联网搜索统计**：解析 kimi 会话的 `tool.call` 事件，统计 WebSearch / FetchURL 次数（KPI 卡展示）
 - **年度热力图**：GitHub 风格每日 token 强度
 - **每日趋势**：Top 模型多序列曲线
 - **模型统计 / 最近请求**：带工具维度与 credits 列
 - **会话管理**（Kimi）：按工作区归档 / 恢复 / 删除
 - **模型配置**（Kimi）：config.toml 别名与价格映射
 
-## 状态行 & tmux 守护进程
+## 命令行
+
+安装命令（软链到 `~/.local/bin`，已在 PATH 即可直接使用）：
 
 ```bash
-npm run status                       # 单行输出，适合 shell prompt
-npm run status -- --style tmux       # tmux 颜色样式
-npm run status -- --tool kimi-code   # 只看 kimi
-node src/cli.js daemon --interval 30 # 守护进程：定时写缓存文件
+ln -sf "$PWD/src/ai-usage.js" ~/.local/bin/ai-usage
+```
+
+```bash
+ai-usage                    # 启动 Web 仪表盘（默认打开浏览器）
+ai-usage status             # 单行用量状态（适合 shell prompt）
+ai-usage status --style tmux
+ai-usage daemon             # 守护进程：写状态缓存 + 周期同步
+ai-usage stop               # 停止守护进程
+ai-usage sync               # 立即上传/拉取各设备用量
+ai-usage tools              # 列出检测到的工具与数据源
 ```
 
 输出示例（`--plan-price 199 --currency ¥`）：
@@ -64,6 +74,29 @@ Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
 
 - 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
 - daemon 缓存文件默认 `~/.ai-usage-monitor/status.cache`，tmux 可直接读取。
+
+## 跨设备同步
+
+每台设备把**按天聚合**的用量摘要（每天/每工具/每模型的 token 与 credits，一年约十几 KB）上传到共享后端，看板合并显示并支持按设备筛选。
+
+```jsonc
+// ~/.ai-usage-monitor/config.json 的 sync 段
+"sync": {
+  "enabled": true,
+  "backend": "ssh",            // "ssh" 或 "webdav"
+  "deviceName": "ubuntu4090-ts",
+  "syncInterval": 300,         // daemon 同步间隔（秒）
+  "ssh": { "host": "127.0.0.1", "user": "zxt", "port": 22,
+           "remotePath": "~/.kimi-status-sync" },
+  "webdav": { "url": "https://...", "username": "...", "password": "..." }
+}
+```
+
+- 远端文件：`<remotePath>/ai-usage-monitor/<device>.json`（SSH）或 `<url>/ai-usage-monitor/<device>.json`（WebDAV）
+- 对端文件缓存在 `~/.ai-usage-monitor/remote-cache/`，网络不可达时看板自动降级使用缓存
+- 触发方式：`ai-usage sync` 手动、`ai-usage daemon` 周期、仪表盘「立即同步」按钮
+- 看板顶部出现「设备」页签（合并/本机/各设备），数字随选择联动
+- 从旧 kimi-status 迁移：沿用相同 SSH 拓扑，新旧文件互不干扰
 
 ## Kimi 额度口径说明
 

@@ -372,11 +372,35 @@ function buildHeatmap(records, nowMs = Date.now(), weeks = 53, tool = "all") {
   };
 }
 
+/**
+ * Tool-call event counts (WebSearch / FetchURL / ...) for a range.
+ * events: [{time, eventName, tool}] emitted by providers.
+ * Returns { byName: {WebSearch: n, ...}, total }.
+ */
+function aggregateToolEvents(events, range, nowMs = Date.now(), tool = "all") {
+  // rangeStart() returns ~now for "all"; "all" must not filter at all.
+  const start = range === "all" ? 0 : rangeStart(range, nowMs);
+  const byName = {};
+  let total = 0;
+  if (Array.isArray(events)) {
+    for (const ev of events) {
+      if (!ev || typeof ev !== "object") continue;
+      if (tool !== "all" && ev.tool !== tool) continue;
+      if (start && (!ev.time || ev.time < start)) continue;
+      const name = ev.eventName || ev.model || "unknown";
+      byName[name] = (byName[name] || 0) + 1;
+      total += 1;
+    }
+  }
+  return { byName, total };
+}
+
 module.exports = {
   aggregate,
   filterByRange,
   summaryAllRanges,
   aggregateByTool,
+  aggregateToolEvents,
   buildHeatmap,
   dayKey,
   rangeStart,

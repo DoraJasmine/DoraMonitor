@@ -56,6 +56,9 @@ const provider = {
         return null;
       }
     })();
+    // Tool-call events (WebSearch / FetchURL / ...) — counted separately
+    // from token usage; never contribute to requests or cost.
+    const events = [];
     for (const file of wireFiles) {
       filesScanned += 1;
       try {
@@ -64,6 +67,27 @@ const provider = {
         for (const line of lines) {
           if (!line) continue;
           linesSeen += 1;
+          if (line.includes('"tool.call"')) {
+            let call;
+            try {
+              call = JSON.parse(line);
+            } catch {
+              call = null;
+            }
+            const ev = call && call.event;
+            if (call && call.type === "context.append_loop_event" && ev && ev.type === "tool.call" && ev.name) {
+              const rec = emptyRecord("kimi-code");
+              rec.time = n(call.time) || n(ev.time) || 0;
+              // tool.call lines may omit a timestamp; fall back to file mtime.
+              if (!rec.time) rec.time = 0;
+              rec.model = "tool-call";
+              rec.modelDisplay = ev.name;
+              rec.eventName = ev.name;
+              rec.kind = "event";
+              events.push(rec);
+            }
+            continue;
+          }
           // Fast reject without full parse
           if (!line.includes('"usage.record"')) continue;
           let obj;
@@ -108,8 +132,11 @@ const provider = {
     // newest first for "recent"
     records.sort((a, b) => b.time - a.time);
 
+    events.sort((a, b) => b.time - a.time);
+
     return {
       records,
+      events,
       meta: {
         filesScanned,
         linesSeen,

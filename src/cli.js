@@ -28,7 +28,7 @@ function parseArgs(argv) {
     tool: "all",
     style: "plain", // plain | tmux
     planPrice: null,
-    currencySymbol: "$",
+    currencySymbol: null,
     range: "month",
     interval: 30,
     statusFile: null,
@@ -179,7 +179,7 @@ function renderOnce(opts) {
   const { records } = collect();
   const totals = toolTotals(records, opts.range);
   // Costs are computed in USD internally; convert for display and leverage.
-  if (settings.currency === "CNY" && (!opts.currencySymbol || opts.currencySymbol === "$")) {
+  if (settings.currency === "CNY") {
     for (const t of totals.values()) {
       t.costUsd = toDisplay(t.costUsd, settings);
     }
@@ -200,7 +200,31 @@ function atomicWrite(target, content) {
   renameSync(tmp, target);
 }
 
+function daemonPidFile() {
+  return path.join(os.homedir(), ".ai-usage-monitor", "daemon.pid");
+}
+
+function isRunning(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runDaemon(opts) {
+  const pf = daemonPidFile();
+  // Single-instance guard: a stale pid file (dead process) is replaced.
+  if (fs.existsSync(pf)) {
+    const prev = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
+    if (isRunning(prev) && prev !== process.pid) {
+      console.log(`ai-usage daemon 已在运行 (pid ${prev})`);
+      process.exit(0);
+    }
+  }
+
   const target = opts.statusFile
     ? path.resolve(opts.statusFile)
     : path.join(os.homedir(), DEFAULT_STATUS_FILE);
@@ -211,9 +235,84 @@ function runDaemon(opts) {
       // never crash the daemon; tmux keeps the previous cache line
     }
   };
+
+  fs.mkdirSync(path.dirname(pf), { recursive: true });
+  fs.writeFileSync(pf, String(process.pid), "utf8");
+  const cleanup = () => {
+    try {
+      if (fs.readFileSync(pf, "utf8").trim() === String(process.pid)) {
+        fs.unlinkSync(pf);
+      }
+    } catch {
+      // pid file already gone
+    }
+    process.exit(0);
+  };
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
   tick();
+
+  // Periodic cross-device sync (non-blocking; failures never break status).
+  const { loadSettings } = require("./settings");
+  const syncCfg = loadSettings().sync || {};
+  const syncEvery = Math.max(60, Number(syncCfg.syncInterval) || 300) * 1000;
+  let lastSync = 0;
+  const maybeSync = () => {
+    if (!syncCfg.enabled) return;
+    if (Date.now() - lastSync < syncEvery) return;
+    lastSync = Date.now();
+    try {
+      const { collect } = require("./collect");
+      const { runSync } = require("./sync");
+      collect({ force: true })
+        .then(({ records }) => runSync(records, loadSettings()))
+        .then((r) => {
+          if (r && r.uploaded) {
+            atomicWrite(
+              path.join(path.dirname(target), "sync.state"),
+              JSON.stringify({ lastSync: new Date().toISOString(), peers: (r.peers || []).length }) + "\n"
+            );
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // sync must never break status rendering
+    }
+  };
+  maybeSync();
+  setInterval(maybeSync, syncEvery);
+
   setInterval(tick, opts.interval * 1000);
-  console.log(`ai-usage-monitor daemon: writing ${target} every ${opts.interval}s`);
+  console.log(`ai-usage daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}${syncCfg.enabled ? `，每 ${Math.round(syncEvery / 1000)}s 同步` : ""}`);
+}
+
+/** Stop a running daemon via its pid file. Returns exit code. */
+function stopDaemon() {
+  const pf = daemonPidFile();
+  if (!fs.existsSync(pf)) {
+    console.log("ai-usage daemon 未运行");
+    return 0;
+  }
+  const pid = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
+  if (!isRunning(pid)) {
+    fs.unlinkSync(pf);
+    console.log("ai-usage daemon 进程已不存在，清理 PID 文件");
+    return 0;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    console.log(`ai-usage daemon 已停止 (pid ${pid})`);
+  } catch (err) {
+    console.error(`停止失败: ${err.message}`);
+    return 1;
+  }
+  try {
+    fs.unlinkSync(pf);
+  } catch {
+    // cleaned up by the daemon itself
+  }
+  return 0;
 }
 
 function main() {
@@ -246,4 +345,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { renderOnce, toolTotals, rangeStart, parseArgs };
+module.exports = { renderOnce, toolTotals, rangeStart, parseArgs, runDaemon, stopDaemon };

@@ -34,10 +34,18 @@ function providerRowToRecord(row, settings) {
   rec.model = String(row.model_id || "unknown");
   rec.modelDisplay = rec.model;
   rec.modelResolved = rec.model;
-  rec.inputOther = n(row.input_tokens);
+  // input_tokens is the TOTAL prompt input: computed_total_tokens equals
+  // input_tokens + output_tokens on every local row, and cache_read is a
+  // component inside it (OpenAI-style prompt_tokens convention). Subtract
+  // the cache components so tokens don't double count and the cache hit
+  // rate reflects reality (~97% for GLM plans, not ~48%).
+  const totalInput = n(row.input_tokens);
+  const cacheRead = Math.min(n(row.cache_read_input_tokens), totalInput);
+  const cacheCreate = Math.min(n(row.cache_creation_input_tokens), totalInput - cacheRead);
+  rec.inputCacheRead = cacheRead;
+  rec.inputCacheCreation = cacheCreate;
+  rec.inputOther = Math.max(0, totalInput - cacheRead - cacheCreate);
   rec.output = n(row.output_tokens) + n(row.reasoning_tokens);
-  rec.inputCacheRead = n(row.cache_read_input_tokens);
-  rec.inputCacheCreation = n(row.cache_creation_input_tokens);
   rec.session = row.session_id ? String(row.session_id) : null;
   rec.sessionHint = { session: rec.session };
   const cost = costForUsage(rec.model, {

@@ -26,6 +26,24 @@ const DEFAULTS = {
   currencySymbol: "$", // display symbol (auto-set from currency, overridable)
   fxRate: 7.2, // USD -> CNY
   customPrices: [], // see module doc
+  sync: {
+    enabled: false,
+    backend: "ssh", // "ssh" | "webdav"
+    deviceName: "", // defaults to hostname
+    syncInterval: 300, // daemon sync interval seconds
+    ssh: {
+      host: "",
+      user: "",
+      port: 22,
+      remotePath: "~/.kimi-status-sync", // shared root; files live under ai-usage-monitor/
+      identityFile: "",
+    },
+    webdav: {
+      url: "",
+      username: "",
+      password: "",
+    },
+  },
 };
 
 const CURRENCY_SYMBOLS = { USD: "$", CNY: "¥" };
@@ -55,6 +73,32 @@ function sanitizeSettings(raw) {
   if (Number.isFinite(fx) && fx > 0 && fx < 100000) {
     out.fxRate = fx;
   }
+  if (raw.sync && typeof raw.sync === "object") {
+    const s = raw.sync;
+    const outSync = { ...DEFAULTS.sync };
+    outSync.enabled = s.enabled === true;
+    outSync.backend = s.backend === "webdav" ? "webdav" : "ssh";
+    outSync.deviceName = String(s.deviceName || "").trim().slice(0, 64);
+    const interval = Number(s.syncInterval);
+    if (Number.isFinite(interval) && interval >= 30) outSync.syncInterval = Math.floor(interval);
+    if (s.ssh && typeof s.ssh === "object") {
+      outSync.ssh = {
+        host: String(s.ssh.host || "").trim().slice(0, 200),
+        user: String(s.ssh.user || "").trim().slice(0, 64),
+        port: clampInt(s.ssh.port, 1, 65535, 22),
+        remotePath: String(s.ssh.remotePath || DEFAULTS.sync.ssh.remotePath).trim().slice(0, 300),
+        identityFile: String(s.ssh.identityFile || "").trim().slice(0, 300),
+      };
+    }
+    if (s.webdav && typeof s.webdav === "object") {
+      outSync.webdav = {
+        url: String(s.webdav.url || "").trim().slice(0, 300),
+        username: String(s.webdav.username || "").trim().slice(0, 120),
+        password: String(s.webdav.password || "").slice(0, 200),
+      };
+    }
+    out.sync = outSync;
+  }
   if (Array.isArray(raw.customPrices)) {
     for (const p of raw.customPrices) {
       if (!p || typeof p !== "object") continue;
@@ -73,6 +117,12 @@ function sanitizeSettings(raw) {
     }
   }
   return out;
+}
+
+function clampInt(v, min, max, dflt) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
 function posNum(v) {

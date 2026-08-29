@@ -111,6 +111,10 @@ export default function App() {
   const [tool, setTool] = useState(
     () => localStorage.getItem("aum_tool") || "all"
   );
+  const [device, setDevice] = useState(
+    () => localStorage.getItem("aum_device") || "all"
+  );
+  const [syncing, setSyncing] = useState(false);
   const [settings, setSettings] = useState({
     currency: "USD",
     currencySymbol: "$",
@@ -161,6 +165,7 @@ export default function App() {
         nextHome = home,
         nextRange = range,
         nextTool = tool,
+        nextDevice = device,
       } = opts;
       // Ignore double-clicks while a refresh is in flight
       if (loadingRef.current && refresh) return;
@@ -170,7 +175,7 @@ export default function App() {
       setError(null);
       const started = Date.now();
       try {
-        const summary = await fetchSummary(nextHome, nextRange, refresh, nextTool);
+        const summary = await fetchSummary(nextHome, nextRange, refresh, nextTool, nextDevice);
         setData(summary);
         setHome(summary.home || nextHome);
         setHomeInput(summary.home || nextHome);
@@ -193,7 +198,7 @@ export default function App() {
         entered.current = true;
       }
     },
-    [home, range, tool, t]
+    [home, range, tool, device, t]
   );
 
   useEffect(() => {
@@ -242,6 +247,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
+  useEffect(() => {
+    localStorage.setItem("aum_device", device);
+    if (!rangeReady.current) return;
+    setRecentPage(1);
+    loadSummary({ refresh: false, nextDevice: device });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device]);
+
   const switchTool = (next) => {
     setTool(next);
   };
@@ -258,6 +271,9 @@ export default function App() {
   const toolsList = data?.tools || [];
   const availableTools = toolsList.filter((x) => x.available);
   const byTool = data?.byTool || [];
+  const devices = data?.devices || [];
+  const syncInfo = data?.sync || { enabled: false };
+  const toolEvents = data?.toolEvents || null;
   const byToolMap = useMemo(() => {
     const m = new Map();
     for (const b of byTool) m.set(b.id, b);
@@ -368,6 +384,17 @@ export default function App() {
       items.push({
         title: t("credits"),
         value: fmtCredits(totals.credits),
+      });
+    }
+    const byName = (toolEvents && toolEvents.byName) || {};
+    if ((byName.WebSearch || 0) > 0 || (byName.FetchURL || 0) > 0) {
+      items.push({
+        title: t("webSearchCount"),
+        value: fmtInt(byName.WebSearch || 0, locale),
+      });
+      items.push({
+        title: t("fetchUrlCount"),
+        value: fmtInt(byName.FetchURL || 0, locale),
       });
     }
     return items;
@@ -616,6 +643,44 @@ export default function App() {
       {creditsOnlyTool ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
           {t("toolNoTokenNote")}
+        </div>
+      ) : null}
+
+      {/* Device tabs (visible when sync brings peers) */}
+      {syncInfo.enabled && devices.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{t("device")}:</span>
+          <Tabs value={device} onValueChange={setDevice}>
+            <TabsList>
+              <TabsTrigger value="all">{t("deviceMerged")}</TabsTrigger>
+              <TabsTrigger value="local">{t("deviceLocal")}</TabsTrigger>
+              {devices
+                .filter((d) => d.peer)
+                .map((d) => (
+                  <TabsTrigger key={d.id} value={d.id}>
+                    {d.label}
+                  </TabsTrigger>
+                ))}
+            </TabsList>
+          </Tabs>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                await fetch("/api/sync", { method: "POST" });
+                await loadSummary({ refresh: true });
+              } catch {
+                // keep the UI alive on sync failure
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            {syncing ? t("syncing") : t("syncNow")}
+          </button>
         </div>
       ) : null}
 

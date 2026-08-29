@@ -16,7 +16,8 @@ const { loadSettings } = require("./settings");
 const KIMI_PRICES = [
   {
     id: "kimi-k3",
-    patterns: [/^kimi-k3$/i, /^k3$/i, /\/kimi-k3$/i, /kimi[_-]?k3/i],
+    // k3-256k is the same model at a longer context — same unit price.
+    patterns: [/^kimi-k3$/i, /^k3$/i, /\/kimi-k3$/i, /kimi[_-]?k3/i, /k3[_-]?256k/i],
     cacheHit: 0.3,
     input: 3.0,
     output: 15.0,

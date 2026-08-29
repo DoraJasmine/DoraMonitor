@@ -66,7 +66,7 @@ export async function fetchPrices() {
 }
 
 /** GET /api/summary or invoke get_summary */
-export async function fetchSummary(home, range = "30d", refresh = false, tool = "all") {
+export async function fetchSummary(home, range = "30d", refresh = false, tool = "all", device = "all") {
   const invoke = await getInvoke();
   if (invoke) {
     return invoke("get_summary", {
@@ -78,6 +78,7 @@ export async function fetchSummary(home, range = "30d", refresh = false, tool = 
   const qs = withHome({ range }, home);
   if (refresh) qs.set("refresh", "1");
   if (tool && tool !== "all") qs.set("tool", tool);
+  if (device && device !== "all") qs.set("device", device);
   return httpJson(`/api/summary?${qs.toString()}`);
 }
 
