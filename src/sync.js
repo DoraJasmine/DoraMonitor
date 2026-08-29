@@ -156,8 +156,31 @@ function sshRemote(sshCfg) {
   return `${user}${host}`;
 }
 
-function expandRemote(p) {
-  return String(p || "").replace(/^~(?=\/|$)/, os.homedir());
+/**
+ * Resolve the remote base dir for scp/ssh paths.
+ *
+ * A leading "~" MUST be expanded against the REMOTE host's home, never the
+ * local one — on Windows os.homedir() returns C:\Users\<user>, and shipping
+ * that into a Linux scp target fails with "No such file or directory".
+ * We query $HOME over the (already key-authenticated) ssh connection.
+ */
+function resolveRemoteBase(sshCfg, host) {
+  const rp = String(sshCfg.remotePath || `~/${REMOTE_DIR}`);
+  if (!rp.startsWith("~")) return rp;
+  const ssh = whichOptional("ssh");
+  if (!ssh) return rp;
+  try {
+    const out = execFileSync(
+      ssh,
+      [...sshBaseArgs(sshCfg), host, "printf %s $HOME"],
+      { encoding: "utf8", timeout: 15000 }
+    );
+    const home = out.trim();
+    if (home) return home + rp.slice(1);
+  } catch {
+    // fall back to the raw ~ path (POSIX remote shells expand it)
+  }
+  return rp;
 }
 
 function syncViaSsh(summary, cfg) {
@@ -168,7 +191,7 @@ function syncViaSsh(summary, cfg) {
   const ssh = whichOptional("ssh");
   if (!scp || !ssh) return { ok: false, reason: "ssh/scp not installed" };
 
-  const base = expandRemote(sshCfg.remotePath || `~/${REMOTE_DIR}`);
+  const base = resolveRemoteBase(sshCfg, host);
   const remoteDir = `${base}/${REMOTE_DIR}`;
   const remoteFile = `${remoteDir}/${summary.device}.json`;
 
@@ -195,7 +218,7 @@ function listPeerSummariesViaSsh(cfg) {
   const scp = whichOptional("scp");
   if (!ssh || !scp) return { ok: false, reason: "ssh/scp not installed", peers: [] };
 
-  const base = expandRemote(sshCfg.remotePath || `~/${REMOTE_DIR}`);
+  const base = resolveRemoteBase(sshCfg, host);
   const remoteDir = `${base}/${REMOTE_DIR}`;
   let device = cfg.deviceName || os.hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
 
