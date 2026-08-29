@@ -7,8 +7,6 @@ const path = require("path");
 const { URL } = require("url");
 
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
-const { loadModelMap } = require("./model-map");
-const { scanUsage } = require("./scanner");
 const { collect, invalidate: invalidateCollect } = require("./collect");
 const { listProviders } = require("./providers");
 const { aggregate, summaryAllRanges, aggregateByTool, aggregateToolEvents, buildHeatmap } = require("./aggregate");
@@ -77,15 +75,6 @@ Prompts, replies, code, API keys, and provider credentials are never shown.
 `);
 }
 
-// In-memory cache keyed by home path
-const cache = {
-  home: null,
-  scannedAt: 0,
-  records: null,
-  meta: null,
-  modelMap: null,
-};
-
 // Aggregation cache — keyed by scan generation | device set | tool filter.
 // Reused while the collected records are unchanged, so repeat requests cost
 // no recomputation even with peer/device filtering in play.
@@ -95,26 +84,6 @@ function getHome(queryHome, cliHome) {
   if (queryHome) return resolveKimiHome(queryHome);
   if (cliHome) return resolveKimiHome(cliHome);
   return resolveKimiHome(null);
-}
-
-function ensureScan(home, force = false) {
-  const now = Date.now();
-  if (
-    !force &&
-    cache.home === home &&
-    cache.records &&
-    now - cache.scannedAt < 15_000
-  ) {
-    return cache;
-  }
-  const modelMap = loadModelMap(home);
-  const { records, meta } = scanUsage(home, modelMap);
-  cache.home = home;
-  cache.scannedAt = now;
-  cache.records = records;
-  cache.meta = meta;
-  cache.modelMap = modelMap;
-  return cache;
 }
 
 /**
@@ -470,7 +439,6 @@ async function handleApi(req, res, url, cliHome) {
       const body = await readBody(req);
       const out = archiveSession(home, body.workspaceId, body.sessionId);
       // Invalidate usage cache — files moved
-      if (cache.home === home) cache.scannedAt = 0;
       invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
@@ -486,7 +454,6 @@ async function handleApi(req, res, url, cliHome) {
     try {
       const body = await readBody(req);
       const out = unarchiveSession(home, body.workspaceId, body.sessionId);
-      if (cache.home === home) cache.scannedAt = 0;
       invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
@@ -513,7 +480,6 @@ async function handleApi(req, res, url, cliHome) {
         body.sessionId,
         body.status || null
       );
-      if (cache.home === home) cache.scannedAt = 0;
       invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
@@ -553,7 +519,6 @@ async function handleApi(req, res, url, cliHome) {
       const out = deleteWorkspace(home, body.workspaceId, {
         force: body.force === true,
       });
-      if (cache.home === home) cache.scannedAt = 0;
       invalidateCollect();
       return json(res, 200, out);
     } catch (err) {
@@ -707,4 +672,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createServer, ensureScan, parseArgs };
+module.exports = { createServer, parseArgs };

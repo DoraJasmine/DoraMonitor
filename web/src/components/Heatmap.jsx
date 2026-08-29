@@ -21,7 +21,7 @@ const DOW_LABELS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * scroll jank, so cells are plain divs with a native `title` tooltip and a
  * CSS hover scale. Visual behaviour stays the same; mount cost drops ~50×.
  */
-export function Heatmap({ heatmap, locale = "zh", t }) {
+export function Heatmap({ heatmap, locale = "zh", t, moneyCfg }) {
   const cells = heatmap?.cells || [];
   const weekCount = useMemo(() => {
     if (!cells.length) return 0;
@@ -105,7 +105,7 @@ export function Heatmap({ heatmap, locale = "zh", t }) {
                       );
                     }
                     const level = cell.level ?? 0;
-                    const title = `${cell.date} · ${fmtTokens(cell.totalTokens)} · ${cell.requests} ${t("requests")} · ${fmtMoney(cell.costUsd)} · ${t("cacheHitRate")} ${fmtPct(cell.cacheHitRate)}`;
+                    const title = `${cell.date} · ${fmtTokens(cell.totalTokens)} · ${cell.requests} ${t("requests")} · ${fmtMoney(cell.costUsd, moneyCfg)} · ${t("cacheHitRate")} ${fmtPct(cell.cacheHitRate)}`;
                     return (
                       <div
                         key={cell.date}

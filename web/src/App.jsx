@@ -48,7 +48,7 @@ import { detectBrowserLocale, fill, messages } from "@/i18n";
 import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
-const GITHUB_URL = "https://github.com/JochenYang/kimicode-dashboard";
+const GITHUB_URL = "https://github.com/DoraJasmine/ai-usage-monitor";
 
 const RANGE_KEYS = [
   { value: "today", labelKey: "rangeToday" },
@@ -263,7 +263,6 @@ export default function App() {
   const stats = data?.stats || { daily: [], models: [], recent: [] };
   const rangeTotals = data?.rangeTotals || {};
   const meta = data?.meta || {};
-  const modelMap = data?.modelMap || {};
   const heatmap = data?.heatmap || null;
   const allModels = data?.allModels || [];
   const allModelCount = data?.allModelCount ?? allModels.length;
@@ -443,8 +442,8 @@ export default function App() {
               </h1>
               <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
                 {fill(t("appVersionBy"), {
-                  version: "1.6.4",
-                  author: "Jochen",
+                  version: "1.0.0",
+                  author: "DoraJasmine",
                 })}
               </span>
             </div>
@@ -534,7 +533,8 @@ export default function App() {
         </div>
       </motion.header>
 
-      {/* Path bar */}
+      {/* Path bar — kimi 会话/模型管理专用（用量统计不依赖此目录） */}
+      {page !== "usage" ? (
       <motion.div
         custom={1}
         initial={reduceMotion || entered.current ? false : "hidden"}
@@ -544,7 +544,7 @@ export default function App() {
         <Card className="mb-5">
           <CardContent className="space-y-3 p-4 sm:p-5">
             <label className="text-xs font-medium text-muted-foreground">
-              {t("dataDir")}
+              {t("dataDir")}（{t("dataDirKimiOnly")}）
             </label>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
@@ -566,22 +566,13 @@ export default function App() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              {[
-                home || "—",
-                modelMap.defaultModel
-                  ? `${t("defaultModel")}: ${modelMap.defaultModel}`
-                  : null,
-                modelMap.envModel
-                  ? `${t("envModel")}: ${modelMap.envModel.name}`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+              {home || "—"}
             </p>
             <p className="text-xs text-muted-foreground/80">{t("privacy")}</p>
           </CardContent>
         </Card>
       </motion.div>
+      ) : null}
 
       {error && page === "usage" ? (
         <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-red-200">
@@ -818,7 +809,7 @@ export default function App() {
             <CardDescription>{t("heatmapHint")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Heatmap heatmap={heatmap} locale={locale} t={t} />
+            <Heatmap heatmap={heatmap} locale={locale} t={t} moneyCfg={moneyCfg} />
           </CardContent>
         </Card>
       </motion.div>
