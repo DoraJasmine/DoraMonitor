@@ -115,6 +115,19 @@ function summaryToRecords(summary) {
 
 function whichOptional(bin) {
   try {
+    if (process.platform === "win32") {
+      // `where` replaces `which` on Windows; fall back to the bundled
+      // System32\OpenSSH client location.
+      try {
+        const out = execFileSync("where", [bin], { encoding: "utf8", timeout: 5000 });
+        const first = out.trim().split(/\r?\n/)[0].trim();
+        if (first) return first;
+      } catch {
+        // fall through to static location
+      }
+      const bundled = `C:\\Windows\\System32\\OpenSSH\\${bin}.exe`;
+      return fs.existsSync(bundled) ? bundled : null;
+    }
     const out = execFileSync("which", [bin], { encoding: "utf8", timeout: 5000 });
     const p = out.trim().split("\n")[0];
     return p || null;

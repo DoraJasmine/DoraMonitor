@@ -109,6 +109,13 @@ if ($WithWeb) {
   Register-ScheduledTask -TaskName "ai-usage-web" -Action $webAction -Trigger $trigger -Force | Out-Null
 }
 
+# ---------- 7. PATH 垫片：任意 PowerShell 直接敲 ai-usage ----------
+Info "Adding ai-usage to PATH (WindowsApps shim)..."
+$shimDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+$shim = "$shimDir\ai-usage.cmd"
+"@echo off`r`n\"$Node\" \"$InstallDir\src\ai-usage.js\" %*`r\n" | Out-File -FilePath $shim -Encoding ascii
+
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green
 Write-Host "  App:      $InstallDir"
