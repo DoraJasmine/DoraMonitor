@@ -270,23 +270,30 @@ function runDaemon(opts) {
     if (!syncCfg.enabled) return;
     if (Date.now() - lastSync < syncEvery) return;
     lastSync = Date.now();
-    try {
-      const { collect } = require("./collect");
-      const { runSync } = require("./sync");
-      collect({ force: true })
-        .then(({ records }) => runSync(records, loadSettings()))
-        .then((r) => {
-          if (r && r.uploaded) {
-            atomicWrite(
-              path.join(path.dirname(target), "sync.state"),
-              JSON.stringify({ lastSync: new Date().toISOString(), peers: (r.peers || []).length }) + "\n"
-            );
-          }
-        })
-        .catch(() => {});
-    } catch {
-      // sync must never break status rendering
-    }
+    // Async chain off the hot path; failures never break status rendering.
+    Promise.resolve()
+      .then(() => {
+        const { collect } = require("./collect");
+        const { runSync: run } = require("./sync");
+        return Promise.all([
+          Promise.resolve(collect({ force: true })),
+          Promise.resolve(loadSettings()),
+          Promise.resolve(run),
+        ]);
+      })
+      .then(([collected, settings, run]) => run(collected.records, settings))
+      .then((r) => {
+        if (r && r.uploaded) {
+          atomicWrite(
+            path.join(path.dirname(target), "sync.state"),
+            JSON.stringify({ lastSync: new Date().toISOString(), peers: (r.peers || []).length }) + "\n"
+          );
+        }
+      })
+      .catch((e) => {
+        // sync must never break status rendering; log for journalctl
+        console.error(`sync 失败: ${e && e.message ? e.message : e}`);
+      });
   };
   maybeSync();
   setInterval(maybeSync, syncEvery);
