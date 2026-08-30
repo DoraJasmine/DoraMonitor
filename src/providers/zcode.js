@@ -3,7 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, openReadOnly, emptyRecord } = require("./base");
+const { n, openReadOnly, emptyRecord, expandHome } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
 
@@ -67,7 +67,7 @@ const provider = {
   defaultHome() {
     if (process.env.ZCODE_HOME && process.env.ZCODE_HOME.trim()) {
       return path.resolve(
-        require("./base").expandHome(process.env.ZCODE_HOME.trim())
+        expandHome(process.env.ZCODE_HOME.trim())
       );
     }
     return path.join(os.homedir(), ".zcode");

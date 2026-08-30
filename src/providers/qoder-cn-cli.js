@@ -3,7 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, emptyRecord } = require("./base");
+const { n, emptyRecord, expandHome } = require("./base");
 
 /**
  * QoderCN CLI provider — scans ~/.qoder-cn/projects/<encoded-cwd>/<uuid>.jsonl
@@ -138,9 +138,7 @@ const provider = {
 
   defaultHome() {
     if (process.env.QODER_CLI_HOME && process.env.QODER_CLI_HOME.trim()) {
-      return path.resolve(
-        require("./base").expandHome(process.env.QODER_CLI_HOME.trim())
-      );
+      return path.resolve(expandHome(process.env.QODER_CLI_HOME.trim()));
     }
     return path.join(os.homedir(), ".qoder-cn");
   },

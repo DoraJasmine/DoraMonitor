@@ -3,7 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, openReadOnly, emptyRecord } = require("./base");
+const { n, openReadOnly, emptyRecord, expandHome } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
 
@@ -136,7 +136,7 @@ const provider = {
   defaultHome() {
     if (process.env.QODER_CN_CONFIG_HOME && process.env.QODER_CN_CONFIG_HOME.trim()) {
       return path.resolve(
-        require("./base").expandHome(process.env.QODER_CN_CONFIG_HOME.trim())
+        expandHome(process.env.QODER_CN_CONFIG_HOME.trim())
       );
     }
     // Linux: ~/.config/QoderCN; Windows/macOS handled via platform app-data.

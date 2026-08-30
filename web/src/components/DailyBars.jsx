@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { fmtPct, fmtTokens, fmtUsd } from "@/format";
+import { fmtPct, fmtTokens, fmtMoney } from "@/format";
 import { cn } from "@/lib/utils";
 
 /** Distinct series colors for dark UI */
@@ -56,7 +56,7 @@ function areaPath(points, baselineY) {
  * Prefers stats.dailyByModel (continuous days + per-model series);
  * falls back to stats.daily totals only.
  */
-export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
+export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, moneyCfg }) {
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null); // index
   const [hidden, setHidden] = useState(() => new Set());
@@ -385,7 +385,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false }) {
             <div className="mb-1 font-medium text-foreground">{tip.date}</div>
             <div className="text-muted-foreground">
               {t("dailyTotal") || "Total"} · {fmtTokens(tip.totalTokens)} ·{" "}
-              {fmtUsd(tip.costUsd)}
+              {fmtMoney(tip.costUsd, moneyCfg)}
               {tip.cacheHitRate != null
                 ? ` · hit ${fmtPct(tip.cacheHitRate)}`
                 : ""}

@@ -830,6 +830,7 @@ export default function App() {
               dailyByModel={stats.dailyByModel}
               t={t}
               reducedMotion={!!reduceMotion}
+              moneyCfg={moneyCfg}
             />
           </CardContent>
         </Card>

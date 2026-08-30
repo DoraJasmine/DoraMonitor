@@ -238,6 +238,10 @@ async function fetchQuota(home, { force = false } = {}) {
   if (!force && cache.payload && now - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.payload;
   }
+  // Credentials expire_at is in SECONDS (matches the kimi CLI file format);
+  // mixing it with Date.now() ms would make the expiry check always true and
+  // rotate the OAuth token on every quota fetch.
+  const nowSec = Math.floor(now / 1000);
 
   const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code" };
   let creds = readAccessTokenForCall(home);
@@ -247,13 +251,13 @@ async function fetchQuota(home, { force = false } = {}) {
   }
 
   // Short-lived (~15 min) token: refresh when expired or about to expire.
-  if (creds.expiresAt && creds.expiresAt < now + 30_000) {
+  if (creds.expiresAt && creds.expiresAt < nowSec + 30) {
     const refreshed = await refreshAccessToken(home);
     if (!refreshed.ok) {
       cache = { fetchedAt: now, payload: { ...base, available: false, reason: refreshed.reason, windows: [] } };
       return cache.payload;
     }
-    creds = { token: refreshed.accessToken, expiresAt: now + 900_000 };
+    creds = { token: refreshed.accessToken, expiresAt: nowSec + 900 };
   }
 
   try {
