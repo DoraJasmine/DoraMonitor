@@ -101,7 +101,12 @@ tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
 
 `node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
 
-仓库根目录另附两个 Windows 便捷启动器：`start-ai-usage.bat`（最小化窗口启动本地看板）和 `daemon-hidden.vbs`（无窗口启动 daemon，供计划任务调用）。
+仓库根目录另附 Windows 便捷启动器：`start-ai-usage.bat`（最小化窗口启动本地看板）、`daemon-hidden.vbs` 与 `web-hidden.vbs`（无窗口启动 daemon / 看板，供计划任务调用）。
+登录自启执行一条命令即可（注册 `ai-usage-daemon` + `ai-usage-web` 两个计划任务，无需管理员）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
+```
 
 ## 跨设备同步
 
