@@ -1,12 +1,11 @@
 {
-  "name": "ai-usage-monitor",
+  "name": "doramonitor",
   "version": "1.0.0",
-  "description": "Local, privacy-safe usage dashboard for AI coding tools (Kimi Code, ZCode, QoderCN, QoderCN CLI, Codex)",
+  "description": "DoraMonitor — local, privacy-safe usage dashboard for AI coding tools (Kimi Code, ZCode, QoderCN, QoderCN CLI, Codex)",
   "main": "src/server.js",
   "type": "commonjs",
   "bin": {
-    "ai-usage": "src/ai-usage.js",
-    "ai-usage-monitor": "src/server.js"
+    "doramonitor": "src/doramonitor.js"
   },
   "files": [
     "src",
@@ -29,9 +28,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DoraJasmine/ai-usage-monitor.git"
+    "url": "git+https://github.com/DoraJasmine/DoraMonitor.git"
   },
   "keywords": [
+    "doramonitor",
     "ai-usage",
     "token-usage",
     "kimi-code",

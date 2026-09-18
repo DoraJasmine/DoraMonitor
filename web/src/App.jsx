@@ -48,7 +48,7 @@ import { detectBrowserLocale, fill, messages } from "@/i18n";
 import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
-const GITHUB_URL = "https://github.com/DoraJasmine/ai-usage-monitor";
+const GITHUB_URL = "https://github.com/DoraJasmine/DoraMonitor";
 
 const RANGE_KEYS = [
   { value: "today", labelKey: "rangeToday" },

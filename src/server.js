@@ -666,7 +666,7 @@ function main() {
   const server = createServer(opts.home);
   server.listen(opts.port, opts.host, () => {
     const url = `http://${opts.host}:${opts.port}/`;
-    console.log(`AI Usage Monitor`);
+    console.log(`DoraMonitor`);
     console.log(`  URL:  ${url}`);
     const tools = listProviders()
       .map((t) => `${t.label}${t.available ? "" : " (not found)"}`)

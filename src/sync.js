@@ -17,13 +17,13 @@ const { execFileSync } = require("child_process");
  *
  * Daily granularity lets the dashboard aggregate any range (today / 7d /
  * 30d / all) from peers, not just the billing month. Peers' files are
- * cached under ~/.ai-usage-monitor/remote-cache/ so the dashboard keeps
+ * cached under ~/.doramonitor/remote-cache/ so the dashboard keeps
  * working offline; a failed sync degrades to cached data with a status note.
  */
 
 const SUMMARY_VERSION = 1;
-const REMOTE_DIR = "ai-usage-monitor";
-const CACHE_DIR = path.join(".ai-usage-monitor", "remote-cache");
+const REMOTE_DIR = "ai-usage-monitor"; // keep: remote sync dir shared with other devices
+const CACHE_DIR = path.join(".doramonitor", "remote-cache");
 
 // ---------------------------------------------------------------------------
 // Summary build / merge
@@ -214,7 +214,7 @@ function syncViaSsh(summary, cfg) {
 
   try {
     execFileSync(ssh, [...sshBaseArgs(sshCfg), host, `mkdir -p ${remoteDir}`], { timeout: 30000 });
-    const tmp = path.join(os.tmpdir(), `ai-usage-sync-${process.pid}.json`);
+    const tmp = path.join(os.tmpdir(), `dora-sync-${process.pid}.json`);
     fs.writeFileSync(tmp, JSON.stringify(summary, null, 1), "utf8");
     try {
       execFileSync(scp, [...sshBaseArgs(sshCfg), tmp, `${host}:${remoteFile}`], { timeout: 60000 });
@@ -252,7 +252,7 @@ function listPeerSummariesViaSsh(cfg) {
 
   const files = listing.split("\n").map((s) => s.trim()).filter(Boolean);
   const peers = [];
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-usage-peers-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dora-peers-"));
   try {
     for (const remotePath of files) {
       const name = path.basename(remotePath);

@@ -5,7 +5,7 @@ export default function AppLogo({ size = 40, className }) {
   return (
     <img
       src="/favicon.svg"
-      alt="AI Usage Monitor"
+      alt="DoraMonitor"
       width={size}
       height={size}
       className={className}

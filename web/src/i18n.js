@@ -1,6 +1,6 @@
 export const messages = {
   zh: {
-    appTitle: "AI Coding 用量看板",
+    appTitle: "DoraMonitor",
     githubLink: "在 GitHub 上查看源码",
     subtitle: "仅统计 usage.record 中的模型、时间与 Token，不读取提示词与凭据",
     dataDir: "数据目录",
@@ -65,7 +65,7 @@ export const messages = {
     heatLess: "少",
     heatMore: "多",
     workspace: "工作区",
-    brandEyebrow: "工作台",
+    brandEyebrow: "AI 编码工具用量看板",
     appVersionBy: "v{version} · {author}",
     overview: "概览",
     pagePrev: "上一页",
@@ -273,7 +273,7 @@ export const messages = {
     modelsUngrouped: "未分组模型",
   },
   en: {
-    appTitle: "AI Coding Usage",
+    appTitle: "DoraMonitor",
     githubLink: "View source on GitHub",
     subtitle:
       "Counts only model, time, and tokens from usage.record — no prompts or credentials",
@@ -340,7 +340,7 @@ export const messages = {
     heatLess: "Less",
     heatMore: "More",
     workspace: "Workspace",
-    brandEyebrow: "Workspace",
+    brandEyebrow: "AI coding usage dashboard",
     appVersionBy: "v{version} · {author}",
     overview: "Overview",
     pagePrev: "Prev",

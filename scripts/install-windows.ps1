@@ -1,7 +1,7 @@
-﻿# ai-usage-monitor Windows 一键安装
+# doramonitor Windows 一键安装
 # 打包方式（Ubuntu 侧维护者参考）：
 #   git ls-files > /tmp/fl.txt
-#   tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
+#   tar czf doramonitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
 # dist/ 是 Web UI 构建产物；node_modules/smol-toml 是唯一运行时第三方依赖。
 
 # 在 Windows PowerShell 中执行：
@@ -23,8 +23,8 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$InstallDir = "$env:USERPROFILE\ai-usage-monitor"
-$NodeDir = "$env:LOCALAPPDATA\ai-usage-node"
+$InstallDir = "$env:USERPROFILE\DoraMonitor"
+$NodeDir = "$env:LOCALAPPDATA\doramonitor-node"
 $NodeVer = "v22.17.0"
 
 # Windows 10+ 自带 OpenSSH 客户端
@@ -55,9 +55,9 @@ if (Test-Path "$NodeDir\node.exe") {
 $Node = "$NodeDir\node.exe"
 
 # ---------- 2. 下载并解压应用 ----------
-Info "Downloading ai-usage-monitor..."
-$tarGz = "$env:TEMP\ai-usage-monitor-win.tar.gz"
-Invoke-WebRequest "$Server/ai-usage-monitor-win.tar.gz" -OutFile $tarGz -UseBasicParsing
+Info "Downloading doramonitor..."
+$tarGz = "$env:TEMP\doramonitor-win.tar.gz"
+Invoke-WebRequest "$Server/doramonitor-win.tar.gz" -OutFile $tarGz -UseBasicParsing
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 tar -xzf $tarGz -C $InstallDir
 Remove-Item $tarGz -Force
@@ -65,7 +65,7 @@ Info "Installed to $InstallDir"
 
 # ---------- 3. 同步配置 ----------
 Info "Writing sync config..."
-$cfgDir = "$env:USERPROFILE\.ai-usage-monitor"
+$cfgDir = "$env:USERPROFILE.doramonitor"
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 $cfg = [ordered]@{
   currency = "CNY"
@@ -102,36 +102,36 @@ if ($LASTEXITCODE -ne 0) { throw "SSH public key push failed" }
 
 # ---------- 5. 首次同步 ----------
 Info "First sync..."
-& $Node "$InstallDir\src\ai-usage.js" sync
+& $Node "$InstallDir\src\doramonitor.js" sync
 
 # ---------- 6. 登录自启（Register-ScheduledTask，无需管理员） ----------
 # daemon 通过 VBS 启动器隐藏运行，避免登录时弹出常驻黑窗口
 Info "Registering logon scheduled tasks..."
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $vbs = "$InstallDir\daemon-hidden.vbs"
-$inner = '""{0}"" ""{1}\src\ai-usage.js"" daemon' -f $Node, $InstallDir
+$inner = '""{0}"" ""{1}\src\doramonitor.js"" daemon' -f $Node, $InstallDir
 $line = 'CreateObject("Wscript.Shell").Run "{0}", 0, False' -f $inner
 Set-Content -Path $vbs -Value $line -Encoding ASCII
 $daemonAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wscript.exe" -Argument "`"$vbs`""
-Register-ScheduledTask -TaskName "ai-usage-daemon" -Action $daemonAction -Trigger $trigger -Force | Out-Null
+Register-ScheduledTask -TaskName "doramonitor-daemon" -Action $daemonAction -Trigger $trigger -Force | Out-Null
 if ($WithWeb) {
   $webAction = New-ScheduledTaskAction -Execute $Node -Argument "`"$InstallDir\src\server.js`" --host 127.0.0.1 --port 3847 --no-open"
-  Register-ScheduledTask -TaskName "ai-usage-web" -Action $webAction -Trigger $trigger -Force | Out-Null
+  Register-ScheduledTask -TaskName "doramonitor-web" -Action $webAction -Trigger $trigger -Force | Out-Null
 }
 
-# ---------- 7. PATH 垫片：任意 PowerShell 直接敲 ai-usage ----------
-Info "Adding ai-usage to PATH (WindowsApps shim)..."
+# ---------- 7. PATH 垫片：任意 PowerShell 直接敲 doramonitor ----------
+Info "Adding doramonitor to PATH (WindowsApps shim)..."
 $shimDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
 New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
-$shim = "$shimDir\ai-usage.cmd"
-"@echo off`r`n\"$Node\" \"$InstallDir\src\ai-usage.js\" %*`r\n" | Out-File -FilePath $shim -Encoding ascii
+$shim = "$shimDir\doramonitor.cmd"
+"@echo off`r`n\"$Node\" \"$InstallDir\src\doramonitor.js\" %*`r\n" | Out-File -FilePath $shim -Encoding ascii
 
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green
 Write-Host "  App:      $InstallDir"
-Write-Host "  Status:   & `"$Node`" `"$InstallDir\src\ai-usage.js`" status"
+Write-Host "  Status:   & `"$Node`" `"$InstallDir\src\doramonitor.js`" status"
 if ($WithWeb) {
   Write-Host "  Dashboard: http://127.0.0.1:3847 (starts at logon; or run now:)"
-  Write-Host '             Start-Process "$env:LOCALAPPDATA\ai-usage-node\node.exe" -ArgumentList "$env:USERPROFILE\ai-usage-monitor\src\server.js --host 127.0.0.1 --port 3847"'
+  Write-Host '             Start-Process "$env:LOCALAPPDATA\doramonitor-node\node.exe" -ArgumentList "$env:USERPROFILE\DoraMonitor\src\server.js --host 127.0.0.1 --port 3847"'
 }
 Write-Host "  The Ubuntu dashboard will show a windows-pc device tab within ~5 min."

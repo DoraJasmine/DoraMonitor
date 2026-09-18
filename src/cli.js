@@ -21,7 +21,7 @@ const { collect } = require("./collect");
 const { toolMeta } = require("./providers/base");
 const { loadSettings, toDisplay } = require("./settings");
 
-const DEFAULT_STATUS_FILE = path.join(".ai-usage-monitor", "status.cache");
+const DEFAULT_STATUS_FILE = path.join(".doramonitor", "status.cache");
 
 function parseArgs(argv) {
   const opts = {
@@ -209,7 +209,7 @@ function atomicWrite(target, content) {
 }
 
 function daemonPidFile() {
-  return path.join(os.homedir(), ".ai-usage-monitor", "daemon.pid");
+  return path.join(os.homedir(), ".doramonitor", "daemon.pid");
 }
 
 function isRunning(pid) {
@@ -220,12 +220,12 @@ function isRunning(pid) {
     return false;
   }
   // The pid file can outlive a reboot and WSL recycles pids aggressively;
-  // confirm the process actually is an ai-usage daemon before honoring the
+  // confirm the process actually is an DoraMonitor daemon before honoring the
   // single-instance guard, otherwise a recycled pid blocks startup forever.
   if (process.platform !== "win32") {
     try {
       const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
-      if (!/cli\.js|ai-usage/.test(cmd)) return false;
+      if (!/cli\.js|ai-usage|doramonitor/.test(cmd)) return false;
     } catch {
       return false; // /proc entry gone — not our daemon
     }
@@ -239,7 +239,7 @@ function runDaemon(opts) {
   if (fs.existsSync(pf)) {
     const prev = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
     if (isRunning(prev) && prev !== process.pid) {
-      console.log(`ai-usage daemon 已在运行 (pid ${prev})`);
+      console.log(`DoraMonitor daemon 已在运行 (pid ${prev})`);
       process.exit(0);
     }
   }
@@ -312,25 +312,25 @@ function runDaemon(opts) {
   setInterval(maybeSync, syncEvery);
 
   setInterval(tick, opts.interval * 1000);
-  console.log(`ai-usage daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}${syncCfg.enabled ? `，每 ${Math.round(syncEvery / 1000)}s 同步` : ""}`);
+  console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}${syncCfg.enabled ? `，每 ${Math.round(syncEvery / 1000)}s 同步` : ""}`);
 }
 
 /** Stop a running daemon via its pid file. Returns exit code. */
 function stopDaemon() {
   const pf = daemonPidFile();
   if (!fs.existsSync(pf)) {
-    console.log("ai-usage daemon 未运行");
+    console.log("DoraMonitor daemon 未运行");
     return 0;
   }
   const pid = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
   if (!isRunning(pid)) {
     fs.unlinkSync(pf);
-    console.log("ai-usage daemon 进程已不存在，清理 PID 文件");
+    console.log("DoraMonitor daemon 进程已不存在，清理 PID 文件");
     return 0;
   }
   try {
     process.kill(pid, "SIGTERM");
-    console.log(`ai-usage daemon 已停止 (pid ${pid})`);
+    console.log(`DoraMonitor daemon 已停止 (pid ${pid})`);
   } catch (err) {
     console.error(`停止失败: ${err.message}`);
     return 1;
@@ -346,7 +346,7 @@ function stopDaemon() {
 function main() {
   const opts = parseArgs(process.argv);
   if (opts.help) {
-    console.log(`ai-usage-monitor status line
+    console.log(`DoraMonitor status line
 
 Usage:
   node src/cli.js [options]              render once to stdout
@@ -359,7 +359,7 @@ Options:
   --plan-price <n>      plan price for kimi leverage (default: from kimi-status.toml)
   --currency <sym>      currency symbol (default: from kimi-status.toml or $)
   --interval <sec>      daemon interval (default: 30)
-  --status-file <path>  daemon cache file (default: ~/.ai-usage-monitor/status.cache)`);
+  --status-file <path>  daemon cache file (default: ~/.doramonitor/status.cache)`);
     process.exit(0);
   }
   if (opts.mode === "daemon") {

@@ -1,4 +1,4 @@
-# Kimi Code 用量看板
+# DoraMonitor
 
 [![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
 [![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#桌面端-tauri)

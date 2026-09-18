@@ -1,4 +1,4 @@
-# AI Usage Monitor
+# DoraMonitor
 
 本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex 的 token 用量、费用与额度。
 
@@ -24,9 +24,9 @@
 **命令行直接安装（推荐，Web UI 已随包预构建，无需手动 build）：**
 
 ```bash
-npm install -g ai-usage-monitor   # 安装
-npm update -g ai-usage-monitor    # 更新
-ai-usage                          # 启动 Web 仪表盘（默认打开浏览器）
+npm install -g doramonitor   # 安装
+npm update -g doramonitor    # 更新
+doramonitor                          # 启动 Web 仪表盘（默认打开浏览器）
 ```
 
 **或从源码运行：**
@@ -66,17 +66,17 @@ npm run dev
 安装命令（软链到 `~/.local/bin`，已在 PATH 即可直接使用）：
 
 ```bash
-ln -sf "$PWD/src/ai-usage.js" ~/.local/bin/ai-usage
+ln -sf "$PWD/src/doramonitor.js" ~/.local/bin/doramonitor
 ```
 
 ```bash
-ai-usage                    # 启动 Web 仪表盘（默认打开浏览器）
-ai-usage status             # 单行用量状态（适合 shell prompt）
-ai-usage status --style tmux
-ai-usage daemon             # 守护进程：写状态缓存 + 周期同步
-ai-usage stop               # 停止守护进程
-ai-usage sync               # 立即上传/拉取各设备用量
-ai-usage tools              # 列出检测到的工具与数据源
+doramonitor                    # 启动 Web 仪表盘（默认打开浏览器）
+doramonitor status             # 单行用量状态（适合 shell prompt）
+doramonitor status --style tmux
+doramonitor daemon             # 守护进程：写状态缓存 + 周期同步
+doramonitor stop               # 停止守护进程
+doramonitor sync               # 立即上传/拉取各设备用量
+doramonitor tools              # 列出检测到的工具与数据源
 ```
 
 输出示例（`--plan-price 199 --currency ¥`）：
@@ -86,7 +86,7 @@ Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
 ```
 
 - 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
-- daemon 缓存文件默认 `~/.ai-usage-monitor/status.cache`，tmux 可直接读取。
+- daemon 缓存文件默认 `~/.doramonitor/status.cache`，tmux 可直接读取。
 
 ## Windows 一键安装
 
@@ -99,20 +99,20 @@ powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -WithWeb
 
 脚本自动完成：便携版 Node 22、应用安装、同步配置（CNY 显示 / 设备名 / 指向 Ubuntu）、
 SSH 免密推送（输入一次 Ubuntu 密码）、首次同步、登录自启（daemon 隐藏运行 +
-本地看板 http://127.0.0.1:3847）。安装后任意 PowerShell 可直接使用 `ai-usage` 命令。
+本地看板 http://127.0.0.1:3847）。安装后任意 PowerShell 可直接使用 `doramonitor` 命令。
 
 维护者打包方式（Ubuntu 侧）：
 
 ```bash
 git ls-files > /tmp/fl.txt
-tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
+tar czf doramonitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
 # python3 -m http.server 8765 --bind <ip> --directory <dir>  提供下载点
 ```
 
 `node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
 
-仓库根目录另附 Windows 便捷启动器：`start-ai-usage.bat`（最小化窗口启动本地看板）、`daemon-hidden.vbs` 与 `web-hidden.vbs`（无窗口启动 daemon / 看板，供计划任务调用）。
-登录自启执行一条命令即可（自动定位安装目录与 node、生成隐藏窗口启动器，注册 `ai-usage-daemon` + `ai-usage-web` 两个计划任务，无需管理员）：
+仓库根目录另附 Windows 便捷启动器：`start-doramonitor.bat`（最小化窗口启动本地看板）、`daemon-hidden.vbs` 与 `web-hidden.vbs`（无窗口启动 daemon / 看板，供计划任务调用）。
+登录自启执行一条命令即可（自动定位安装目录与 node、生成隐藏窗口启动器，注册 `doramonitor-daemon` + `doramonitor-web` 两个计划任务，无需管理员）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
@@ -123,7 +123,7 @@ powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 每台设备把**按天聚合**的用量摘要（每天/每工具/每模型的 token 与 credits，一年约十几 KB）上传到共享后端，看板合并显示并支持按设备筛选。
 
 ```jsonc
-// ~/.ai-usage-monitor/config.json 的 sync 段
+// ~/.doramonitor/config.json 的 sync 段
 "sync": {
   "enabled": true,
   "backend": "ssh",            // "ssh" 或 "webdav"
@@ -136,8 +136,8 @@ powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 ```
 
 - 远端文件：`<remotePath>/ai-usage-monitor/<device>.json`（SSH）或 `<url>/ai-usage-monitor/<device>.json`（WebDAV）
-- 对端文件缓存在 `~/.ai-usage-monitor/remote-cache/`，网络不可达时看板自动降级使用缓存
-- 触发方式：`ai-usage sync` 手动、`ai-usage daemon` 周期、仪表盘「立即同步」按钮
+- 对端文件缓存在 `~/.doramonitor/remote-cache/`，网络不可达时看板自动降级使用缓存
+- 触发方式：`doramonitor sync` 手动、`doramonitor daemon` 周期、仪表盘「立即同步」按钮
 - 看板顶部出现「设备」页签（合并/本机/各设备），数字随选择联动
 - 从旧 kimi-status 迁移：沿用相同 SSH 拓扑，新旧文件互不干扰
 
@@ -157,7 +157,7 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 - **显示货币**：USD 或 CNY；CNY 按可配置汇率（默认 7.2）由内部 USD 成本换算显示。
 - **自定义模型定价**：为官方价格表没有的模型（GLM、DeepSeek 等）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
 
-配置持久化在 `~/.ai-usage-monitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
+配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
 
 - Kimi 模型按 [Kimi API Platform](https://platform.kimi.ai/) 官方价；Codex 的 OpenAI 模型按 OpenAI 官方价（GPT-6 Astra、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`）。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
 

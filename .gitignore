@@ -12,4 +12,4 @@ desktop/src-tauri/gen/
 # 由 scripts/register-autostart.ps1 生成的本机启动器
 /daemon-hidden.vbs
 /web-hidden.vbs
-/start-ai-usage.bat
+/start-doramonitor.bat

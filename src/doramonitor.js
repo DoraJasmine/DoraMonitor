@@ -2,14 +2,14 @@
 "use strict";
 
 /**
- * ai-usage — unified command line entry.
+ * doramonitor — unified command line entry.
  *
- *   ai-usage                 start the web dashboard (default)
- *   ai-usage web [options]   same, with explicit options
- *   ai-usage status [opts]   one-line usage summary (for shell prompt)
- *   ai-usage daemon [opts]   background daemon writing a tmux cache file
- *   ai-usage stop            stop the daemon
- *   ai-usage tools           list detected tools and data sources
+ *   doramonitor                 start the web dashboard (default)
+ *   doramonitor web [options]   same, with explicit options
+ *   doramonitor status [opts]   one-line usage summary (for shell prompt)
+ *   doramonitor daemon [opts]   background daemon writing a tmux cache file
+ *   doramonitor stop            stop the daemon
+ *   doramonitor tools           list detected tools and data sources
  *
  * Status/daemon options: --tool <id|all> --range <today|7d|30d|month|all>
  *   --style <plain|tmux> --plan-price <n> --currency <sym> --interval <sec>
@@ -20,17 +20,17 @@
 const pkg = require("../package.json");
 
 function printHelp() {
-  console.log(`ai-usage v${pkg.version} — AI coding tools usage monitor
+  console.log(`doramonitor v${pkg.version} — AI coding tools usage monitor
 
 Usage:
-  ai-usage [web] [options]     启动 Web 仪表盘（默认命令）
-  ai-usage status [options]    输出单行用量状态
-  ai-usage daemon [options]    后台守护进程，定时写状态缓存
-  ai-usage stop                停止后台守护进程
-  ai-usage sync                上传本机用量并拉取其他设备
-  ai-usage tools               列出检测到的工具与数据源
-  ai-usage -v | --version      显示版本
-  ai-usage -h | --help         显示本帮助
+  doramonitor [web] [options]     启动 Web 仪表盘（默认命令）
+  doramonitor status [options]    输出单行用量状态
+  doramonitor daemon [options]    后台守护进程，定时写状态缓存
+  doramonitor stop                停止后台守护进程
+  doramonitor sync                上传本机用量并拉取其他设备
+  doramonitor tools               列出检测到的工具与数据源
+  doramonitor -v | --version      显示版本
+  doramonitor -h | --help         显示本帮助
 
 Web options:
   --port <n>       监听端口 (默认 3847)
@@ -44,7 +44,7 @@ Status / daemon options:
   --plan-price <n>     套餐价格（杠杆计算；默认读 ~/.kimi-code/kimi-status.toml）
   --currency <sym>     货币符号（默认读全局设置）
   --interval <sec>     daemon 刷新间隔 (默认 30)
-  --status-file <path> daemon 缓存文件 (默认 ~/.ai-usage-monitor/status.cache)
+  --status-file <path> daemon 缓存文件 (默认 ~/.doramonitor-monitor/status.cache)
 
 Privacy: 只读取模型名、时间与 token 计数；不读取提示词、代码与凭据。`);
 }
@@ -88,14 +88,14 @@ function cmdWeb(rest) {
   const server = createServer(null);
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`端口 ${opts.port} 已被占用（可能已在运行）。换端口: ai-usage web --port 3848`);
+      console.error(`端口 ${opts.port} 已被占用（可能已在运行）。换端口: doramonitor web --port 3848`);
       process.exit(1);
     }
     throw err;
   });
   server.listen(opts.port, opts.host, () => {
     const url = `http://${opts.host}:${opts.port}/`;
-    console.log(`AI Usage Monitor v${pkg.version}`);
+    console.log(`DoraMonitor v${pkg.version}`);
     console.log(`  URL:   ${url}`);
     const tools = listProviders()
       .map((t) => `${t.label}${t.available ? "" : "(未检测到)"}`)
@@ -123,7 +123,7 @@ async function cmdSync() {
   const { loadSettings } = require("./settings");
   const settings = loadSettings();
   if (!syncEnabled(settings)) {
-    console.log("同步未启用。在 ~/.ai-usage-monitor/config.json 中配置 sync 段后重试。");
+    console.log("同步未启用。在 ~/.doramonitor-monitor/config.json 中配置 sync 段后重试。");
     process.exit(1);
   }
   const { records } = collect({ force: true });
@@ -163,7 +163,7 @@ function main() {
       printHelp();
       break;
     case "version":
-      console.log(`ai-usage v${pkg.version}`);
+      console.log(`doramonitor v${pkg.version}`);
       break;
     case "web":
       cmdWeb(rest);

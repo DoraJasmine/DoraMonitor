@@ -6,7 +6,7 @@ const path = require("path");
 
 /**
  * Global settings — currency display and custom model prices.
- * Stored at ~/.ai-usage-monitor/config.json (best-effort; defaults on any
+ * Stored at ~/.doramonitor/config.json (best-effort; defaults on any
  * read/write failure so the dashboard never breaks because of config).
  *
  * Cost model: token costs are computed in USD internally (official Kimi
@@ -51,7 +51,7 @@ const CURRENCY_SYMBOLS = { USD: "$", CNY: "¥" };
 let cache = { path: null, mtimeMs: 0, data: null };
 
 function configDir() {
-  return path.join(os.homedir(), ".ai-usage-monitor");
+  return path.join(os.homedir(), ".doramonitor");
 }
 
 function configPath() {
