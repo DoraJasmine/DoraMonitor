@@ -391,6 +391,15 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/quota") {
     const force = url.searchParams.get("refresh") === "1";
+    // ?tool=codex serves the rate_limits snapshot extracted from Codex's own
+    // rollout files (no network); default remains the Kimi usages API.
+    if (url.searchParams.get("tool") === "codex") {
+      const { collect } = require("./collect");
+      const collected = collect({ force });
+      const entry = collected.byTool.get("codex");
+      const quota = entry && entry.quota ? entry.quota : { available: false, reason: "no_data", windows: [] };
+      return json(res, 200, { ...quota, tool: "codex" });
+    }
     const quota = await fetchQuota(getHome(null, cliHome), { force });
     return json(res, 200, quota);
   }

@@ -13,11 +13,10 @@ import { fill } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
- * Kimi quota card — 5-hour rolling window + weekly quota, each with a used
- * meter and the exact reset time reported by the usages API.
- *
- * Kimi's quota model has no monthly window: the weekly quota refreshes every
- * 7 days from the subscription date, the 5-hour window rolls continuously.
+ * Cloud quota card — 5-hour rolling window + weekly quota, each with a used
+ * meter and the exact reset time. tool="kimi-code" (default) reads Kimi's
+ * usages API; tool="codex" reads the rate_limits snapshot extracted from
+ * Codex rollout files.
  */
 function countdown(targetIso, nowMs) {
   const t = Date.parse(targetIso);
@@ -36,7 +35,12 @@ const REASON_KEY = {
   no_credentials: "quotaTokenExpired",
 };
 
-export function QuotaCard({ t, locale, refreshSignal }) {
+const TOOL_I18N = {
+  "kimi-code": { title: "quotaTitle", hint: "quotaHint" },
+  codex: { title: "codexQuotaTitle", hint: "codexQuotaHint" },
+};
+
+export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
   const [quota, setQuota] = useState(null);
   const [loading, setLoading] = useState(false);
   const [, forceTick] = useState(0);
@@ -44,20 +48,18 @@ export function QuotaCard({ t, locale, refreshSignal }) {
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const d = await fetchQuota(refresh);
+      const d = await fetchQuota(refresh, tool === "kimi-code" ? null : tool);
       setQuota(d);
     } catch {
       setQuota(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tool]);
 
   useEffect(() => {
     load(false);
-  }, [load, refreshSignal]);
-
-  // Re-render every minute so countdowns stay honest without refetching.
+  }, [load, refreshSignal]);  // Re-render every minute so countdowns stay honest without refetching.
   useEffect(() => {
     const timer = setInterval(() => forceTick((x) => x + 1), 60_000);
     return () => clearInterval(timer);
@@ -70,6 +72,7 @@ export function QuotaCard({ t, locale, refreshSignal }) {
     : (quota?.reason || "").startsWith("http_")
       ? `HTTP ${quota.reason.slice(5)}`
       : quota?.reason || "—";
+  const i18n = TOOL_I18N[tool] || TOOL_I18N["kimi-code"];
 
   return (
     <Card>
@@ -77,7 +80,7 @@ export function QuotaCard({ t, locale, refreshSignal }) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Gauge className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <CardTitle>{t("quotaTitle")}</CardTitle>
+            <CardTitle>{t(i18n.title)}</CardTitle>
           </div>
           <Button
             variant="ghost"
@@ -90,7 +93,7 @@ export function QuotaCard({ t, locale, refreshSignal }) {
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "icon-spin")} />
           </Button>
         </div>
-        <CardDescription>{t("quotaHint")}</CardDescription>
+        <CardDescription>{t(i18n.hint)}</CardDescription>
       </CardHeader>
       <CardContent>
         {!quota ? (

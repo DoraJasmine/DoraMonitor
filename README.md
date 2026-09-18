@@ -1,6 +1,6 @@
 # AI Usage Monitor
 
-本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI 的 token 用量、费用与额度。
+本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex 的 token 用量、费用与额度。
 
 由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 架构扩展而来（React 19 + Tailwind + Node 标准库 HTTP server，零后端框架依赖；SQLite 读取使用 Node 22 内置 `node:sqlite`）。
 
@@ -14,6 +14,7 @@
 | ZCode | `~/.zcode/cli/db/db.sqlite` → `model_usage` | token（含 reasoning/cache 分项） |
 | QoderCN（IDE） | `~/.config/QoderCN/SharedClientCache/cache/db/local.db` → `chat_message` | token（内部模型码自动映射显示名） |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | **credits 计费值**（CLI 不落地 token，仅记录 credits） |
+| Codex | `~/.codex/sessions/**/*.jsonl` + `archived_sessions` | token（`token_usage_record`，按 `response_id` 去重；模型/cwd 取自 `turn_context`）、费用（OpenAI 官方价） |
 
 - 所有 SQLite 均以**只读模式**打开，不影响运行中的工具。
 - 每个工具的数据缺失时自动降级为「不可用」，不影响其他工具展示。
@@ -77,6 +78,31 @@ Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
 - 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
 - daemon 缓存文件默认 `~/.ai-usage-monitor/status.cache`，tmux 可直接读取。
 
+## Kimi Code TUI quota plugin (status_line)
+
+Shows the **cloud quota** (weekly + 5-hour rolling windows, with reset countdown) plus local usage on footer line 1 of the Kimi Code TUI:
+
+```
+K2.8 Preview | 周 36%(3d5h) | 5h 14%(4h19m) | K:44.5M ¥86.46 命中:96.3%
+```
+
+How it works: the daemon writes the rendered usage line together with the quota windows from `GET /coding/v1/usages` into `~/.ai-usage-monitor/status.json` every 30s (the quota client has its own 60s TTL); `scripts/kimi-statusline.js` merges that file with the JSON snapshot Kimi pipes in on stdin.
+
+On a Windows + WSL machine both sides merge automatically: **usage comes from the freshest local file** (the other side falls back with a `(win)`/`(wsl)` tag), **quota comes from the freshest file where it is available** (Windows reads WSL via `\\wsl.localhost`, WSL reads Windows via `/mnt/c`). Files older than 150s are marked `(缓存过期)`.
+
+Install once per environment:
+
+```bash
+node src/cli.js daemon --interval 30        # keep the daemon running
+cp scripts/kimi-statusline.js ~/.kimi-code/statusline.js
+cat >> ~/.kimi-code/tui.toml <<'EOF'
+[status_line]
+command = "node ~/.kimi-code/statusline.js"
+EOF
+```
+
+Quota credentials are shared with the kimi CLI (`~/.kimi-code/credentials/kimi-code.json`, refreshed and written back automatically); if the line shows `额度:—`, log in to kimi again in that environment. Set `AI_USAGE_STATUS_FILE` to override status.json discovery.
+
 ## Windows 一键安装
 
 在 Windows PowerShell 中（两行，逐行执行）：
@@ -99,6 +125,8 @@ tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
 ```
 
 `node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
+
+仓库根目录另附两个 Windows 便捷启动器：`start-ai-usage.bat`（最小化窗口启动本地看板）和 `daemon-hidden.vbs`（无窗口启动 daemon，供计划任务调用）。
 
 ## 跨设备同步
 
@@ -139,7 +167,9 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 - **显示货币**：USD 或 CNY；CNY 按可配置汇率（默认 7.2）由内部 USD 成本换算显示。
 - **自定义模型定价**：为官方价格表没有的模型（GLM、DeepSeek 等）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
 
-配置持久化在 `~/.ai-usage-monitor/config.json`；所有工具（Kimi / ZCode / QoderCN）的费用统一按此计算。
+配置持久化在 `~/.ai-usage-monitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
+
+- Kimi 模型按 [Kimi API Platform](https://platform.kimi.ai/) 官方价；Codex 的 OpenAI 模型按 OpenAI 官方价（GPT-6 Astra、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`）。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
 
 QoderCN CLI 仅记录 credits 计费（日志中 token 字段全为 0），看板会显示 credits 提示并以 credits 作为其费用口径。
 
@@ -154,6 +184,7 @@ src/
     zcode.js         # node:sqlite 只读查询
     qoder-cn.js      # node:sqlite + 模型码映射
     qoder-cn-cli.js  # jsonl 转录扫描
+    codex.js         # rollout jsonl 扫描（token_usage_record）
   collect.js         # 增量收集器（stat 探测 + TTL 缓存）
   aggregate.js       # 时间范围 / byTool / 热力图聚合
   quota.js           # Kimi 额度 API 客户端

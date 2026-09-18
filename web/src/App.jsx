@@ -795,6 +795,20 @@ export default function App() {
         </motion.div>
       ) : null}
 
+      {/* Codex quota (rate_limits from rollout files: 5h + weekly) */}
+      {(tool === "all" || tool === "codex") &&
+      availableTools.some((x) => x.id === "codex") ? (
+        <motion.div
+          className="mb-5"
+          custom={3}
+          initial={reduceMotion || entered.current ? false : "hidden"}
+          animate="show"
+          variants={fadeUp}
+        >
+          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} tool="codex" />
+        </motion.div>
+      ) : null}
+
       {/* Heatmap */}
       <motion.div
         custom={3}

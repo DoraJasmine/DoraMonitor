@@ -82,10 +82,14 @@ export async function fetchSummary(home, range = "30d", refresh = false, tool = 
   return httpJson(`/api/summary?${qs.toString()}`);
 }
 
-/** GET /api/quota — Kimi 5-hour / weekly quota windows with reset times */
-export async function fetchQuota(refresh = false) {
-  const qs = refresh ? "?refresh=1" : "";
-  return httpJson(`/api/quota${qs}`);
+/** GET /api/quota — Kimi 5-hour / weekly quota windows with reset times.
+ *  tool="codex" reads the rate_limits snapshot from Codex rollout files. */
+export async function fetchQuota(refresh = false, tool = null) {
+  const qs = new URLSearchParams();
+  if (refresh) qs.set("refresh", "1");
+  if (tool) qs.set("tool", tool);
+  const q = qs.toString();
+  return httpJson(`/api/quota${q ? `?${q}` : ""}`);
 }
 
 /** GET /api/settings — currency display + custom model prices */

@@ -216,10 +216,21 @@ function isRunning(pid) {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  // The pid file can outlive a reboot and WSL recycles pids aggressively;
+  // confirm the process actually is an ai-usage daemon before honoring the
+  // single-instance guard, otherwise a recycled pid blocks startup forever.
+  if (process.platform !== "win32") {
+    try {
+      const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      if (!/cli\.js|ai-usage/.test(cmd)) return false;
+    } catch {
+      return false; // /proc entry gone — not our daemon
+    }
+  }
+  return true;
 }
 
 function runDaemon(opts) {
@@ -236,12 +247,42 @@ function runDaemon(opts) {
   const target = opts.statusFile
     ? path.resolve(opts.statusFile)
     : path.join(os.homedir(), DEFAULT_STATUS_FILE);
+  // Structured status for the Kimi Code TUI status_line plugin: the rendered
+  // text line plus the cloud quota windows. fetchQuota() has its own 60s TTL,
+  // so a 30s tick hits the network only every other tick, asynchronously.
+  const jsonTarget = path.join(path.dirname(target), "status.json");
+  let lastLine = "";
+  const writeStatusJson = (quota) => {
+    try {
+      atomicWrite(
+        jsonTarget,
+        JSON.stringify({ updatedAt: new Date().toISOString(), line: lastLine, quota }) + "\n"
+      );
+    } catch {
+      // never crash the daemon; the plugin keeps the previous JSON
+    }
+  };
+  const fetchKimiQuota = () => {
+    let home = null;
+    try {
+      const kimi = require("./providers").getProvider("kimi-code");
+      home = kimi ? kimi.defaultHome() : null;
+    } catch {
+      home = null;
+    }
+    return require("./quota")
+      .fetchQuota(home)
+      .then(writeStatusJson)
+      .catch(() => {});
+  };
   const tick = () => {
     try {
-      atomicWrite(target, renderOnce(opts) + "\n");
+      lastLine = renderOnce(opts);
+      atomicWrite(target, lastLine + "\n");
     } catch {
       // never crash the daemon; tmux keeps the previous cache line
     }
+    fetchKimiQuota();
   };
 
   fs.mkdirSync(path.dirname(pf), { recursive: true });

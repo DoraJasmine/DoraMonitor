@@ -80,12 +80,81 @@ const FALLBACK_PRICE = {
   estimated: true,
 };
 
+/**
+ * Official OpenAI platform list prices (USD per 1M tokens), used by the
+ * Codex provider. Sources: https://openai.com/api/pricing/ plus vendor
+ * mirrors. GPT-5.6 family prices reflect the 2026-07-30 update
+ * (Luna -80%, Terra -20%); a bare "gpt-5.6" id routes to Sol.
+ * codex-auto-review is a plan-included background model with no public
+ * list price — costed like Luna and flagged as an estimate.
+ */
+const OPENAI_PRICES = [
+  {
+    id: "gpt-6-astra",
+    patterns: [/gpt[_-]?6[_-]?astra/i],
+    cacheHit: 1.0,
+    input: 10.0,
+    output: 50.0,
+    context: 1_050_000,
+  },
+  {
+    id: "gpt-5.6-sol",
+    patterns: [/gpt[_-]?5\.6[_-]?sol/i],
+    cacheHit: 0.5,
+    input: 5.0,
+    output: 30.0,
+    context: 1_050_000,
+  },
+  {
+    id: "gpt-5.6-terra",
+    patterns: [/gpt[_-]?5\.6[_-]?terra/i],
+    cacheHit: 0.2,
+    input: 2.0,
+    output: 12.0,
+    context: 1_050_000,
+  },
+  {
+    id: "gpt-5.6-luna",
+    patterns: [/gpt[_-]?5\.6[_-]?luna/i],
+    cacheHit: 0.02,
+    input: 0.2,
+    output: 1.2,
+    context: 1_050_000,
+  },
+  {
+    // bare "gpt-5.6" aliases to Sol
+    id: "gpt-5.6",
+    patterns: [/gpt[_-]?5\.6/i],
+    cacheHit: 0.5,
+    input: 5.0,
+    output: 30.0,
+    context: 1_050_000,
+  },
+  {
+    id: "gpt-5",
+    patterns: [/gpt[_-]?5/i, /o[34][-_]?mini/i],
+    cacheHit: 0.125,
+    input: 1.25,
+    output: 10.0,
+    context: 400_000,
+  },
+  {
+    id: "codex-auto-review",
+    patterns: [/codex[_-]?auto[_-]?review/i],
+    cacheHit: 0.02,
+    input: 0.2,
+    output: 1.2,
+    context: null,
+    estimated: true,
+  },
+];
+
 function matchPrice(modelName) {
   if (!modelName) return { ...FALLBACK_PRICE, match: null };
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
-  for (const row of KIMI_PRICES) {
+  for (const row of [...KIMI_PRICES, ...OPENAI_PRICES]) {
     for (const re of row.patterns) {
       if (re.test(bare) || re.test(name)) {
         return {
@@ -94,7 +163,7 @@ function matchPrice(modelName) {
           input: row.input,
           output: row.output,
           context: row.context,
-          estimated: false,
+          estimated: !!row.estimated,
           match: bare,
         };
       }
@@ -213,6 +282,7 @@ function listPrices() {
 
 module.exports = {
   KIMI_PRICES,
+  OPENAI_PRICES,
   FALLBACK_PRICE,
   matchPrice,
   matchCustomPrice,

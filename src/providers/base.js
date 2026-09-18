@@ -23,6 +23,7 @@ const TOOL_META = {
   zcode: { label: "ZCode", color: "#3b82f6" },
   "qoder-cn": { label: "QoderCN", color: "#f59e0b" },
   "qoder-cn-cli": { label: "QoderCN CLI", color: "#eab308" },
+  codex: { label: "Codex", color: "#10a37f" },
 };
 
 function toolMeta(id) {

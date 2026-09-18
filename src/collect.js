@@ -48,10 +48,10 @@ function probeStamps(provider, home) {
 
 function scanProvider(provider, home) {
   const modelMap = provider.id === "kimi-code" ? loadModelMap(home) : null;
-  const { records, meta, events } = modelMap
+  const { records, meta, events, quota } = modelMap
     ? provider.scan(home, modelMap)
     : provider.scan(home);
-  return { records, meta, events, home };
+  return { records, meta, events, quota, home };
 }
 
 /**
