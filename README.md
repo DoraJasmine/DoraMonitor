@@ -21,6 +21,16 @@
 
 ## 快速开始
 
+**命令行直接安装（推荐，Web UI 已随包预构建，无需手动 build）：**
+
+```bash
+npm install -g ai-usage-monitor   # 安装
+npm update -g ai-usage-monitor    # 更新
+ai-usage                          # 启动 Web 仪表盘（默认打开浏览器）
+```
+
+**或从源码运行：**
+
 需要 Node.js **22.5+**（内置 `node:sqlite`）；Node 20 亦可运行，SQLite 读取自动回退到 `sqlite3` CLI（需在 PATH 中）。
 
 ```bash
@@ -102,7 +112,7 @@ tar czf ai-usage-monitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
 `node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
 
 仓库根目录另附 Windows 便捷启动器：`start-ai-usage.bat`（最小化窗口启动本地看板）、`daemon-hidden.vbs` 与 `web-hidden.vbs`（无窗口启动 daemon / 看板，供计划任务调用）。
-登录自启执行一条命令即可（注册 `ai-usage-daemon` + `ai-usage-web` 两个计划任务，无需管理员）：
+登录自启执行一条命令即可（自动定位安装目录与 node、生成隐藏窗口启动器，注册 `ai-usage-daemon` + `ai-usage-web` 两个计划任务，无需管理员）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1

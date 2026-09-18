@@ -1,13 +1,20 @@
 {
   "name": "ai-usage-monitor",
   "version": "1.0.0",
-  "description": "Local, privacy-safe usage dashboard for AI coding tools (Kimi Code, ZCode, QoderCN, QoderCN CLI)",
+  "description": "Local, privacy-safe usage dashboard for AI coding tools (Kimi Code, ZCode, QoderCN, QoderCN CLI, Codex)",
   "main": "src/server.js",
   "type": "commonjs",
   "bin": {
     "ai-usage": "src/ai-usage.js",
     "ai-usage-monitor": "src/server.js"
   },
+  "files": [
+    "src",
+    "dist",
+    "scripts",
+    "assets",
+    "README.md"
+  ],
   "scripts": {
     "start": "node src/server.js",
     "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
@@ -17,21 +24,30 @@
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
     "status": "node src/cli.js",
-    "daemon": "node src/cli.js daemon"
+    "daemon": "node src/cli.js daemon",
+    "prepack": "npm test && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DoraJasmine/ai-usage-monitor.git"
   },
   "keywords": [
+    "ai-usage",
+    "token-usage",
     "kimi-code",
-    "token",
-    "usage",
-    "dashboard",
-    "shadcn"
+    "codex",
+    "usage-dashboard",
+    "pricing"
   ],
-  "author": "",
+  "author": "DoraJasmine",
   "license": "MIT",
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
+    "smol-toml": "^1.7.1"
+  },
+  "devDependencies": {
     "@lobehub/icons": "^5.15.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-scroll-area": "^1.2.10",
@@ -41,24 +57,21 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
-    "class-variance-authority": "^0.7.1",
-    "classnames": "^2.5.1",
-    "clsx": "^2.1.1",
-    "dayjs": "^1.11.19",
-    "framer-motion": "^12.23.12",
-    "lucide-react": "^0.542.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "smol-toml": "^1.7.1",
-    "tailwind-merge": "^3.3.1"
-  },
-  "devDependencies": {
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "classnames": "^2.5.1",
+    "clsx": "^2.1.1",
     "concurrently": "^9.2.4",
+    "dayjs": "^1.11.19",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.542.0",
     "postcss": "^8.5.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.17",
     "vite": "^6.4.1"
   }
