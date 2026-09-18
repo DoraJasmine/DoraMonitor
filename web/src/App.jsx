@@ -11,7 +11,7 @@ import {
   ScanSearch,
   SlidersHorizontal,
 } from "lucide-react";
-import KimiLogo from "@/components/KimiLogo";
+import AppLogo from "@/components/AppLogo";
 import SessionsPage from "@/pages/SessionsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import { Badge } from "@/components/ui/badge";
@@ -429,9 +429,7 @@ export default function App() {
         variants={fadeUp}
       >
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#0b1220] shadow-panel ring-1 ring-white/10">
-            <KimiLogo size={36} />
-          </div>
+          <AppLogo size={40} className="shrink-0 rounded-[9px] shadow-panel ring-1 ring-white/10" />
           <div className="flex min-w-0 flex-col justify-center leading-tight">
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               {t("brandEyebrow")}
