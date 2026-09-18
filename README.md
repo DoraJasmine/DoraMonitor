@@ -78,31 +78,6 @@ Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
 - 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
 - daemon 缓存文件默认 `~/.ai-usage-monitor/status.cache`，tmux 可直接读取。
 
-## Kimi Code TUI quota plugin (status_line)
-
-Shows the **cloud quota** (weekly + 5-hour rolling windows, with reset countdown) plus local usage on footer line 1 of the Kimi Code TUI:
-
-```
-K2.8 Preview | 周 36%(3d5h) | 5h 14%(4h19m) | K:44.5M ¥86.46 命中:96.3%
-```
-
-How it works: the daemon writes the rendered usage line together with the quota windows from `GET /coding/v1/usages` into `~/.ai-usage-monitor/status.json` every 30s (the quota client has its own 60s TTL); `scripts/kimi-statusline.js` merges that file with the JSON snapshot Kimi pipes in on stdin.
-
-On a Windows + WSL machine both sides merge automatically: **usage comes from the freshest local file** (the other side falls back with a `(win)`/`(wsl)` tag), **quota comes from the freshest file where it is available** (Windows reads WSL via `\\wsl.localhost`, WSL reads Windows via `/mnt/c`). Files older than 150s are marked `(缓存过期)`.
-
-Install once per environment:
-
-```bash
-node src/cli.js daemon --interval 30        # keep the daemon running
-cp scripts/kimi-statusline.js ~/.kimi-code/statusline.js
-cat >> ~/.kimi-code/tui.toml <<'EOF'
-[status_line]
-command = "node ~/.kimi-code/statusline.js"
-EOF
-```
-
-Quota credentials are shared with the kimi CLI (`~/.kimi-code/credentials/kimi-code.json`, refreshed and written back automatically); if the line shows `额度:—`, log in to kimi again in that environment. Set `AI_USAGE_STATUS_FILE` to override status.json discovery.
-
 ## Windows 一键安装
 
 在 Windows PowerShell 中（两行，逐行执行）：

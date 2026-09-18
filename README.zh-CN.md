@@ -188,40 +188,6 @@ CI：`.github/workflows/desktop.yml` 在 Windows / Ubuntu / macOS 构建（`v*` 
 | `npm run tauri:dev` | Tauri 桌面开发 |
 | `npm run tauri:build` | Tauri 发布包（未签名） |
 
-## Kimi Code TUI 额度插件（status_line）
-
-在 Kimi Code 的 TUI 页脚第一行同时显示**云端额度**（周配额 + 5 小时滚动窗口，含重置倒计时）与本地用量：
-
-```
-K2.8 Preview | 周 36%(3d5h) | 5h 14%(4h19m) | K:44.5M ¥86.46 命中:96.3%
-```
-
-原理：daemon 每 30s 把渲染行与 `GET /coding/v1/usages` 返回的额度窗口一起写入 `~/.ai-usage-monitor/status.json`（quota 客户端自带 60s 缓存，不会增加请求压力）；`scripts/kimi-statusline.js` 读取该文件并与 Kimi 从 stdin 传入的快照（model/mode 等）合并输出一行。
-
-跨 Windows / WSL 使用时自动合并两侧数据：**用量取本侧最新**（另一侧数据带 `(win)`/`(wsl)` 标记回退），**额度取最新可用一侧**（Windows 经 `\\wsl.localhost` 读 WSL 的 status.json，WSL 经 `/mnt/c` 反向读取）。状态文件超过 150s 未更新会标记 `(缓存过期)`。
-
-安装（每个环境执行一次）：
-
-```bash
-# 1. daemon 常驻
-node src/cli.js daemon --interval 30
-#    Windows 隐藏窗口自启：以管理员运行 scripts/fix-daemon.ps1
-#    （无管理员权限时自动降级为 Startup 文件夹 VBS 自启）
-#    Linux (systemd)：创建用户服务并 systemctl --user enable --now，再 loginctl enable-linger
-
-# 2. 复制 statusline 脚本并注册到 Kimi Code
-cp scripts/kimi-statusline.js ~/.kimi-code/statusline.js
-cat >> ~/.kimi-code/tui.toml <<'EOF'
-[status_line]
-command = "node ~/.kimi-code/statusline.js"
-EOF
-```
-
-注意：
-
-- 额度凭据与 kimi CLI 共享（`~/.kimi-code/credentials/kimi-code.json`，自动刷新并写回）；显示 `额度:—` 时先在对应环境重新登录 kimi。
-- 环境变量 `AI_USAGE_STATUS_FILE` 可显式指定 status.json 路径，覆盖自动探测。
-
 ## 隐私
 
 - 不上传任何数据 — 默认只绑定 **`127.0.0.1`**

@@ -247,42 +247,14 @@ function runDaemon(opts) {
   const target = opts.statusFile
     ? path.resolve(opts.statusFile)
     : path.join(os.homedir(), DEFAULT_STATUS_FILE);
-  // Structured status for the Kimi Code TUI status_line plugin: the rendered
-  // text line plus the cloud quota windows. fetchQuota() has its own 60s TTL,
-  // so a 30s tick hits the network only every other tick, asynchronously.
-  const jsonTarget = path.join(path.dirname(target), "status.json");
-  let lastLine = "";
-  const writeStatusJson = (quota) => {
-    try {
-      atomicWrite(
-        jsonTarget,
-        JSON.stringify({ updatedAt: new Date().toISOString(), line: lastLine, quota }) + "\n"
-      );
-    } catch {
-      // never crash the daemon; the plugin keeps the previous JSON
-    }
-  };
-  const fetchKimiQuota = () => {
-    let home = null;
-    try {
-      const kimi = require("./providers").getProvider("kimi-code");
-      home = kimi ? kimi.defaultHome() : null;
-    } catch {
-      home = null;
-    }
-    return require("./quota")
-      .fetchQuota(home)
-      .then(writeStatusJson)
-      .catch(() => {});
-  };
+
   const tick = () => {
     try {
-      lastLine = renderOnce(opts);
-      atomicWrite(target, lastLine + "\n");
+      const line = renderOnce(opts);
+      atomicWrite(target, line + "\n");
     } catch {
       // never crash the daemon; tmux keeps the previous cache line
     }
-    fetchKimiQuota();
   };
 
   fs.mkdirSync(path.dirname(pf), { recursive: true });
