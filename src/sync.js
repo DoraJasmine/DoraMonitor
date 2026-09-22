@@ -110,7 +110,11 @@ function summaryToRecords(summary) {
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
           inputCacheCreation: b.cc || 0,
-          costUsd: b.credits > 0 ? 0 : cost.total,
+          // A peer summary collapses a day/model into one synthetic record;
+          // retain its source request count so aggregate statistics do not
+          // misleadingly display it as a single request.
+          requests: Number.isFinite(Number(b.req)) && Number(b.req) >= 0 ? Number(b.req) : 1,
+          costCny: b.credits > 0 ? 0 : cost.total,
           costEstimated: cost.estimated,
           priceId: cost.priceId,
           credits: b.credits || 0,

@@ -58,12 +58,9 @@ export function fmtCredits(n) {
   return v.toFixed(2);
 }
 
-/**
- * Format a USD-internal cost in the display currency.
- * currency: "USD" | "CNY"; fxRate converts USD -> CNY.
- */
-export function fmtMoney(usd, { currency = "USD", symbol = "$", fxRate = 7.2 } = {}) {
-  const v = currency === "CNY" ? (Number(usd) || 0) * fxRate : Number(usd) || 0;
+/** Format a value already converted by the API into the display currency. */
+export function fmtMoney(value, { currency = "USD", symbol = "$" } = {}) {
+  const v = Number(value) || 0;
   const sym = symbol || (currency === "CNY" ? "¥" : "$");
   if (v === 0) return `${sym}0.00`;
   if (v < 0.01) return sym + v.toFixed(4);

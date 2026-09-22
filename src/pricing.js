@@ -3,88 +3,131 @@
 const { loadSettings } = require("./settings");
 
 /**
- * Official Kimi API Platform list prices (USD per 1M tokens).
- * Sources: https://platform.kimi.ai/  and /docs/pricing/*
+ * Official Kimi China API Platform list prices (CNY per 1M tokens).
+ * Source: https://platform.kimi.com/
  * Fields: cacheHit (input cache read), input (non-cache / miss), output
  * cacheCreation is billed at the input rate when not separately listed.
  *
  * User-defined prices (settings.customPrices) take precedence: exact model
- * match first, then case-insensitive substring. Prices entered in a non-USD
- * currency are converted to USD at the configured fx rate so internal costs
- * stay in one currency; the display layer converts back for CNY display.
+ * match first, then case-insensitive substring. Each provider's native list
+ * price remains the source of truth. Values are normalized to CNY for the
+ * internal cost ledger; only USD-denominated providers (OpenAI) use fxRate
+ * during accounting. The display layer divides by fxRate when USD is chosen.
  */
 const KIMI_PRICES = [
   {
     id: "kimi-k3",
     // k3-256k is the same model at a longer context — same unit price.
     patterns: [/^kimi-k3$/i, /^k3$/i, /\/kimi-k3$/i, /kimi[_-]?k3/i, /k3[_-]?256k/i],
-    cacheHit: 0.3,
-    input: 3.0,
-    output: 15.0,
+    cacheHit: 2.0,
+    cacheWrite: 20.0,
+    input: 20.0,
+    output: 100.0,
     context: 1_048_576,
+    currency: "CNY",
   },
   {
     id: "kimi-k2.7-code",
     // kimi-for-coding is the Coding Plan model id — priced as k2.7-code.
     patterns: [/^kimi-k2\.7-code$/i, /kimi[_-]?k2\.7[_-]?code/i, /k2\.7[_-]?code/i, /kimi[_-]?for[_-]?coding/i],
-    cacheHit: 0.19,
-    input: 0.95,
-    output: 4.0,
+    cacheHit: 1.3,
+    input: 6.5,
+    output: 27.0,
     context: 262_144,
+    currency: "CNY",
   },
   {
     id: "kimi-k2.6",
     patterns: [/^kimi-k2\.6$/i, /kimi[_-]?k2\.6/i, /k2\.6/i],
-    cacheHit: 0.16,
-    input: 0.95,
-    output: 4.0,
+    cacheHit: 1.1,
+    input: 6.5,
+    output: 27.0,
     context: 262_144,
+    currency: "CNY",
   },
+];
+
+/**
+ * Official DeepSeek API list prices (CNY per 1M tokens).
+ *
+ * DeepSeek has time-of-use pricing: the values below are the peak prices;
+ * off-peak prices are exactly half. Peak time is Monday–Friday, 09:00–12:00
+ * and 14:00–18:00 Beijing time, except Chinese statutory holidays.
+ * Keep this table separate from Kimi's fallback: a DeepSeek model used to be
+ * silently costed as Kimi K2.6.
+ * Source: https://api-docs.deepseek.com/quick_start/pricing/
+ */
+const DEEPSEEK_PRICES = [
   {
-    id: "kimi-k2.5",
-    patterns: [/^kimi-k2\.5$/i, /kimi[_-]?k2\.5/i, /k2\.5/i],
-    cacheHit: 0.1,
-    input: 0.6,
-    output: 3.0,
-    context: 262_144,
-  },
-  {
-    id: "kimi-k2-turbo",
-    patterns: [/kimi[_-]?k2[_-]?turbo/i, /k2[_-]?thinking[_-]?turbo/i, /k2[_-]?turbo/i],
-    cacheHit: 0.15,
-    input: 1.15,
-    output: 8.0,
-    context: 262_144,
-  },
-  {
-    id: "kimi-k2",
+    id: "deepseek-flash",
     patterns: [
-      /^kimi-k2$/i,
-      /kimi[_-]?k2[_-]?(0905|0711|thinking)/i,
-      /kimi[_-]?k2/i,
-      /\bk2\b/i,
+      /^deepseek[-_ ]?flash$/i,
+      /^deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?vision[-_ ]?exp)?$/i,
+      /^deepseek[-_ ]?(chat|reasoner)$/i,
+      /^dfmodel$/i,
     ],
-    cacheHit: 0.15,
-    input: 0.6,
-    output: 2.5,
-    context: 262_144,
+    cacheHit: 0.04,
+    input: 2.0,
+    output: 8.0,
+    context: 1_000_000,
+    currency: "CNY",
+    offPeakMultiplier: 0.5,
+  },
+  {
+    id: "deepseek-v4-pro",
+    patterns: [/^deepseek[-_ ]?v4[-_ ]?pro(?:[-_ ].*)?$/i, /^dmodel$/i],
+    cacheHit: 0.3,
+    input: 9.0,
+    output: 27.0,
+    context: 1_000_000,
+    currency: "CNY",
+    offPeakMultiplier: 0.5,
+  },
+];
+
+/**
+ * Official BigModel China list prices (CNY per 1M tokens).
+ * Source: https://docs.bigmodel.cn/cn/guide/models
+ * These are the current standard China API prices. BigModel currently lists
+ * cache storage as free for a limited time, so cache creation is zero-rated.
+ */
+const ZHIPU_PRICES = [
+  {
+    id: "glm-5.3-flash",
+    patterns: [/^glm[-_ ]?5\.3[-_ ]?flash$/i],
+    cacheHit: 0.23,
+    cacheWrite: 0,
+    input: 0.8,
+    output: 2.8,
+    context: 1_000_000,
+    currency: "CNY",
+  },
+  {
+    id: "glm-5.3",
+    patterns: [/^glm[-_ ]?5\.3$/i],
+    cacheHit: 2.0,
+    cacheWrite: 0,
+    input: 8.0,
+    output: 28.0,
+    context: 1_000_000,
+    currency: "CNY",
   },
 ];
 
 /** Fallback when model cannot be mapped to a Kimi SKU — estimate only. */
 const FALLBACK_PRICE = {
   id: "kimi-k2.6",
-  cacheHit: 0.16,
-  input: 0.95,
-  output: 4.0,
+  cacheHit: 1.1,
+  input: 6.5,
+  output: 27.0,
+  currency: "CNY",
   estimated: true,
 };
 
 /**
  * Official OpenAI platform list prices (USD per 1M tokens), used by the
- * Codex provider. Sources: https://openai.com/api/pricing/ plus vendor
- * mirrors. GPT-5.6 family prices reflect the 2026-07-30 update
- * (Luna -80%, Terra -20%); a bare "gpt-5.6" id routes to Sol.
+ * Codex provider. Source: https://developers.openai.com/api/docs/pricing
+ * A bare "gpt-5.6" model id routes to GPT-5.6 Sol.
  * codex-auto-review is a plan-included background model with no public
  * list price — costed like Luna and flagged as an estimate.
  */
@@ -93,42 +136,45 @@ const OPENAI_PRICES = [
     id: "gpt-6-astra",
     patterns: [/gpt[_-]?6[_-]?astra/i],
     cacheHit: 1.0,
+    cacheWrite: 12.5,
     input: 10.0,
     output: 50.0,
     context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
   },
   {
     id: "gpt-5.6-sol",
-    patterns: [/gpt[_-]?5\.6[_-]?sol/i],
-    cacheHit: 0.5,
-    input: 5.0,
-    output: 30.0,
+    patterns: [/gpt[_-]?5\.6[_-]?sol/i, /^gpt[_-]?5\.6$/i],
+    cacheHit: 0.4,
+    cacheWrite: 5.0,
+    input: 4.0,
+    output: 20.0,
     context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
   },
   {
     id: "gpt-5.6-terra",
     patterns: [/gpt[_-]?5\.6[_-]?terra/i],
     cacheHit: 0.2,
+    cacheWrite: 2.5,
     input: 2.0,
     output: 12.0,
     context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
   },
   {
     id: "gpt-5.6-luna",
     patterns: [/gpt[_-]?5\.6[_-]?luna/i],
     cacheHit: 0.02,
+    cacheWrite: 0.25,
     input: 0.2,
     output: 1.2,
     context: 1_050_000,
-  },
-  {
-    // bare "gpt-5.6" aliases to Sol
-    id: "gpt-5.6",
-    patterns: [/gpt[_-]?5\.6/i],
-    cacheHit: 0.5,
-    input: 5.0,
-    output: 30.0,
-    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
   },
   {
     id: "gpt-5",
@@ -137,6 +183,7 @@ const OPENAI_PRICES = [
     input: 1.25,
     output: 10.0,
     context: 400_000,
+    currency: "USD",
   },
   {
     id: "codex-auto-review",
@@ -146,38 +193,120 @@ const OPENAI_PRICES = [
     output: 1.2,
     context: null,
     estimated: true,
+    currency: "USD",
   },
 ];
 
-function matchPrice(modelName) {
-  if (!modelName) return { ...FALLBACK_PRICE, match: null };
+function matchPrice(modelName, options = {}) {
+  if (!modelName) return normalizedFallbackPrice(options.fxRate, null);
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
-  for (const row of [...KIMI_PRICES, ...OPENAI_PRICES]) {
+  for (const row of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES]) {
     for (const re of row.patterns) {
       if (re.test(bare) || re.test(name)) {
+        const timeOfUse = deepSeekTimeOfUse(row, options.time);
+        const currencyMultiplier = priceToCnyMultiplier(row, options.fxRate);
+        const context = longContextPricing(row, options.inputTokens);
         return {
           id: row.id,
-          cacheHit: row.cacheHit,
-          input: row.input,
-          output: row.output,
+          cacheHit: row.cacheHit * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+          cacheWrite: (row.cacheWrite ?? row.input) * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+          input: row.input * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+          output: row.output * timeOfUse.multiplier * context.outputMultiplier * currencyMultiplier,
           context: row.context,
-          estimated: !!row.estimated,
+          // Without a request timestamp, a time-of-use DeepSeek calculation
+          // cannot be exact.  We intentionally use the peak rate (the
+          // conservative documented rate) and surface it as an estimate.
+          estimated: !!row.estimated || timeOfUse.estimated,
           match: bare,
+          ratePeriod: timeOfUse.ratePeriod,
+          contextTier: context.tier,
         };
       }
     }
   }
-  return { ...FALLBACK_PRICE, match: bare, estimated: true };
+  return normalizedFallbackPrice(options.fxRate, bare);
 }
 
-/** USD per 1M for one custom-price component (null when not set). */
-function customComponentUsd(value, currency, fxRate) {
+function longContextPricing(row, inputTokens) {
+  const tokens = Number(inputTokens);
+  if (!row.longContextThreshold || !Number.isFinite(tokens) || tokens <= row.longContextThreshold) {
+    return { inputMultiplier: 1, outputMultiplier: 1, tier: "standard" };
+  }
+  return { inputMultiplier: 2, outputMultiplier: 1.5, tier: "long-context" };
+}
+
+function normalizedFallbackPrice(fxRate, match) {
+  const multiplier = priceToCnyMultiplier(FALLBACK_PRICE, fxRate);
+  return {
+    ...FALLBACK_PRICE,
+    cacheHit: FALLBACK_PRICE.cacheHit * multiplier,
+    input: FALLBACK_PRICE.input * multiplier,
+    output: FALLBACK_PRICE.output * multiplier,
+    cacheWrite: FALLBACK_PRICE.input * multiplier,
+    match,
+    estimated: true,
+  };
+}
+
+/**
+ * Normalize a provider-native list price to the internal CNY ledger.
+ * Chinese providers remain unchanged; USD prices are converted once using
+ * the configured USD -> CNY exchange rate.
+ */
+function priceToCnyMultiplier(row, fxRate) {
+  if (row.currency !== "USD") return 1;
+  const fx = Number(fxRate);
+  return Number.isFinite(fx) && fx > 0 ? fx : 7.2;
+}
+
+/**
+ * Return the DeepSeek time-of-use multiplier for a request timestamp.
+ * Other providers have no time-of-use price, so they keep a multiplier of 1.
+ */
+function deepSeekTimeOfUse(row, time) {
+  if (!row.offPeakMultiplier) return { multiplier: 1, estimated: false, ratePeriod: null };
+  const ms = Number(time);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return { multiplier: 1, estimated: true, ratePeriod: "peak (timestamp unavailable)" };
+  }
+  // Beijing is UTC+8 and has no daylight-saving changes. Shift first so both
+  // weekday and hour reflect the tariff definition, rather than the viewer's
+  // local time zone.
+  const date = new Date(ms + 8 * 60 * 60 * 1000);
+  const weekday = date.getUTCDay();
+  const hour = date.getUTCHours();
+  const beijingDay = date.toISOString().slice(0, 10);
+  const peak =
+    weekday >= 1 &&
+    weekday <= 5 &&
+    !CN_HOLIDAYS_2026.has(beijingDay) &&
+    ((hour >= 9 && hour < 12) || (hour >= 14 && hour < 18));
+  return peak
+    ? { multiplier: 1, estimated: false, ratePeriod: "peak" }
+    : { multiplier: row.offPeakMultiplier, estimated: false, ratePeriod: "off-peak" };
+}
+
+// DeepSeek excludes Chinese statutory holidays from the peak tariff. These
+// 2026 leave dates are the published State Council schedule. Other years keep
+// the documented weekday/time rule until their official calendars are added.
+const CN_HOLIDAYS_2026 = new Set([
+  "2026-01-01", "2026-01-02", "2026-01-03",
+  "2026-02-15", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22", "2026-02-23",
+  "2026-04-04", "2026-04-05", "2026-04-06",
+  "2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05",
+  "2026-06-19", "2026-06-20", "2026-06-21",
+  "2026-09-25", "2026-09-26", "2026-09-27",
+  "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07",
+]);
+
+/** CNY per 1M for one custom-price component (null when not set). */
+function customComponentCny(value, currency, fxRate) {
   if (value === null || value === undefined) return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
-  return currency === "CNY" ? n / fxRate : n;
+  return currency === "USD" ? n * fxRate : n;
 }
 
 /**
@@ -185,7 +314,7 @@ function customComponentUsd(value, currency, fxRate) {
  * Exact (case-insensitive) match first, then substring; longest pattern wins
  * so "glm-5.3-flash" beats "glm-5.3".
  */
-function matchCustomPrice(modelName, customPrices, fxRate) {
+function matchCustomPrice(modelName, customPrices, fxRate, fallbackPrice = FALLBACK_PRICE) {
   if (!Array.isArray(customPrices) || !customPrices.length || !modelName) return null;
   const name = String(modelName).toLowerCase();
   const bare = name.includes("/") ? name.split("/").pop() : name;
@@ -202,25 +331,29 @@ function matchCustomPrice(modelName, customPrices, fxRate) {
   }
   if (!best) return null;
   const fx = Number(fxRate) > 0 ? Number(fxRate) : 7.2;
-  const input = customComponentUsd(best.input, best.currency, fx);
-  const cacheHit = customComponentUsd(best.cacheHit, best.currency, fx);
-  const output = customComponentUsd(best.output, best.currency, fx);
-  // Missing components fall back to the official fallback row so partial
-  // price definitions still produce a full cost breakdown.
+  const input = customComponentCny(best.input, best.currency, fx);
+  const cacheHit = customComponentCny(best.cacheHit, best.currency, fx);
+  const output = customComponentCny(best.output, best.currency, fx);
+  // Missing components inherit the matched official row.  This matters for
+  // DeepSeek: a user may override just one rate while its other components
+  // still need the model's time-of-use price rather than Kimi's fallback.
+  const usesFallback = input === null || cacheHit === null || output === null;
   return {
     id: `custom:${best.model}`,
-    input: input ?? FALLBACK_PRICE.input,
-    cacheHit: cacheHit ?? FALLBACK_PRICE.cacheHit,
-    output: output ?? FALLBACK_PRICE.output,
+    input: input ?? fallbackPrice.input,
+    cacheHit: cacheHit ?? fallbackPrice.cacheHit,
+    output: output ?? fallbackPrice.output,
+    cacheWrite: input ?? fallbackPrice.cacheWrite ?? fallbackPrice.input,
     context: null,
-    estimated: false,
+    estimated: usesFallback && !!fallbackPrice.estimated,
     custom: true,
     match: best.model,
+    ratePeriod: fallbackPrice.ratePeriod,
   };
 }
 
 /**
- * Cost for one usage record, in USD.
+ * Cost for one usage record, in the internal CNY ledger currency.
  * usage fields from Kimi Code wire:
  *   inputOther, output, inputCacheRead, inputCacheCreation
  * Custom prices from settings take precedence over the official table.
@@ -234,18 +367,25 @@ function costForUsage(modelName, usage, options = {}) {
       settings = null;
     }
   }
-  const custom = settings ? matchCustomPrice(modelName, settings.customPrices, settings.fxRate) : null;
-  const price = custom || matchPrice(modelName);
   const u = usage || {};
+  const fxRate = Number(settings?.fxRate) > 0 ? Number(settings.fxRate) : 7.2;
   const inputOther = num(u.inputOther);
   const output = num(u.output);
   const cacheRead = num(u.inputCacheRead);
   const cacheCreate = num(u.inputCacheCreation);
-
+  const official = matchPrice(modelName, {
+    time: u.time ?? u.pricedAt ?? options.time,
+    fxRate,
+    inputTokens: inputOther + cacheRead + cacheCreate,
+  });
+  const custom = settings
+    ? matchCustomPrice(modelName, settings.customPrices, settings.fxRate, official)
+    : null;
+  const price = custom || official;
   const costInput = (inputOther / 1e6) * price.input;
   const costCacheRead = (cacheRead / 1e6) * price.cacheHit;
-  // Cache creation is not separately listed on platform pages; bill as input.
-  const costCacheCreate = (cacheCreate / 1e6) * price.input;
+  // GPT-5.6 and Astra publish cache-write rates; other providers inherit input.
+  const costCacheCreate = (cacheCreate / 1e6) * (price.cacheWrite ?? price.input);
   const costOutput = (output / 1e6) * price.output;
   const total = costInput + costCacheRead + costCacheCreate + costOutput;
 
@@ -268,20 +408,42 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function listPrices() {
-  return KIMI_PRICES.map((p) => ({
-    id: p.id,
-    cacheHit: p.cacheHit,
-    input: p.input,
-    output: p.output,
-    context: p.context,
-    unit: "USD / 1M tokens",
-    source: "https://platform.kimi.ai/",
-  }));
+function listPrices(options = {}) {
+  const rows = [];
+  for (const p of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES]) {
+    const add = (period, multiplier) => rows.push({
+      id: p.id,
+      cacheHit: p.cacheHit * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      cacheWrite: (p.cacheWrite ?? p.input) * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      input: p.input * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      output: p.output * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      context: p.context,
+      estimated: !!p.estimated,
+      period,
+      nativeCurrency: p.currency || "USD",
+      unit: `${p.currency || "USD"} / 1M tokens`,
+      source: p.offPeakMultiplier
+        ? "https://api-docs.deepseek.com/quick_start/pricing/"
+        : OPENAI_PRICES.includes(p)
+          ? "https://developers.openai.com/api/docs/pricing"
+          : ZHIPU_PRICES.includes(p)
+            ? "https://docs.bigmodel.cn/cn/guide/models"
+          : "https://platform.kimi.com/",
+    });
+    if (p.offPeakMultiplier) {
+      add("peak", 1);
+      add("offPeak", p.offPeakMultiplier);
+    } else {
+      add(null, 1);
+    }
+  }
+  return rows;
 }
 
 module.exports = {
   KIMI_PRICES,
+  DEEPSEEK_PRICES,
+  ZHIPU_PRICES,
   OPENAI_PRICES,
   FALLBACK_PRICE,
   matchPrice,

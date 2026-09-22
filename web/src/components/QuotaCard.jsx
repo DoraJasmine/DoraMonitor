@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Cloud quota card — 5-hour rolling window + weekly quota, each with a used
- * meter and the exact reset time. tool="kimi-code" (default) reads Kimi's
+ * remaining-quota meter and the exact reset time. tool="kimi-code" (default) reads Kimi's
  * usages API; tool="codex" reads the rate_limits snapshot extracted from
  * Codex rollout files.
  */
@@ -106,12 +106,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
           <div className="grid gap-4 sm:grid-cols-2">
             {windows.map((w) => {
               const used = Math.round(w.usedPercent);
-              const level =
-                used >= 100
-                  ? "bg-red-500"
-                  : used >= 70
-                    ? "bg-orange-400"
-                    : "bg-emerald-500";
+              const remainingPercent = Math.max(0, Math.min(100, 100 - used));
               const remaining = countdown(w.resetsAt, Date.now());
               return (
                 <div key={w.kind} className="space-y-2">
@@ -119,12 +114,14 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
                     <span className="text-sm font-medium">
                       {w.kind === "session" ? t("quota5h") : w.label || t("quotaWeekly")}
                     </span>
-                    <span className="text-sm font-semibold num">{used}%</span>
+                    <span className="text-sm font-semibold num">
+                      {remainingPercent}% {t("quotaRemaining")}
+                    </span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-secondary">
                     <div
-                      className={cn("h-full rounded-full transition-all", level)}
-                      style={{ width: `${Math.min(100, used)}%` }}
+                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${remainingPercent}%` }}
                     />
                   </div>
                   <div className="text-[11px] text-muted-foreground">

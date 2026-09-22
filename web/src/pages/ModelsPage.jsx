@@ -689,7 +689,7 @@ function ModelDialog({ t, open, providerId, row, onClose, onSaved }) {
 // Page
 // ---------------------------------------------------------------------------
 
-export default function ModelsPage({ home, t }) {
+export default function ModelsPage({ home, t, onPricingSaved }) {
   const [config, setConfig] = useState(null);
   const [catalog, setCatalog] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -855,7 +855,7 @@ export default function ModelsPage({ home, t }) {
         </TabsList>
       </Tabs>
 
-      {tab === "pricing" ? <PricingTab t={t} /> : null}
+      {tab === "pricing" ? <PricingTab t={t} onSaved={onPricingSaved} /> : null}
 
       {!config ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">

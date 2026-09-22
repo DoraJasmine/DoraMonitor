@@ -30,7 +30,7 @@ function record(overrides = {}) {
     output: 5,
     inputCacheRead: 20,
     inputCacheCreation: 0,
-    costUsd: 0,
+    costCny: 0,
     costEstimated: false,
     priceId: null,
     credits: null,
@@ -200,6 +200,7 @@ test("sync: summary build/merge round-trip preserves tokens", () => {
   const k3 = peerRecords.find((r) => r.model === "k3");
   assert.strictEqual(k3.inputOther, 100);
   assert.strictEqual(k3.inputCacheRead, 200);
+  assert.strictEqual(k3.requests, 1);
   const qc = peerRecords.find((r) => r.tool === "qoder-cn-cli");
   assert.strictEqual(qc.credits, 2.5);
 });

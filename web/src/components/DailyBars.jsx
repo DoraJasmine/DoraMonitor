@@ -76,7 +76,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
       totals: daily.map((d) => ({
         date: d.date,
         totalTokens: d.totalTokens || 0,
-        costUsd: d.costUsd || 0,
+        cost: d.cost || 0,
         requests: d.requests || 0,
         cacheHitRate: d.cacheHitRate || 0,
       })),
@@ -385,7 +385,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
             <div className="mb-1 font-medium text-foreground">{tip.date}</div>
             <div className="text-muted-foreground">
               {t("dailyTotal") || "Total"} · {fmtTokens(tip.totalTokens)} ·{" "}
-              {fmtMoney(tip.costUsd, moneyCfg)}
+              {fmtMoney(tip.cost, moneyCfg)}
               {tip.cacheHitRate != null
                 ? ` · hit ${fmtPct(tip.cacheHitRate)}`
                 : ""}

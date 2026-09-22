@@ -155,11 +155,11 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 「模型 → 定价与货币」页：
 
 - **显示货币**：USD 或 CNY；CNY 按可配置汇率（默认 7.2）由内部 USD 成本换算显示。
-- **自定义模型定价**：为官方价格表没有的模型（GLM、DeepSeek 等）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
+- **自定义模型定价**：为官方价格表没有的模型（如 GLM）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
 
 配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
 
-- Kimi 模型按 [Kimi API Platform](https://platform.kimi.ai/) 官方价；Codex 的 OpenAI 模型按 OpenAI 官方价（GPT-6 Astra、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`）。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
+- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 OpenAI 美元官方价（GPT-6 Astra、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
 
 QoderCN CLI 仅记录 credits 计费（日志中 token 字段全为 0），看板会显示 credits 提示并以 credits 作为其费用口径。
 
@@ -182,7 +182,7 @@ src/
   server.js          # HTTP API + 静态资源（gzip + immutable 缓存）
 ```
 
-统一记录模型：`{ tool, time, model, inputOther, output, inputCacheRead, inputCacheCreation, costUsd, credits, project, session }`。
+统一记录模型：`{ tool, time, model, inputOther, output, inputCacheRead, inputCacheCreation, costCny, credits, project, session }`。内部统一以人民币记账；Web API 在响应边界按设置输出 `cost`（人民币原值或人民币金额除以汇率后的美元值）。
 
 新增工具：在 `src/providers/` 写一个 `{ id, label, defaultHome, isAvailable, scan }` 模块并注册进 `index.js` 的 `PROVIDERS` 数组即可，聚合、API、UI 自动生效。
 

@@ -49,12 +49,13 @@ function providerRowToRecord(row, settings) {
   rec.session = row.session_id ? String(row.session_id) : null;
   rec.sessionHint = { session: rec.session };
   const cost = costForUsage(rec.model, {
+    time: rec.time,
     inputOther: rec.inputOther,
     output: rec.output,
     inputCacheRead: rec.inputCacheRead,
     inputCacheCreation: rec.inputCacheCreation,
   }, { settings });
-  rec.costUsd = cost.total;
+  rec.costCny = cost.total;
   rec.costEstimated = cost.estimated;
   rec.priceId = cost.priceId;
   return rec;

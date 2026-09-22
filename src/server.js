@@ -259,10 +259,6 @@ async function handleApi(req, res, url, cliHome) {
     });
   }
 
-  if (url.pathname === "/api/prices") {
-    return json(res, 200, { prices: listPrices() });
-  }
-
   if (url.pathname === "/api/summary") {
     const force = url.searchParams.get("refresh") === "1";
     const collected = collect({ force });
@@ -312,14 +308,27 @@ async function handleApi(req, res, url, cliHome) {
       tool: m.tool,
       requests: m.requests,
       totalTokens: m.totalTokens,
-      costUsd: m.costUsd,
+      cost: toDisplay(m.costCny, settingsNow),
       credits: m.credits,
       costEstimated: m.costEstimated,
       cacheHitRate: m.cacheHitRate,
     }));
 
     const providerList = listProviders();
-    const byToolRange = aggregateByTool(aggRecords, range, toolMeta);
+    // Aggregates intentionally retain CNY internally so one exchange-rate
+    // conversion is applied here, at the API/display boundary.  This keeps
+    // the price table, model statistics, charts and recent rows in the same
+    // selected currency without mutating cached accounting values.
+    const displayAggregate = displayCosts(rangeAgg, settingsNow);
+    const displayHeatmap = {
+      ...heatmap,
+      cells: (heatmap.cells || []).map((cell) => displayCost(cell, settingsNow)),
+    };
+    const byToolRange = aggregateByTool(aggRecords, range, toolMeta)
+      .map((row) => displayCost(row, settingsNow));
+    const displayRangeTotals = Object.fromEntries(
+      Object.entries(rangeTotals).map(([key, totals]) => [key, displayCost(totals, settingsNow)])
+    );
 
     return json(res, 200, {
       valid: true,
@@ -331,7 +340,7 @@ async function handleApi(req, res, url, cliHome) {
       tool,
       tools: providerList,
       byTool: byToolRange,
-      stats: rangeAgg,
+      stats: displayAggregate,
       toolEvents: aggregateToolEvents(collected.events, range, Date.now(), tool),
       device: deviceParam,
       devices: [
@@ -339,10 +348,10 @@ async function handleApi(req, res, url, cliHome) {
         ...peerDevices.map((d) => ({ id: d, label: d, available: true, peer: true })),
       ],
       sync: { enabled: syncOn, peers: peerDevices.length },
-      heatmap,
+      heatmap: displayHeatmap,
       allModels,
       allModelCount: allModels.length,
-      rangeTotals,
+      rangeTotals: displayRangeTotals,
     });
   }
 
@@ -353,7 +362,20 @@ async function handleApi(req, res, url, cliHome) {
   if (url.pathname === "/api/settings" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      const saved = saveSettings(body);
+      const current = loadSettings();
+      const merged = {
+        ...current,
+        ...body,
+        sync: body.sync
+          ? {
+              ...current.sync,
+              ...body.sync,
+              ssh: { ...current.sync?.ssh, ...body.sync.ssh },
+              webdav: { ...current.sync?.webdav, ...body.sync.webdav },
+            }
+          : current.sync,
+      };
+      const saved = saveSettings(merged);
       // Costs are computed during scans — force a full rescan so saved
       // custom prices take effect immediately.
       invalidateCollect();
@@ -369,13 +391,15 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/prices") {
     const settings = loadSettings();
-    const prices = listPrices().map((p) => ({
+    const prices = listPrices({ fxRate: settings.fxRate }).map((p) => ({
       ...p,
-      // display currency values alongside the USD list price
+      // `p.*` is normalized to internal CNY; `display` is the
+      // user-selected currency and is what the web price table renders.
       display: {
         currency: settings.currency,
         symbol: settings.currencySymbol,
         cacheHit: toDisplay(p.cacheHit, settings),
+        cacheWrite: toDisplay(p.cacheWrite, settings),
         input: toDisplay(p.input, settings),
         output: toDisplay(p.output, settings),
       },
@@ -607,6 +631,26 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   json(res, 404, { error: "not_found" });
+}
+
+/** Return a display-only copy; never mutate cached internal CNY aggregates. */
+function displayCost(row, settings) {
+  const { costCny = 0, ...rest } = row || {};
+  return { ...rest, cost: toDisplay(costCny, settings) };
+}
+
+function displayCosts(aggregateResult, settings) {
+  return {
+    ...aggregateResult,
+    totals: displayCost(aggregateResult.totals, settings),
+    daily: (aggregateResult.daily || []).map((row) => displayCost(row, settings)),
+    models: (aggregateResult.models || []).map((row) => displayCost(row, settings)),
+    recent: (aggregateResult.recent || []).map((row) => displayCost(row, settings)),
+    dailyByModel: {
+      ...aggregateResult.dailyByModel,
+      totals: (aggregateResult.dailyByModel?.totals || []).map((row) => displayCost(row, settings)),
+    },
+  };
 }
 
 function createServer(cliHome) {

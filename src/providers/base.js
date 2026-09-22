@@ -11,7 +11,7 @@ const path = require("path");
  * {
  *   tool, time, model, modelDisplay, modelResolved,
  *   inputOther, output, inputCacheRead, inputCacheCreation,
- *   costUsd, costEstimated, priceId, credits,
+ *   costCny, costEstimated, priceId, credits,
  *   project, session, sessionHint,
  * }
  * Only metadata (model, time, tokens, paths) is ever read — never prompts,
@@ -145,7 +145,7 @@ function emptyRecord(tool) {
     output: 0,
     inputCacheRead: 0,
     inputCacheCreation: 0,
-    costUsd: 0,
+    costCny: 0,
     costEstimated: false,
     priceId: null,
     credits: null,

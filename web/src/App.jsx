@@ -116,8 +116,8 @@ export default function App() {
   );
   const [syncing, setSyncing] = useState(false);
   const [settings, setSettings] = useState({
-    currency: "USD",
-    currencySymbol: "$",
+    currency: "CNY",
+    currencySymbol: "¥",
     fxRate: 7.2,
   });
   const [loading, setLoading] = useState(false);
@@ -208,8 +208,8 @@ export default function App() {
     fetchSettings()
       .then((s) =>
         setSettings({
-          currency: s.currency || "USD",
-          currencySymbol: s.currencySymbol || "$",
+          currency: s.currency || "CNY",
+          currencySymbol: s.currencySymbol || "¥",
           fxRate: Number(s.fxRate) || 7.2,
         })
       )
@@ -258,6 +258,20 @@ export default function App() {
   const switchTool = (next) => {
     setTool(next);
   };
+
+  const handlePricingSaved = useCallback(async () => {
+    const [priceData, savedSettings] = await Promise.all([
+      fetchPrices(),
+      fetchSettings(),
+    ]);
+    setPrices(priceData.prices || []);
+    setSettings({
+      currency: savedSettings.currency || "CNY",
+      currencySymbol: savedSettings.currencySymbol || "¥",
+      fxRate: Number(savedSettings.fxRate) || 7.2,
+    });
+    await loadSummary({ refresh: true });
+  }, [loadSummary]);
 
   const totals = data?.stats?.totals || {};
   const stats = data?.stats || { daily: [], models: [], recent: [] };
@@ -377,7 +391,7 @@ export default function App() {
         value: fmtTokens(totals.totalTokens),
         sub: fmtInt(totals.totalTokens, locale),
       },
-      { title: `${t("estCost")} (${settings.currencySymbol})`, value: fmtMoney(totals.costUsd, moneyCfg) },
+      { title: `${t("estCost")} (${settings.currencySymbol})`, value: fmtMoney(totals.cost, moneyCfg) },
     ];
     if ((totals.credits || 0) > 0) {
       items.push({
@@ -582,7 +596,7 @@ export default function App() {
         <SessionsPage home={home} t={t} locale={locale} />
       ) : null}
 
-      {page === "models" ? <ModelsPage home={home} t={t} /> : null}
+      {page === "models" ? <ModelsPage home={home} t={t} onPricingSaved={handlePricingSaved} /> : null}
 
       {page === "usage" ? (
       <>
@@ -739,7 +753,7 @@ export default function App() {
                 {fmtTokens(tot.totalTokens || 0)}
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground num">
-                {fmtInt(tot.requests || 0, locale)} · {fmtMoney(tot.costUsd || 0, moneyCfg)} ·{" "}
+                {fmtInt(tot.requests || 0, locale)} · {fmtMoney(tot.cost || 0, moneyCfg)} ·{" "}
                 {fmtPct(tot.cacheHitRate || 0)}
               </div>
             </motion.button>
@@ -960,7 +974,7 @@ export default function App() {
                         <TableCell className="text-right num">
                           {m.credits > 0
                             ? `${fmtCredits(m.credits)} cr`
-                            : fmtMoney(m.costUsd, moneyCfg)}
+                            : fmtMoney(m.cost, moneyCfg)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -1025,7 +1039,7 @@ export default function App() {
                         {fmtTokens(m.totalTokens)}
                       </TableCell>
                       <TableCell className="text-right num">
-                        {fmtMoney(m.costUsd, moneyCfg)}
+                        {fmtMoney(m.cost, moneyCfg)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1200,7 +1214,7 @@ export default function App() {
                         <TableCell className="text-right num">
                           {r.credits > 0
                             ? `${fmtCredits(r.credits)} cr`
-                            : fmtMoney(r.costUsd, moneyCfg)}
+                            : fmtMoney(r.cost, moneyCfg)}
                         </TableCell>
                       </TableRow>
                     ))
@@ -1247,7 +1261,10 @@ export default function App() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t("model")}</TableHead>
+                <TableHead>{t("nativeCurrency")}</TableHead>
+                <TableHead>{t("pricePeriod")}</TableHead>
                 <TableHead className="text-right">{t("cacheHit")}</TableHead>
+                <TableHead className="text-right">{t("cacheWrite")}</TableHead>
                 <TableHead className="text-right">{t("inputPrice")}</TableHead>
                 <TableHead className="text-right">{t("outputPrice")}</TableHead>
                 <TableHead className="text-right">{t("context")}</TableHead>
@@ -1255,11 +1272,27 @@ export default function App() {
             </TableHeader>
             <TableBody>
               {prices.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.id}</TableCell>
-                  <TableCell className="text-right num">${p.cacheHit}</TableCell>
-                  <TableCell className="text-right num">${p.input}</TableCell>
-                  <TableCell className="text-right num">${p.output}</TableCell>
+                <TableRow key={`${p.id}-${p.period || "standard"}`}>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {p.id}
+                      {p.estimated ? <Badge variant="warn">{t("estimated")}</Badge> : null}
+                    </span>
+                  </TableCell>
+                  <TableCell>{p.nativeCurrency || "—"}</TableCell>
+                  <TableCell>{p.period ? t(`price${p.period[0].toUpperCase()}${p.period.slice(1)}`) : "—"}</TableCell>
+                  <TableCell className="text-right num">
+                    {fmtMoney(p.display?.cacheHit ?? p.cacheHit, moneyCfg)}
+                  </TableCell>
+                  <TableCell className="text-right num">
+                    {fmtMoney(p.display?.cacheWrite ?? p.cacheWrite, moneyCfg)}
+                  </TableCell>
+                  <TableCell className="text-right num">
+                    {fmtMoney(p.display?.input ?? p.input, moneyCfg)}
+                  </TableCell>
+                  <TableCell className="text-right num">
+                    {fmtMoney(p.display?.output ?? p.output, moneyCfg)}
+                  </TableCell>
                   <TableCell className="text-right num">
                     {fmtInt(p.context, locale)}
                   </TableCell>

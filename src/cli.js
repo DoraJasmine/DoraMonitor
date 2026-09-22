@@ -107,12 +107,12 @@ function toolTotals(records, range) {
     if (start && (!r.time || r.time < start)) continue;
     const id = r.tool || "unknown";
     if (!byTool.has(id)) {
-      byTool.set(id, { tokens: 0, requests: 0, costUsd: 0, credits: 0, cacheRead: 0, input: 0 });
+      byTool.set(id, { tokens: 0, requests: 0, costCny: 0, credits: 0, cacheRead: 0, input: 0 });
     }
     const t = byTool.get(id);
     t.tokens += r.inputOther + r.output + r.inputCacheRead + r.inputCacheCreation;
     t.requests += 1;
-    t.costUsd += r.costUsd || 0;
+    t.costCny += r.costCny || 0;
     t.credits += r.credits || 0;
     t.cacheRead += r.inputCacheRead;
     t.input += r.inputOther + r.inputCacheRead + r.inputCacheCreation;
@@ -135,14 +135,14 @@ function renderLine(totals, opts) {
 
   for (const [id, t] of totals) {
     if (id === "kimi-code") {
-      kimiCost = t.costUsd;
+      kimiCost = t.costCny;
       input = t.input;
       cacheRead = t.cacheRead;
     }
     const label = SHORT_LABEL[id] || id;
     const bits = [];
     if (t.tokens > 0) bits.push(fmtTokens(t.tokens));
-    if (t.costUsd > 0) bits.push(`${opts.currencySymbol}${t.costUsd.toFixed(2)}`);
+    if (t.costCny > 0) bits.push(`${opts.currencySymbol}${t.costCny.toFixed(2)}`);
     if (t.credits > 0) bits.push(`${t.credits.toFixed(0)}cr`);
     if (!bits.length) continue;
     parts.push(`${label}:${bits.join(" ")}`);
@@ -186,11 +186,9 @@ function renderOnce(opts) {
     allRecords = [...records, ...peerRecordsCached()];
   }
   const totals = toolTotals(allRecords, opts.range);
-  // Costs are computed in USD internally; convert for display and leverage.
-  if (settings.currency === "CNY") {
-    for (const t of totals.values()) {
-      t.costUsd = toDisplay(t.costUsd, settings);
-    }
+  // Costs are computed in CNY internally; convert once for display/leverage.
+  for (const t of totals.values()) {
+    t.costCny = toDisplay(t.costCny, settings);
   }
   const effOpts = { ...opts, planPrice, currencySymbol };
   if (opts.tool !== "all") {

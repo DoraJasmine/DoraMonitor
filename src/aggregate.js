@@ -20,8 +20,10 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
     if (!byDay.has(day)) byDay.set(day, emptyTotals());
     addTo(byDay.get(day), r);
 
-    // Group by raw model id so provider/model variants stay distinct
-    const mk = r.model || r.modelDisplay || "unknown";
+    // A model id can exist under more than one tool/provider.  Keeping the
+    // provider in the grouping key prevents their requests and costs from
+    // being merged while the UI shows only whichever tool appeared first.
+    const mk = modelKey(r);
     if (!byModel.has(mk)) {
       byModel.set(mk, {
         model: r.model,
@@ -78,7 +80,7 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
     inputCacheCreation: r.inputCacheCreation,
     totalTokens:
       r.inputOther + r.output + r.inputCacheRead + r.inputCacheCreation,
-    costUsd: r.costUsd,
+    costCny: r.costCny,
     credits: r.credits,
     costEstimated: r.costEstimated,
     priceId: r.priceId,
@@ -128,22 +130,28 @@ function emptyTotals() {
     output: 0,
     inputCacheRead: 0,
     inputCacheCreation: 0,
-    costUsd: 0,
+    costCny: 0,
     credits: 0,
     totalTokens: 0,
   };
 }
 
 function addTo(t, r) {
-  t.requests += 1;
+  t.requests += requestCount(r);
   t.inputOther += r.inputOther;
   t.output += r.output;
   t.inputCacheRead += r.inputCacheRead;
   t.inputCacheCreation += r.inputCacheCreation;
-  t.costUsd += r.costUsd || 0;
+  t.costCny += r.costCny || 0;
   t.credits += r.credits || 0;
   t.totalTokens =
     t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
+}
+
+/** A synced daily record represents many original requests; local records one. */
+function requestCount(r) {
+  const n = Number(r && r.requests);
+  return Number.isFinite(n) && n >= 0 ? n : 1;
 }
 
 function hitRate(t) {
@@ -164,7 +172,7 @@ function buildDailyByModel(daily, models, byDayModel) {
   }
 
   const top = models.slice(0, DAILY_MODEL_SERIES);
-  const topKeys = new Set(top.map((m) => m.model || m.modelDisplay || "unknown"));
+  const topKeys = new Set(top.map(modelKey));
   const hasOthers = models.length > top.length;
 
   const start = parseDay(daily[0].date);
@@ -192,14 +200,14 @@ function buildDailyByModel(daily, models, byDayModel) {
     return {
       date,
       totalTokens: row ? row.totalTokens || 0 : 0,
-      costUsd: row ? row.costUsd || 0 : 0,
+      costCny: row ? row.costCny || 0 : 0,
       requests: row ? row.requests || 0 : 0,
       cacheHitRate: row ? row.cacheHitRate || 0 : 0,
     };
   });
 
   const series = top.map((m) => {
-    const key = m.model || m.modelDisplay || "unknown";
+    const key = modelKey(m);
     return {
       key,
       label: m.model || m.modelDisplay || key,
@@ -232,6 +240,12 @@ function buildDailyByModel(daily, models, byDayModel) {
   return { dates, series, totals };
 }
 
+function modelKey(record) {
+  const tool = record && record.tool ? record.tool : "";
+  const model = record && (record.model || record.modelDisplay) ? record.model || record.modelDisplay : "unknown";
+  return tool ? `${tool}\u0000${model}` : model;
+}
+
 function parseDay(yyyyMmDd) {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
   return new Date(y, m - 1, d).getTime();
@@ -256,7 +270,7 @@ function summaryAllRanges(records, nowMs = Date.now(), tool = "all") {
 
 /**
  * Per-tool totals for a range — drives the tool switcher badges.
- * Returns [{id, label, color, requests, totalTokens, costUsd, credits}].
+ * Returns [{id, label, color, requests, totalTokens, costCny, credits}].
  */
 function aggregateByTool(records, range, toolMeta, nowMs = Date.now()) {
   const filtered = filterByRange(records, range, nowMs);
@@ -274,18 +288,18 @@ function aggregateByTool(records, range, toolMeta, nowMs = Date.now()) {
         output: 0,
         inputCacheRead: 0,
         inputCacheCreation: 0,
-        costUsd: 0,
+        costCny: 0,
         credits: 0,
         totalTokens: 0,
       });
     }
     const t = byTool.get(id);
-    t.requests += 1;
+    t.requests += requestCount(r);
     t.inputOther += r.inputOther;
     t.output += r.output;
     t.inputCacheRead += r.inputCacheRead;
     t.inputCacheCreation += r.inputCacheCreation;
-    t.costUsd += r.costUsd || 0;
+    t.costCny += r.costCny || 0;
     t.credits += r.credits || 0;
     t.totalTokens =
       t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
@@ -333,7 +347,7 @@ function buildHeatmap(records, nowMs = Date.now(), weeks = 53, tool = "all") {
       weekIndex: Math.floor((cursor.getTime() - start.getTime()) / (7 * 24 * 3600_000)),
       requests: t.requests || 0,
       totalTokens,
-      costUsd: t.costUsd || 0,
+      costCny: t.costCny || 0,
       cacheHitRate: hitRate(t),
     });
     cursor.setDate(cursor.getDate() + 1);

@@ -85,8 +85,8 @@ test("codex provider: parses per-response usage, splits cached input, resolves m
   assert.strictEqual(r.project, "G:\\proj");
   assert.strictEqual(r.session, "sess-1");
   assert.ok(r.time > 0);
-  // terra price: (600*2 + 400*0.2 + 50*2 + 200*12) / 1e6
-  assert.ok(Math.abs(r.costUsd - 0.00378) < 1e-9, `costUsd=${r.costUsd}`);
+  // Terra cache writes are billed at $2.50/M: (600*2 + 400*.2 + 50*2.5 + 200*12) / 1e6
+  assert.ok(Math.abs(r.costCny - 0.003805 * 7.2) < 1e-9, `costCny=${r.costCny}`);
   assert.strictEqual(r.costEstimated, false);
   assert.strictEqual(r.priceId, "gpt-5.6-terra");
 });
@@ -198,9 +198,11 @@ test("codex provider: keeps newest quota across files and archived_sessions", ()
 
 test("openai price table: known models and estimate flags", () => {
   assert.equal(matchPrice("gpt-6-astra").id, "gpt-6-astra");
-  assert.equal(matchPrice("gpt-5.6-luna").output, 1.2);
-  assert.equal(matchPrice("GPT-5.6-Terra").input, 2.0);
-  assert.equal(matchPrice("gpt-5.6").id, "gpt-5.6");
+  assert.equal(matchPrice("gpt-5.6-luna").output, 1.2 * 7.2);
+  assert.equal(matchPrice("GPT-5.6-Terra").input, 2.0 * 7.2);
+  assert.equal(matchPrice("gpt-5.6").id, "gpt-5.6-sol");
+  assert.equal(matchPrice("gpt-5.6-sol").input, 4.0 * 7.2);
+  assert.equal(matchPrice("gpt-5.6-sol").cacheWrite, 5.0 * 7.2);
   assert.equal(matchPrice("codex-auto-review").estimated, true);
   assert.equal(matchPrice("gpt-6-astra").estimated, false);
 });

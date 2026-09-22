@@ -104,7 +104,7 @@ const provider = {
           const modelRaw = obj.model || "unknown";
           const resolved = resolveModel(modelRaw, modelMap);
           const pricingModel = resolved.resolved || modelRaw;
-          const cost = costForUsage(pricingModel, usage, { settings });
+          const cost = costForUsage(pricingModel, { ...usage, time: n(obj.time) }, { settings });
 
           const rec = emptyRecord("kimi-code");
           rec.time = n(obj.time);
@@ -115,7 +115,7 @@ const provider = {
           rec.output = n(usage.output);
           rec.inputCacheRead = n(usage.inputCacheRead);
           rec.inputCacheCreation = n(usage.inputCacheCreation);
-          rec.costUsd = cost.total;
+          rec.costCny = cost.total;
           rec.costEstimated = cost.estimated;
           rec.priceId = cost.priceId;
           // path only for session grouping — basename chain, no content

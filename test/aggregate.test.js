@@ -14,7 +14,7 @@ function rec(partial) {
     output: 50,
     inputCacheRead: 200,
     inputCacheCreation: 0,
-    costUsd: 0.01,
+    costCny: 0.01,
     costEstimated: false,
     priceId: "kimi-k2.6",
     ...partial,
@@ -104,5 +104,25 @@ describe("aggregate", () => {
     const keys = s.dailyByModel.series.map((x) => x.key);
     assert.ok(keys.includes("a/model-1"));
     assert.ok(keys.includes("b/model-2"));
+  });
+
+  it("keeps requests separate when the same model is used by different tools", () => {
+    const now = Date.parse("2026-07-26T12:00:00Z");
+    const s = aggregate([
+      rec({ time: now, tool: "kimi-code", model: "deepseek-flash" }),
+      rec({ time: now, tool: "codex", model: "deepseek-flash" }),
+    ], "all", now);
+    assert.equal(s.models.length, 2);
+    assert.deepEqual(s.models.map((m) => [m.tool, m.requests]).sort(), [
+      ["codex", 1],
+      ["kimi-code", 1],
+    ]);
+  });
+
+  it("uses the preserved request count in a synced daily record", () => {
+    const now = Date.parse("2026-07-26T12:00:00Z");
+    const s = aggregate([rec({ time: now, requests: 37 })], "all", now);
+    assert.equal(s.totals.requests, 37);
+    assert.equal(s.models[0].requests, 37);
   });
 });

@@ -118,12 +118,13 @@ function rowToRecord(row, settings) {
   rec.project = project === "." ? null : project || null;
   rec.sessionHint = { session: rec.session, project: rec.project };
   const cost = costForUsage(rec.model, {
+    time: rec.time,
     inputOther: rec.inputOther,
     output: rec.output,
     inputCacheRead: rec.inputCacheRead,
     inputCacheCreation: rec.inputCacheCreation,
   }, { settings });
-  rec.costUsd = cost.total;
+  rec.costCny = cost.total;
   rec.costEstimated = cost.estimated;
   rec.priceId = cost.priceId;
   return rec;

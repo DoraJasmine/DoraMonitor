@@ -105,7 +105,7 @@ export function Heatmap({ heatmap, locale = "zh", t, moneyCfg }) {
                       );
                     }
                     const level = cell.level ?? 0;
-                    const title = `${cell.date} · ${fmtTokens(cell.totalTokens)} · ${cell.requests} ${t("requests")} · ${fmtMoney(cell.costUsd, moneyCfg)} · ${t("cacheHitRate")} ${fmtPct(cell.cacheHitRate)}`;
+                    const title = `${cell.date} · ${fmtTokens(cell.totalTokens)} · ${cell.requests} ${t("requests")} · ${fmtMoney(cell.cost, moneyCfg)} · ${t("cacheHitRate")} ${fmtPct(cell.cacheHitRate)}`;
                     return (
                       <div
                         key={cell.date}

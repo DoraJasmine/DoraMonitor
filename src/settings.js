@@ -9,11 +9,10 @@ const path = require("path");
  * Stored at ~/.doramonitor/config.json (best-effort; defaults on any
  * read/write failure so the dashboard never breaks because of config).
  *
- * Cost model: token costs are computed in USD internally (official Kimi
- * prices); custom prices entered in another currency are converted to USD at
- * the configured fx rate before matching. The display layer converts USD
- * costs to the display currency with the same rate, so changing the rate
- * keeps everything consistent.
+ * Cost model: token costs are normalized to CNY in the internal `costCny`
+ * field. Domestic providers remain at their official CNY prices; USD-only
+ * providers are converted once using fxRate. Every output then displays CNY
+ * unchanged or divides by fxRate for USD.
  *
  * customPrices entry:
  *   { model: "glm-5.3", input: 6.5, cacheHit: 1.3, output: 27,
@@ -22,8 +21,8 @@ const path = require("path");
  */
 
 const DEFAULTS = {
-  currency: "USD", // display currency: "USD" | "CNY"
-  currencySymbol: "$", // display symbol (auto-set from currency, overridable)
+  currency: "CNY", // display currency: "CNY" | "USD"
+  currencySymbol: "¥", // display symbol (auto-set from currency, overridable)
   fxRate: 7.2, // USD -> CNY
   customPrices: [], // see module doc
   sync: {
@@ -109,7 +108,7 @@ function sanitizeSettings(raw) {
         input: posNum(p.input),
         cacheHit: posNum(p.cacheHit),
         output: posNum(p.output),
-        currency: p.currency === "CNY" ? "CNY" : "USD",
+        currency: p.currency === "USD" ? "USD" : "CNY",
         label: String(p.label || "").trim().slice(0, 120),
       };
       if (entry.input === null && entry.cacheHit === null && entry.output === null) continue;
@@ -156,10 +155,12 @@ function saveSettings(raw) {
   return data;
 }
 
-/** Cost in USD -> display currency value (number, no symbol). */
-function toDisplay(usdCost, settings) {
+/** Cost in internal CNY -> selected display-currency value (no symbol). */
+function toDisplay(cnyCost, settings) {
   const s = settings || loadSettings();
-  return s.currency === "CNY" ? usdCost * s.fxRate : usdCost;
+  if (s.currency !== "USD") return cnyCost;
+  const fx = Number(s.fxRate);
+  return cnyCost / (Number.isFinite(fx) && fx > 0 ? fx : DEFAULTS.fxRate);
 }
 
 module.exports = {

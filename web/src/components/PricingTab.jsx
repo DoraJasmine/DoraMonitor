@@ -30,10 +30,11 @@ import { fetchSettings, saveSettings } from "@/lib/backend";
 /**
  * Pricing & currency settings tab.
  *
- * - Display currency: USD (native price table) or CNY (converted at fxRate).
+ * - Internal ledger currency: CNY. Domestic prices stay unchanged; OpenAI's
+ *   USD list price is converted to CNY at fxRate. USD display divides by it.
  * - Custom model prices: matched case-insensitively (exact first, then
  *   substring, longest pattern wins) and entered in either currency; the
- *   backend converts to USD internally and recalculates all costs on save.
+ *   backend converts to CNY internally and recalculates all costs on save.
  */
 
 const EMPTY_ROW = { model: "", input: "", cacheHit: "", output: "", currency: "CNY" };
@@ -49,7 +50,7 @@ export function PricingTab({ t, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [error, setError] = useState(null);
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState("CNY");
   const [fxRate, setFxRate] = useState("7.2");
   const [rows, setRows] = useState([]);
 
@@ -58,7 +59,7 @@ export function PricingTab({ t, onSaved }) {
     setError(null);
     try {
       const s = await fetchSettings();
-      setCurrency(s.currency || "USD");
+      setCurrency(s.currency || "CNY");
       setFxRate(String(s.fxRate || 7.2));
       setRows(
         (s.customPrices || []).map((p) => ({
@@ -66,7 +67,7 @@ export function PricingTab({ t, onSaved }) {
           input: p.input ?? "",
           cacheHit: p.cacheHit ?? "",
           output: p.output ?? "",
-          currency: p.currency || "USD",
+          currency: p.currency || "CNY",
         }))
       );
     } catch (e) {
@@ -157,20 +158,18 @@ export function PricingTab({ t, onSaved }) {
               </SelectContent>
             </Select>
           </div>
-          {currency === "CNY" ? (
-            <div className="w-[220px] space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                {t("fxRateLabel")}
-              </span>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={fxRate}
-                onChange={(e) => setFxRate(e.target.value)}
-              />
-            </div>
-          ) : null}
+          <div className="w-[220px] space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t("fxRateLabel")}
+            </span>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={fxRate}
+              onChange={(e) => setFxRate(e.target.value)}
+            />
+          </div>
         </CardContent>
       </Card>
 

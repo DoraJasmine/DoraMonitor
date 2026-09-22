@@ -14,7 +14,7 @@ describe("buildHeatmap", () => {
         output: 100,
         inputCacheRead: 0,
         inputCacheCreation: 0,
-        costUsd: 0.01,
+        costCny: 0.01,
       },
       {
         time: now - 2 * 24 * 3600_000,
@@ -22,7 +22,7 @@ describe("buildHeatmap", () => {
         output: 500,
         inputCacheRead: 1000,
         inputCacheCreation: 0,
-        costUsd: 0.05,
+        costCny: 0.05,
       },
     ];
     const hm = buildHeatmap(records, now, 4);
