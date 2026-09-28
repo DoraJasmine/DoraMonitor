@@ -115,8 +115,12 @@ Set-Content -Path $vbs -Value $line -Encoding ASCII
 $daemonAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wscript.exe" -Argument "`"$vbs`""
 Register-ScheduledTask -TaskName "doramonitor-daemon" -Action $daemonAction -Trigger $trigger -Force | Out-Null
 if ($WithWeb) {
-  $webAction = New-ScheduledTaskAction -Execute $Node -Argument "`"$InstallDir\src\server.js`" --host 127.0.0.1 --port 3847 --no-open"
-  Register-ScheduledTask -TaskName "doramonitor-web" -Action $webAction -Trigger $trigger -Force | Out-Null
+  $webVbs = "$InstallDir\web-hidden.vbs"
+  $webLine = ('CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\server.js"" --host 127.0.0.1 --port 3847 --no-open", 0, True' -f $Node, $InstallDir) + "`r`n" + 'WScript.Quit 1'
+  Set-Content -Path $webVbs -Value $webLine -Encoding ASCII
+  $webAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wscript.exe" -Argument "`"$webVbs`""
+  $webSettings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+  Register-ScheduledTask -TaskName "doramonitor-web" -Action $webAction -Trigger $trigger -Settings $webSettings -Force | Out-Null
 }
 
 # ---------- 7. PATH 垫片：任意 PowerShell 直接敲 doramonitor ----------
@@ -124,7 +128,8 @@ Info "Adding doramonitor to PATH (WindowsApps shim)..."
 $shimDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
 New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
 $shim = "$shimDir\doramonitor.cmd"
-"@echo off`r`n\"$Node\" \"$InstallDir\src\doramonitor.js\" %*`r\n" | Out-File -FilePath $shim -Encoding ascii
+$shimContent = "@echo off`r`n" + ('"{0}" "{1}\src\doramonitor.js" %*' -f $Node, $InstallDir) + "`r`n"
+$shimContent | Out-File -FilePath $shim -Encoding ascii
 
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green

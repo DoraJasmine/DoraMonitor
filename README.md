@@ -159,7 +159,7 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 
 配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
 
-- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 OpenAI 美元官方价（GPT-6 Astra、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
+- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 [OpenAI 官方美元价](https://developers.openai.com/api/docs/pricing)（GPT-6 Astra/Sol/Luna、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
 
 QoderCN CLI 仅记录 credits 计费（日志中 token 字段全为 0），看板会显示 credits 提示并以 credits 作为其费用口径。
 

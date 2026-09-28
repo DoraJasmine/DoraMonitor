@@ -114,6 +114,8 @@ describe("pricing", () => {
     assert.ok(ids.has("deepseek-v4-pro"));
     assert.ok(ids.has("glm-5.3"));
     assert.ok(ids.has("glm-5.3-flash"));
+    assert.ok(ids.has("gpt-6-sol"));
+    assert.ok(ids.has("gpt-6-luna"));
     assert.ok(ids.has("gpt-5.6-sol"));
     const kimiK3 = prices.find((p) => p.id === "kimi-k3");
     assert.equal(kimiK3.nativeCurrency, "CNY");
@@ -143,6 +145,35 @@ describe("pricing", () => {
     assert.equal(matchPrice("gpt-5.6-sol", { fxRate: 7 }).input, 28);
     assert.equal(matchPrice("gpt-5.6-sol", { fxRate: 8 }).input, 32);
     assert.equal(toDisplay(28, { currency: "USD", fxRate: 7 }), 4);
+  });
+
+  it("prices GPT-6 Sol and Luna at official Standard USD rates before CNY conversion", () => {
+    const prices = listPrices({ fxRate: 7.2 });
+    const sol = prices.find((p) => p.id === "gpt-6-sol");
+    const luna = prices.find((p) => p.id === "gpt-6-luna");
+    assert.deepEqual([sol.input, sol.cacheHit, sol.cacheWrite, sol.output],
+      [2, 0.2, 2.5, 10].map((rate) => rate * 7.2));
+    assert.deepEqual([luna.input, luna.cacheHit, luna.cacheWrite, luna.output],
+      [0.1, 0.01, 0.125, 0.5].map((rate) => rate * 7.2));
+    assert.equal(sol.nativeCurrency, "USD");
+    assert.equal(luna.nativeCurrency, "USD");
+    assert.equal(matchPrice("codex/gpt-6-sol", { fxRate: 7.2 }).id, "gpt-6-sol");
+    assert.equal(matchPrice("gpt-6-luna", { fxRate: 7.2 }).id, "gpt-6-luna");
+  });
+
+  it("applies GPT-6 long-context rates to an entire request above 272K input", () => {
+    const usage = {
+      inputOther: 272_001,
+      inputCacheRead: 1_000,
+      inputCacheCreation: 1_000,
+      output: 1_000,
+    };
+    const cost = costForUsage("gpt-6-luna", usage, {
+      settings: { fxRate: 7.2, customPrices: [] },
+    });
+    const expectedUsd = (272_001 * 0.2 + 1_000 * 0.02 + 1_000 * 0.25 + 1_000 * 0.75) / 1e6;
+    assert.ok(Math.abs(cost.total - expectedUsd * 7.2) < 1e-12);
+    assert.equal(cost.priceId, "gpt-6-luna");
   });
 
   it("uses the published GPT-5.6 long-context and cache-write rates", () => {
