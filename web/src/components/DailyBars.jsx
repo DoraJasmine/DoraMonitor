@@ -338,7 +338,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
                 cy={yAt(tip?.totalTokens || 0)}
                 r={3.5}
                 fill="#2dd4bf"
-                stroke="#0f172a"
+                stroke="hsl(var(--background))"
                 strokeWidth={1.5}
               />
             </g>
@@ -371,9 +371,8 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
               left: `${(hi / Math.max(n - 1, 1)) * 100}%`,
               top: 8,
               // Solid card surface — avoid see-through over chart lines
-              backgroundColor: "hsl(220 12% 9%)",
-              boxShadow:
-                "0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
+              backgroundColor: "hsl(var(--card))",
+              boxShadow: "var(--shadow-panel)",
               transform:
                 hi > n * 0.65
                   ? "translateX(-100%)"
@@ -391,7 +390,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
                 : ""}
             </div>
             {series.length > 0 && (
-              <ul className="mt-1.5 space-y-0.5 border-t border-white/10 pt-1.5">
+              <ul className="mt-1.5 space-y-0.5 border-t border-border pt-1.5">
                 {series.map((s, si) => {
                   if (hidden.has(s.key)) return null;
                   const v = s.values?.[hi] || 0;

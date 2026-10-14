@@ -7,9 +7,12 @@ import {
   LayoutDashboard,
   Loader2,
   MessagesSquare,
+  Monitor,
+  Moon,
   RefreshCw,
   ScanSearch,
   SlidersHorizontal,
+  Sun,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 import SessionsPage from "@/pages/SessionsPage";
@@ -91,6 +94,46 @@ function useLocale() {
   return { locale, t, changeLocale };
 }
 
+const THEME_OPTIONS = [
+  { value: "dark", labelKey: "themeDark" },
+  { value: "light", labelKey: "themeLight" },
+  { value: "system", labelKey: "themeSystem" },
+];
+
+function themeIsLight(mode) {
+  if (mode === "light") return true;
+  if (mode === "system" && typeof window !== "undefined") {
+    return window.matchMedia("(prefers-color-scheme: light)").matches;
+  }
+  return false;
+}
+
+function useTheme() {
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("kcd_theme") || "system"
+  );
+  const applyTheme = useCallback((mode) => {
+    if (typeof document !== "undefined") {
+      document.documentElement.classList.toggle("light", themeIsLight(mode));
+    }
+  }, []);
+  const changeTheme = (next) => {
+    setTheme(next);
+    localStorage.setItem("kcd_theme", next);
+    applyTheme(next);
+  };
+  // Keep <html class> in sync; in system mode also follow OS changes.
+  useEffect(() => {
+    applyTheme(theme);
+    if (theme !== "system" || typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => applyTheme("system");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme, applyTheme]);
+  return { theme, changeTheme };
+}
+
 const fadeUp = {
   hidden: { opacity: 0, y: 12 },
   show: (i = 0) => ({
@@ -102,6 +145,8 @@ const fadeUp = {
 
 export default function App() {
   const { locale, t, changeLocale } = useLocale();
+  const { theme, changeTheme } = useTheme();
+  const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
   const reduceMotion = useReducedMotion();
   const [home, setHome] = useState(() => localStorage.getItem("kcd_home") || "");
   const [homeInput, setHomeInput] = useState(home);
@@ -496,6 +541,19 @@ export default function App() {
             <SelectContent>
               <SelectItem value="zh">中文</SelectItem>
               <SelectItem value="en">English</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={theme} onValueChange={changeTheme}>
+            <SelectTrigger className="w-[128px]" aria-label={t("appearance")}>
+              <ThemeIcon className="mr-1 h-3.5 w-3.5 opacity-70" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEME_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {t(opt.labelKey)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button

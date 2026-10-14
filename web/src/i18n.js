@@ -33,6 +33,10 @@ export const messages = {
     cost: "费用",
     tokens: "Token",
     language: "语言",
+    appearance: "外观",
+    themeDark: "深色",
+    themeLight: "浅色",
+    themeSystem: "跟随系统",
     pricingNote:
       "表内金额按当前显示币种展示：Kimi 中国区、DeepSeek 与智谱使用人民币官方价，OpenAI 使用美元官方价并按设置汇率换算。DeepSeek 分高峰/空闲价；未识别模型按 K2.6 参考价估算。",
     noData: "暂无 usage.record 数据",
@@ -313,6 +317,10 @@ export const messages = {
     cost: "Cost",
     tokens: "Tokens",
     language: "Language",
+    appearance: "Appearance",
+    themeDark: "Dark",
+    themeLight: "Light",
+    themeSystem: "System",
     pricingNote:
       "Amounts use the selected display currency. Kimi China, DeepSeek, and BigModel use official CNY prices; OpenAI uses official USD prices converted at the configured rate. DeepSeek has peak/off-peak rows; unknown models use an estimated K2.6 fallback.",
     noData: "No usage.record data found",

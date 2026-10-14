@@ -66,7 +66,7 @@ module.exports = {
         ],
       },
       boxShadow: {
-        panel: "0 0 0 1px rgba(255,255,255,0.04), 0 12px 40px rgba(0,0,0,0.35)",
+        panel: "var(--shadow-panel)",
       },
       keyframes: {
         "fade-up": {
