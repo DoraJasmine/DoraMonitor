@@ -219,12 +219,122 @@ const OPENAI_PRICES = [
   },
 ];
 
+/**
+ * Official Anthropic list prices (USD per 1M tokens), used by the Claude Code
+ * provider. Sources: https://www.anthropic.com/pricing and
+ * https://platform.claude.com/docs/en/docs/about-claude/models/overview
+ * (2026-09 lineup: Fable/Mythos 5, Opus 5, Sonnet 5, Haiku 4.5).
+ * Cache read bills at 10% of input and cache write at 1.25× input across the
+ * whole family. Specific versions precede the generic family row — first
+ * match wins.
+ */
+const CLAUDE_PRICES = [
+  {
+    id: "claude-fable-5",
+    // Mythos 5 shares Fable 5's specs and pricing (invitation-only preview).
+    patterns: [/claude[_-]?(fable|mythos)/i],
+    cacheHit: 1.0,
+    cacheWrite: 12.5,
+    input: 10.0,
+    output: 50.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-opus-5-5",
+    // Released 2026-09-22: 20% cheaper per token than Opus 5, cache reads
+    // 60% cheaper ($0.20). Must precede the Opus 5 row below.
+    patterns: [/claude[_-]?opus[_-]?5[_-]?5/i],
+    cacheHit: 0.2,
+    cacheWrite: 5.0,
+    input: 4.0,
+    output: 20.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-opus-5",
+    // Opus 5 and the 4.5–4.8 generation all list at the same $5/$25 rates.
+    patterns: [/claude[_-]?opus[_-]?5/i, /claude[_-]?opus[_-]?4[_-]?[5-9]/i],
+    cacheHit: 0.5,
+    cacheWrite: 6.25,
+    input: 5.0,
+    output: 25.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-sonnet-5",
+    patterns: [/claude[_-]?sonnet[_-]?5/i],
+    cacheHit: 0.2,
+    cacheWrite: 2.5,
+    input: 2.0,
+    output: 10.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-haiku-4-5",
+    patterns: [/claude[_-]?haiku[_-]?4[_-]?5/i],
+    cacheHit: 0.1,
+    cacheWrite: 1.25,
+    input: 1.0,
+    output: 5.0,
+    context: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-3-haiku",
+    patterns: [/claude[_-]?3[_-]?haiku/i],
+    cacheHit: 0.03,
+    cacheWrite: 0.3,
+    input: 0.25,
+    output: 1.25,
+    context: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-sonnet",
+    // Sonnet 3.5 / 3.7 / 4 / 4.5 / 4.6 all list at the same rates. 3.x ids
+    // put the version before the family ("claude-3-7-sonnet"); 4.x after it.
+    patterns: [/claude[_-]?sonnet/i, /claude[_-]?3[_-]?[57][_-]?sonnet/i],
+    cacheHit: 0.3,
+    cacheWrite: 3.75,
+    input: 3.0,
+    output: 15.0,
+    context: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-opus",
+    // Legacy Opus 3 / 4 / 4.1 ($15 tier); the $5 4.5+/5 generation is matched
+    // above.
+    patterns: [/claude[_-]?opus/i, /claude[_-]?3[_-]?opus/i],
+    cacheHit: 1.5,
+    cacheWrite: 18.75,
+    input: 15.0,
+    output: 75.0,
+    context: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-3-5-haiku",
+    patterns: [/claude[_-]?haiku/i, /claude[_-]?3[_-]?5[_-]?haiku/i],
+    cacheHit: 0.08,
+    cacheWrite: 1.0,
+    input: 0.8,
+    output: 4.0,
+    context: 200_000,
+    currency: "USD",
+  },
+];
+
 function matchPrice(modelName, options = {}) {
   if (!modelName) return normalizedFallbackPrice(options.fxRate, null);
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
-  for (const row of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES]) {
+  for (const row of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES, ...CLAUDE_PRICES]) {
     for (const re of row.patterns) {
       if (re.test(bare) || re.test(name)) {
         const timeOfUse = deepSeekTimeOfUse(row, options.time);
@@ -432,7 +542,7 @@ function num(v) {
 
 function listPrices(options = {}) {
   const rows = [];
-  for (const p of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES]) {
+  for (const p of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES, ...CLAUDE_PRICES]) {
     const add = (period, multiplier) => rows.push({
       id: p.id,
       cacheHit: p.cacheHit * multiplier * priceToCnyMultiplier(p, options.fxRate),
@@ -448,8 +558,10 @@ function listPrices(options = {}) {
         ? "https://api-docs.deepseek.com/quick_start/pricing/"
         : OPENAI_PRICES.includes(p)
           ? "https://developers.openai.com/api/docs/pricing"
-          : ZHIPU_PRICES.includes(p)
-            ? "https://docs.bigmodel.cn/cn/guide/models"
+          : CLAUDE_PRICES.includes(p)
+            ? "https://www.anthropic.com/pricing"
+            : ZHIPU_PRICES.includes(p)
+              ? "https://docs.bigmodel.cn/cn/guide/models"
           : "https://platform.kimi.com/",
     });
     if (p.offPeakMultiplier) {
@@ -467,6 +579,7 @@ module.exports = {
   DEEPSEEK_PRICES,
   ZHIPU_PRICES,
   OPENAI_PRICES,
+  CLAUDE_PRICES,
   FALLBACK_PRICE,
   matchPrice,
   matchCustomPrice,

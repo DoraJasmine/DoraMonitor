@@ -8,6 +8,8 @@ const zcode = require("./zcode");
 const qoderCn = require("./qoder-cn");
 const qoderCnCli = require("./qoder-cn-cli");
 const codex = require("./codex");
+const claudeCode = require("./claude-code");
+const dsh = require("./dsh");
 
 /**
  * Provider registry.
@@ -16,7 +18,7 @@ const codex = require("./codex");
  * Adding a tool = adding a module here; aggregation, pricing, and UI consume
  * the registry without knowing provider internals.
  */
-const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex];
+const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh];
 
 /** Resolve each provider's data home and availability. */
 function listProviders() {
@@ -62,6 +64,15 @@ function sourceFiles(provider, home) {
     return [
       ...listFilesRecursive(path.join(home, "sessions"), ".jsonl", true),
       ...listFilesRecursive(path.join(home, "archived_sessions"), ".jsonl", true),
+    ];
+  }
+  if (provider.id === "claude-code") {
+    return listFilesRecursive(path.join(home, "projects"), ".jsonl", true);
+  }
+  if (provider.id === "dsh") {
+    return [
+      ...listFilesRecursive(path.join(home, "sessions"), ".jsonl.zstd", true),
+      ...listFilesRecursive(path.join(home, "sessions"), ".jsonl", true),
     ];
   }
   return [];

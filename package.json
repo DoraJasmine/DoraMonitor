@@ -45,6 +45,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "fzstd": "^0.1.1",
     "smol-toml": "^1.7.1"
   },
   "devDependencies": {

@@ -125,6 +125,8 @@ const SHORT_LABEL = {
   zcode: "Z",
   "qoder-cn": "Q",
   "qoder-cn-cli": "QC",
+  "claude-code": "CC",
+  dsh: "dsh",
 };
 
 function renderLine(totals, opts) {

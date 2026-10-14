@@ -24,6 +24,8 @@ const TOOL_META = {
   "qoder-cn": { label: "QoderCN", color: "#f59e0b" },
   "qoder-cn-cli": { label: "QoderCN CLI", color: "#eab308" },
   codex: { label: "Codex", color: "#10a37f" },
+  "claude-code": { label: "Claude Code", color: "#d97757" },
+  dsh: { label: "dsh", color: "#4D6BFE" },
 };
 
 function toolMeta(id) {

@@ -1,6 +1,6 @@
 # DoraMonitor
 
-本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex 的 token 用量、费用与额度。
+本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex、Claude Code、dsh 的 token 用量、费用与额度。
 
 由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 架构扩展而来（React 19 + Tailwind + Node 标准库 HTTP server，零后端框架依赖；SQLite 读取使用 Node 22 内置 `node:sqlite`）。
 
@@ -15,6 +15,8 @@
 | QoderCN（IDE） | `~/.config/QoderCN/SharedClientCache/cache/db/local.db` → `chat_message` | token（内部模型码自动映射显示名） |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | **credits 计费值**（CLI 不落地 token，仅记录 credits） |
 | Codex | `~/.codex/sessions/**/*.jsonl` + `archived_sessions` | token（`token_usage_record`，按 `response_id` 去重；模型/cwd 取自 `turn_context`）、费用（OpenAI 官方价） |
+| Claude Code | `~/.claude/projects/**/*.jsonl`（`CLAUDE_CONFIG_DIR` 可覆盖） | token（Anthropic 口径，`input_tokens` 不含缓存；按 `message.id`+`requestId` 去重，防止 `--resume` 复制历史导致双算）、费用（Anthropic 官方价）；无额度部分 |
+| dsh（DeepSeek Harness） | `~/.dsh/sessions/**/session.v4.jsonl.zstd`（多帧 zstd，`DSH_HOME` 可覆盖） | token（`assistant/message` 的 `usage`，`inputTokens` 不含缓存；按 `message.id` 去重）、费用（DeepSeek 官方价）；无额度部分 |
 
 - 所有 SQLite 均以**只读模式**打开，不影响运行中的工具。
 - 每个工具的数据缺失时自动降级为「不可用」，不影响其他工具展示。
@@ -157,9 +159,9 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 - **显示货币**：USD 或 CNY；CNY 按可配置汇率（默认 7.2）由内部 USD 成本换算显示。
 - **自定义模型定价**：为官方价格表没有的模型（如 GLM）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
 
-配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex）的费用统一按此计算。
+配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex / Claude Code / dsh）的费用统一按此计算。
 
-- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 [OpenAI 官方美元价](https://developers.openai.com/api/docs/pricing)（GPT-6 Astra/Sol/Luna、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
+- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 [OpenAI 官方美元价](https://developers.openai.com/api/docs/pricing)（GPT-6 Astra/Sol/Luna、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。Claude Code 的 Claude 模型按 [Anthropic 官方美元价](https://www.anthropic.com/pricing)（Opus 5.5、Fable/Mythos 5、Opus 5 及 4.5–4.8、Sonnet 5、Sonnet 4.6 及更早、Haiku 4.5/3.5/3 等，见 `CLAUDE_PRICES`），缓存读取按输入 5–10%、缓存写入按输入 1.25× 计。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
 
 QoderCN CLI 仅记录 credits 计费（日志中 token 字段全为 0），看板会显示 credits 提示并以 credits 作为其费用口径。
 
@@ -175,6 +177,8 @@ src/
     qoder-cn.js      # node:sqlite + 模型码映射
     qoder-cn-cli.js  # jsonl 转录扫描
     codex.js         # rollout jsonl 扫描（token_usage_record）
+    claude-code.js   # projects jsonl 转录扫描（message.usage，resume 去重）
+    dsh.js           # sessions 多帧 zstd 扫描（assistant/message usage，message.id 去重）
   collect.js         # 增量收集器（stat 探测 + TTL 缓存）
   aggregate.js       # 时间范围 / byTool / 热力图聚合
   quota.js           # Kimi 额度 API 客户端

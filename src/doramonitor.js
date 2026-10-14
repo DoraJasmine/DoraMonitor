@@ -38,7 +38,7 @@ Web options:
   --no-open        不自动打开浏览器
 
 Status / daemon options:
-  --tool <id|all>      过滤工具: kimi-code | zcode | qoder-cn | qoder-cn-cli | all
+  --tool <id|all>      过滤工具: kimi-code | zcode | qoder-cn | qoder-cn-cli | codex | claude-code | dsh | all
   --range <range>      today | 7d | 30d | month | all (默认 month)
   --style <s>          plain | tmux
   --plan-price <n>     套餐价格（杠杆计算；默认读 ~/.kimi-code/kimi-status.toml）
