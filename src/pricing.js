@@ -135,6 +135,19 @@ const QWEN_PRICES = [
     currency: "USD",
   },
   {
+    id: "qwen3.8-flash",
+    // Verified against dsh's own cost meter (dsh-cost-meter
+    // provider-pricing.json, checkedAt 2026-10-03, source opencode.ai/docs/go)
+    // so both dashboards bill the same model at the same rate.
+    patterns: [/^qwen3\.8[-_ ]?flash$/i],
+    cacheHit: 0.016,
+    cacheWrite: 0.2,
+    input: 0.15,
+    output: 0.47,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
     id: "qwen3.7-max",
     patterns: [/^qwen3\.7[-_ ]?max$/i],
     cacheHit: 0.5,

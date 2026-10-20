@@ -107,7 +107,7 @@ test("qoder-cli provider: parses usage and credits, skips broken lines", () => {
   const withTokens = out.records.find((r) => r.inputOther === 100);
   assert.ok(withTokens);
   assert.strictEqual(withTokens.tool, "qoder-cn-cli");
-  assert.strictEqual(withTokens.modelDisplay, "Qwen3.6-Flash");
+  assert.strictEqual(withTokens.modelDisplay, "Qwen3.8-Flash");
   assert.strictEqual(withTokens.credits, 1.5);
   assert.strictEqual(withTokens.project, "/home/zxt/demo");
   assert.strictEqual(withTokens.session, "sess-1");

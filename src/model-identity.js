@@ -43,10 +43,8 @@ const QODER_DISPLAY_NAMES = Object.freeze({
   q35model: "Qwen3.5-Plus",
   q35model_preview: "Qwen3.8-Max-Preview",
   q36fmodel: "Qwen3.6-Flash",
-  // "qfmodel" is the fast-tier Qwen routing code. The QoderCN CLI table maps
-  // it to Qwen3.6-Flash; the IDE table had no entry for it at all, which is
-  // why it used to render raw.
-  qfmodel: "Qwen3.6-Flash",
+  // "qfmodel" is the fast-tier Qwen routing code → Qwen3.8 Flash.
+  qfmodel: "Qwen3.8-Flash",
   // DeepSeek
   dfmodel: "DeepSeek-V4-Flash",
   dmodel: "DeepSeek-V4-Pro",
@@ -79,7 +77,7 @@ const EXTRA_DISPLAY_NAMES = Object.freeze({
  * Kimi K2.6 pricing while the UI showed a Qwen label.
  */
 const PRICING_KEYS = Object.freeze({
-  qfmodel: "qwen3.6-flash",
+  qfmodel: "qwen3.8-flash",
   qmodel: "qwen3.7-plus",
   qmodel_latest: "qwen3.7-max",
   qmodel_preview: "qwen3.8-max-preview",

@@ -23,7 +23,7 @@ const ROUTING_TIERS = new Set(["auto", "efficient", "lite", "performance", "ulti
 test("model-identity: QoderCN routing codes resolve to display names", () => {
   assert.strictEqual(resolveModelIdentity("dfmodel").modelDisplay, "DeepSeek-V4-Flash");
   assert.strictEqual(resolveModelIdentity("dmodel").modelDisplay, "DeepSeek-V4-Pro");
-  assert.strictEqual(resolveModelIdentity("qfmodel").modelDisplay, "Qwen3.6-Flash");
+  assert.strictEqual(resolveModelIdentity("qfmodel").modelDisplay, "Qwen3.8-Flash");
   assert.strictEqual(resolveModelIdentity("qmodel_latest").modelDisplay, "Qwen3.7-Max");
   assert.strictEqual(resolveModelIdentity("mmodel").modelDisplay, "MiniMax-M3");
   assert.strictEqual(resolveModelIdentity("gm51model").modelDisplay, "GLM-5.2");
@@ -62,7 +62,7 @@ test("model-identity: unmapped codes pass through unchanged", () => {
 test("model-identity: lookup is case-insensitive and provider-qualified", () => {
   assert.strictEqual(resolveModelIdentity("DFMODEL").modelDisplay, "DeepSeek-V4-Flash");
   assert.strictEqual(resolveModelIdentity("qodercn:dfmodel").modelDisplay, "DeepSeek-V4-Flash");
-  assert.strictEqual(resolveModelIdentity("vendor/qfmodel").modelDisplay, "Qwen3.6-Flash");
+  assert.strictEqual(resolveModelIdentity("vendor/qfmodel").modelDisplay, "Qwen3.8-Flash");
 });
 
 test("model-identity: provider is echoed back for provenance", () => {
