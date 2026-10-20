@@ -62,9 +62,18 @@ const RANGE_KEYS = [
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
-/** Prefer raw model id so provider variants stay distinct in the UI. */
+/**
+ * Label shown as the model's primary name.
+ *
+ * Optimised for readability: when a provider can resolve a display name
+ * (dsh records another vendor's routing code such as "dfmodel", QoderCN
+ * resolves it to "DeepSeek-V4-Flash"), that name wins. The raw id is still
+ * rendered underneath in smaller type and used in the tooltip, so
+ * traceability is preserved — but the raw code never stands in for a name we
+ * actually know. Falls back to the raw id when no mapping exists.
+ */
 function modelLabel(row) {
-  return row?.model || row?.modelDisplay || "unknown";
+  return row?.modelDisplay || row?.model || "unknown";
 }
 
 function useLocale() {
@@ -994,7 +1003,7 @@ export default function App() {
                             <div className="flex flex-wrap items-center gap-1">
                               {m.modelDisplay && m.modelDisplay !== m.model ? (
                                 <span className="truncate text-[11px] text-muted-foreground">
-                                  {m.modelDisplay}
+                                  {m.model}
                                 </span>
                               ) : null}
                               {m.costEstimated ? (
@@ -1085,7 +1094,7 @@ export default function App() {
                           </span>
                           {m.modelDisplay && m.modelDisplay !== m.model ? (
                             <span className="truncate text-[11px] text-muted-foreground">
-                              {m.modelDisplay}
+                              {m.model}
                             </span>
                           ) : null}
                         </div>
@@ -1224,7 +1233,7 @@ export default function App() {
                             <div className="flex flex-wrap items-center gap-1">
                               {r.modelDisplay && r.modelDisplay !== r.model ? (
                                 <span className="truncate text-[11px] text-muted-foreground">
-                                  {r.modelDisplay}
+                                  {r.model}
                                 </span>
                               ) : null}
                               {r.costEstimated ? (
