@@ -6,6 +6,7 @@ const path = require("path");
 const { n, emptyRecord, expandHome } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
+const { resolveModelIdentity } = require("../model-identity");
 
 /**
  * dsh provider — scans ~/.dsh/sessions for
@@ -25,6 +26,13 @@ const { loadSettings } = require("../settings");
  *
  * Responses are de-duplicated by message.id. Project/cwd come from the
  * session header line (first line of each file).
+ *
+ * MODEL NAMES: when a dsh plugin proxies another vendor, the plugin records
+ * that vendor's own routing code on source.model and names itself on
+ * source.provider (e.g. {provider:"qodercn", model:"dfmodel"}). The code alone
+ * is meaningless to a human, so resolution goes through model-identity.js —
+ * the same table the QoderCN providers use — and the provider id is kept on
+ * the record for provenance. Unmapped codes stay visible as their raw id.
  *
  * No quota part by design — dsh's provider-snapshots.json carries no quota.
  */
@@ -95,7 +103,10 @@ const provider = {
           linesSeen += 1;
           // Fast reject before full parse — only assistant/message lines
           // carry usage, and the session header is picked up via "type".
-          if (!line.includes('"usage"') && !line.includes('"type":"session"')) continue;
+          // Match the quoted type token, not `"type":"session"`: a writer
+          // that pretty-prints (space after the colon) would otherwise lose
+          // the session id and cwd silently.
+          if (!line.includes('"usage"') && !line.includes('"session"')) continue;
           let obj;
           try {
             obj = JSON.parse(line);
@@ -115,6 +126,15 @@ const provider = {
           const usage = data.usage;
           if (!usage || typeof usage !== "object") continue;
 
+          const inputOther = n(usage.inputTokens);
+          const cacheRead = n(usage.cacheReadTokens);
+          const cacheCreate = n(usage.cacheWriteTokens);
+          const output = n(usage.outputTokens);
+          // Skip all-zero placeholders BEFORE dedupe. Registering the id first
+          // would let a zero-usage placeholder swallow the real message that
+          // shares its id (same bug class as codex/claude-code).
+          if (inputOther + cacheRead + cacheCreate + output <= 0) continue;
+
           // Dedupe on message.id; without an id there is nothing stable to
           // dedupe on, so count the line.
           const messageId = String(message.id || "");
@@ -123,18 +143,19 @@ const provider = {
             seenMessages.add(messageId);
           }
 
-          const inputOther = n(usage.inputTokens);
-          const cacheRead = n(usage.cacheReadTokens);
-          const cacheCreate = n(usage.cacheWriteTokens);
-          const output = n(usage.outputTokens);
-          if (inputOther + cacheRead + cacheCreate + output <= 0) continue;
-
           const rec = emptyRecord("dsh");
           rec.time = n(obj.time);
           const source = message.source && typeof message.source === "object" ? message.source : {};
-          rec.model = String(source.model || "unknown");
-          rec.modelDisplay = rec.model;
-          rec.modelResolved = rec.model;
+          const rawModel = String(source.model || "unknown");
+          // dsh names the plugin that actually served the request; the model
+          // id inside a proxied response is usually that vendor's routing code.
+          const identity = resolveModelIdentity(rawModel, {
+            provider: source.provider ? String(source.provider) : null,
+          });
+          rec.model = rawModel;
+          rec.modelDisplay = identity.modelDisplay;
+          rec.modelResolved = identity.pricingKey || rawModel;
+          rec.modelProvider = identity.provider;
           rec.inputOther = inputOther;
           rec.output = output;
           rec.inputCacheRead = cacheRead;

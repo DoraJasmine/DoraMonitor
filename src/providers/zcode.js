@@ -13,8 +13,6 @@ const { loadSettings } = require("../settings");
  *
  * Each row is one model request with full token accounting and timestamps.
  */
-const ZCODE_DB = path.join(".zcode", "cli", "db", "db.sqlite");
-
 const SQL_ALL = `
 SELECT model_id, session_id, input_tokens, output_tokens, reasoning_tokens,
        cache_creation_input_tokens, cache_read_input_tokens,
@@ -26,6 +24,9 @@ ORDER BY started_at DESC
 
 // Rows without a finished status still carry usage; count them like
 // kimicode-dashboard counts in-flight kimi turns — a request happened.
+// BUT rows whose status is error/cancelled and that carry no tokens at all
+// are not requests: counting them inflated the request total and put empty
+// rows in "recent activity". Every other provider drops all-zero records.
 function providerRowToRecord(row, settings) {
   const rec = emptyRecord("zcode");
   const startedMs = n(row.started_at);
@@ -45,7 +46,15 @@ function providerRowToRecord(row, settings) {
   rec.inputCacheRead = cacheRead;
   rec.inputCacheCreation = cacheCreate;
   rec.inputOther = Math.max(0, totalInput - cacheRead - cacheCreate);
-  rec.output = n(row.output_tokens) + n(row.reasoning_tokens);
+  // reasoning_tokens is already contained in output_tokens on current builds
+  // (verified: computed_total_tokens == input_tokens + output_tokens on every
+  // local row). Adding it would double-count reasoning the moment a model
+  // starts reporting it separately, so only fall back to it when output is 0.
+  const outputTokens = n(row.output_tokens);
+  rec.output = outputTokens > 0 ? outputTokens : n(row.reasoning_tokens);
+  if (rec.inputOther + rec.inputCacheRead + rec.inputCacheCreation + rec.output <= 0) {
+    return null;
+  }
   rec.session = row.session_id ? String(row.session_id) : null;
   rec.sessionHint = { session: rec.session };
   const cost = costForUsage(rec.model, {
@@ -97,7 +106,8 @@ const provider = {
         const rows = db.prepare(SQL_ALL).all();
         rowCount = rows.length;
         for (const row of rows) {
-          records.push(providerRowToRecord(row, settings));
+          const rec = providerRowToRecord(row, settings);
+          if (rec) records.push(rec);
         }
       } finally {
         db.close();

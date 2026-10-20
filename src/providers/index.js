@@ -61,9 +61,12 @@ function sourceFiles(provider, home) {
     return [path.join(home, "SharedClientCache", "cache", "db", "local.db")];
   }
   if (provider.id === "codex") {
+    // Codex compresses older and archived rollouts to .jsonl.zst — the probe
+    // must match the suffixes the scanner reads, or a compressed file
+    // appearing/appearing never invalidates the cache.
     return [
-      ...listFilesRecursive(path.join(home, "sessions"), ".jsonl", true),
-      ...listFilesRecursive(path.join(home, "archived_sessions"), ".jsonl", true),
+      ...listRolloutFiles(path.join(home, "sessions")),
+      ...listRolloutFiles(path.join(home, "archived_sessions")),
     ];
   }
   if (provider.id === "claude-code") {
@@ -95,6 +98,35 @@ function listFilesRecursive(root, matchName, suffix = false) {
       if (suffix ? ent.name.endsWith(matchName) : ent.name === matchName) out.push(full);
     }
   }
+  return out;
+}
+
+const CODEX_ROLLOUT_SUFFIXES = [".jsonl.zst", ".jsonl.zstd", ".jsonl"];
+
+/** Rollout files in the suffixes the Codex scanner actually reads. */
+function listRolloutFiles(root) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === "node_modules") continue;
+        walk(full);
+      } else if (
+        ent.isFile() &&
+        CODEX_ROLLOUT_SUFFIXES.some((suffix) => ent.name.endsWith(suffix))
+      ) {
+        out.push(full);
+      }
+    }
+  };
+  walk(root);
   return out;
 }
 

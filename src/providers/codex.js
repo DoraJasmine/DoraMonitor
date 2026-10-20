@@ -71,7 +71,7 @@ const provider = {
       for (const file of listRolloutFiles(root)) {
         filesScanned += 1;
         try {
-          const text = fs.readFileSync(file, "utf8");
+          const text = readRolloutText(file);
           const lines = text.split(/\r?\n/);
 
           // turn_id -> { model, cwd } from turn_context events; also the
@@ -122,11 +122,6 @@ const provider = {
 
             if (obj.type !== "token_usage_record") continue;
             const payload = obj.payload || {};
-            const responseId = String(payload.response_id || "");
-            if (responseId) {
-              if (seenResponses.has(responseId)) continue;
-              seenResponses.add(responseId);
-            }
             const usage = payload.usage;
             if (!usage || typeof usage !== "object") continue;
 
@@ -135,7 +130,16 @@ const provider = {
             const inputOther = Math.max(0, inputTotal - cached);
             const output = n(usage.output_tokens);
             const cacheCreate = n(usage.cache_write_input_tokens);
+            // Skip all-zero placeholders BEFORE dedupe: registering the id first
+            // would let a zero-usage placeholder swallow the real record that
+            // carries the same response_id.
             if (inputOther + cached + cacheCreate + output <= 0) continue;
+
+            const responseId = String(payload.response_id || "");
+            if (responseId) {
+              if (seenResponses.has(responseId)) continue;
+              seenResponses.add(responseId);
+            }
 
             const ti = payload.turn_id ? turnInfo.get(String(payload.turn_id)) : null;
             const model = (ti && ti.model) || lastModel || "unknown";
@@ -155,7 +159,7 @@ const provider = {
             rec.costEstimated = cost.estimated;
             rec.priceId = cost.priceId;
             rec.project = project;
-            rec.session = String(payload.session_id || payload.thread_id || path.basename(file, ".jsonl"));
+            rec.session = String(payload.session_id || payload.thread_id || rolloutBasename(file));
             rec.sessionHint = { session: rec.session, project: rec.project };
             records.push(rec);
           }
@@ -199,17 +203,31 @@ function quotaWindows(rl) {
   for (const [key, kind, label] of defs) {
     const w = rl[key];
     if (!w || typeof w !== "object") continue;
-    const used = n(w.used_percent);
-    if (used === null) continue;
+    // n() maps anything non-finite to 0, so it can never signal "absent" —
+    // check for a usable number first, otherwise a window that omits
+    // used_percent renders as a fabricated 0% bar.
+    const rawUsed = Number(w.used_percent);
+    if (!Number.isFinite(rawUsed)) continue;
+    const used = Math.min(100, Math.max(0, rawUsed));
     const resetsAt = Number(w.resets_at);
     windows.push({
       kind,
       label,
       usedPercent: used,
-      resetsAt: Number.isFinite(resetsAt) && resetsAt > 0 ? new Date(resetsAt * 1000).toISOString() : null,
+      resetsAt: Number.isFinite(resetsAt) && resetsAt > 0 ? epochSecondsToIso(resetsAt) : null,
     });
   }
   return windows;
+}
+
+/**
+ * `resets_at` is documented as epoch SECONDS. Guard against a millisecond
+ * value (~1.8e12) which would otherwise render as year +058681.
+ */
+function epochSecondsToIso(value) {
+  const asSeconds = value > 100000000000 ? value / 1000 : value;
+  const date = new Date(asSeconds * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function quotaPayload(best) {
@@ -230,6 +248,49 @@ function listRolloutFiles(root) {
   return out;
 }
 
+/**
+ * Codex writes rollouts as plain `.jsonl` for recent sessions and compresses
+ * older / archived ones to `.jsonl.zst` (zstd) — `archived_sessions/` is
+ * entirely compressed in practice, so filtering on ".jsonl" alone silently
+ * dropped them. Returns the decompressed text for compressed rollouts and the
+ * raw text otherwise; throws so the caller records a per-file error.
+ */
+function readRolloutText(file) {
+  if (file.endsWith(".zst") || file.endsWith(".zstd")) {
+    const zlib = require("zlib");
+    const buf = fs.readFileSync(file);
+    // Each rollout is written as a single zstd frame; fall back to fzstd for
+    // multi-frame files (same decoder the dsh provider uses).
+    try {
+      return zlib.zstdDecompressSync(buf).toString("utf8");
+    } catch {
+      const { Decompress } = require("fzstd");
+      const chunks = [];
+      const d = new Decompress((chunk) => chunks.push(chunk));
+      d.push(buf, true);
+      return Buffer.concat(
+        chunks.map((c) => Buffer.from(c.buffer, c.byteOffset, c.byteLength))
+      ).toString("utf8");
+    }
+  }
+  return fs.readFileSync(file, "utf8");
+}
+
+const ROLLOUT_SUFFIXES = [".jsonl.zst", ".jsonl.zstd", ".jsonl"];
+
+function isRolloutFile(name) {
+  return ROLLOUT_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/** Strip any rollout suffix to get the session-ish basename. */
+function rolloutBasename(file) {
+  let name = path.basename(file);
+  for (const suffix of ROLLOUT_SUFFIXES) {
+    if (name.endsWith(suffix)) return name.slice(0, -suffix.length);
+  }
+  return name;
+}
+
 function walk(dir, out) {
   let entries;
   try {
@@ -242,7 +303,7 @@ function walk(dir, out) {
     if (ent.isDirectory()) {
       if (ent.name === "node_modules") continue;
       walk(full, out);
-    } else if (ent.isFile() && ent.name.endsWith(".jsonl")) {
+    } else if (ent.isFile() && isRolloutFile(ent.name)) {
       out.push(full);
     }
   }

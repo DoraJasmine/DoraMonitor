@@ -79,15 +79,6 @@ const provider = {
           const usage = message.usage;
           if (!usage || typeof usage !== "object") continue;
 
-          // Resume copies share message.id + requestId across files; without
-          // an id there is nothing stable to dedupe on, so count the line.
-          const messageId = String(message.id || "");
-          if (messageId) {
-            const dedupKey = `${messageId}|${obj.requestId || ""}`;
-            if (seenMessages.has(dedupKey)) continue;
-            seenMessages.add(dedupKey);
-          }
-
           const inputOther = n(usage.input_tokens);
           const cacheRead = n(usage.cache_read_input_tokens);
           // Older builds log only the combined total; newer ones also break
@@ -99,7 +90,19 @@ const provider = {
               n(usage.cache_creation.ephemeral_1h_write_tokens);
           }
           const output = n(usage.output_tokens);
+          // Skip all-zero placeholders BEFORE dedupe: registering the key first
+          // would let a zero-usage placeholder swallow the real record that
+          // carries the same message.id + requestId.
           if (inputOther + cacheRead + cacheCreate + output <= 0) continue;
+
+          // Resume copies share message.id + requestId across files; without
+          // an id there is nothing stable to dedupe on, so count the line.
+          const messageId = String(message.id || "");
+          if (messageId) {
+            const dedupKey = `${messageId}|${obj.requestId || ""}`;
+            if (seenMessages.has(dedupKey)) continue;
+            seenMessages.add(dedupKey);
+          }
 
           const rec = emptyRecord("claude-code");
           rec.time = Date.parse(obj.timestamp) || 0;

@@ -143,6 +143,9 @@ function emptyRecord(tool) {
     model: "unknown",
     modelDisplay: "unknown",
     modelResolved: null,
+    /** Upstream provider that served the request, when the tool records one
+     *  (dsh names its plugin, e.g. "qodercn"). Null everywhere else. */
+    modelProvider: null,
     inputOther: 0,
     output: 0,
     inputCacheRead: 0,

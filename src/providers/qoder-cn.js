@@ -6,6 +6,7 @@ const path = require("path");
 const { n, openReadOnly, emptyRecord, expandHome } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
+const { resolveModelIdentity } = require("../model-identity");
 
 /**
  * QoderCN IDE provider — reads chat_message token_info from
@@ -19,37 +20,10 @@ const { loadSettings } = require("../settings");
  * names come from the app's i18n keys; codes change between releases, so
  * unmapped codes pass through unchanged instead of failing.
  */
-const QODER_CN_DB_SUFFIX = path.join("QoderCN", "SharedClientCache", "cache", "db", "local.db");
-
-// Mapping borrowed from token-monitor (Javis603/token-monitor, qoderCnUsage.js).
-const MODEL_DISPLAY_NAMES = Object.freeze({
-  auto: "Auto",
-  dashscope_qmodel: "Qwen3.7-Plus",
-  dashscope_qwen3_coder: "Qwen3-Coder-Plus",
-  dashscope_qwen_max_latest: "Qwen3-Max",
-  dfmodel: "DeepSeek-V4-Flash",
-  dmodel: "DeepSeek-V4-Pro",
-  efficient: "Efficient",
-  gm51model: "GLM-5.2",
-  gmodel: "GLM-5",
-  kmodel: "Kimi-K2.7-Code",
-  lite: "Lite",
-  mmodel: "MiniMax-M3",
-  performance: "Performance",
-  q35model: "Qwen3.5-Plus",
-  q35model_preview: "Qwen3.8-Max-Preview",
-  q36fmodel: "Qwen3.6-Flash",
-  qmodel: "Qwen3.7-Plus",
-  qmodel_latest: "Qwen3.7-Max",
-  qmodel_preview: "Qwen3.8-Max-Preview",
-  ultimate: "Ultimate",
-});
-
-// Routing tiers are selectors, not real models; keep them as-is so the user
-// sees what the app actually billed.
+// Display names live in src/model-identity.js so every provider (and dsh,
+// which records the same routing codes) resolves them identically.
 function displayName(modelKey) {
-  const key = String(modelKey || "").trim();
-  return MODEL_DISPLAY_NAMES[key] || key || "unknown";
+  return resolveModelIdentity(modelKey).modelDisplay;
 }
 
 const SQL_WITH_PROJECT = `
@@ -107,17 +81,23 @@ function rowToRecord(row, settings) {
   rec.time = toMs(row.gmt_create);
   const modelInfo = parseJsonSafe(row.model_info);
   const modelKey = String((modelInfo && modelInfo.model_key) || "unknown");
+  const identity = resolveModelIdentity(modelKey);
   rec.model = modelKey;
-  rec.modelDisplay = displayName(modelKey);
-  rec.modelResolved = modelKey;
+  rec.modelDisplay = identity.modelDisplay;
+  rec.modelResolved = identity.pricingKey || modelKey;
   rec.inputOther = Math.max(0, promptTokens - cached);
   rec.inputCacheRead = cached;
   rec.output = n(info.completion_tokens);
+  // Placeholder rows (empty or unrelated token_info) must not inflate the
+  // request count; every other provider drops all-zero records too.
+  if (rec.inputOther + rec.inputCacheRead + rec.inputCacheCreation + rec.output <= 0) {
+    return null;
+  }
   rec.session = row.session_id ? String(row.session_id) : null;
   const project = String(row.project_name || "").trim();
   rec.project = project === "." ? null : project || null;
   rec.sessionHint = { session: rec.session, project: rec.project };
-  const cost = costForUsage(rec.model, {
+  const cost = costForUsage(rec.modelResolved || rec.model, {
     time: rec.time,
     inputOther: rec.inputOther,
     output: rec.output,

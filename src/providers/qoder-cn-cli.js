@@ -4,6 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { n, emptyRecord, expandHome } = require("./base");
+const { resolveModelIdentity } = require("../model-identity");
 
 /**
  * QoderCN CLI provider — scans ~/.qoder-cn/projects/<encoded-cwd>/<uuid>.jsonl
@@ -13,21 +14,8 @@ const { n, emptyRecord, expandHome } = require("./base");
  *
  * `credits` is the actual billed quantity — surfaced as-is (not USD).
  */
-const MODEL_DISPLAY_NAMES = Object.freeze({
-  qfmodel: "Qwen3.6-Flash",
-  qmodel: "Qwen3.7-Plus",
-  qmodel_latest: "Qwen3.7-Max",
-  q35model: "Qwen3.5-Plus",
-  gmodel: "GLM-5",
-  dmodel: "DeepSeek-V4-Pro",
-  dfmodel: "DeepSeek-V4-Flash",
-  mmodel: "MiniMax-M3",
-  kmodel: "Kimi-K2.7-Code",
-});
-
 function displayName(modelKey) {
-  const key = String(modelKey || "").trim();
-  return MODEL_DISPLAY_NAMES[key] || key || "unknown";
+  return resolveModelIdentity(modelKey).modelDisplay;
 }
 
 function listTranscriptFiles(root) {
@@ -85,8 +73,10 @@ function scanFile(file, projectDirName) {
   const records = [];
   const text = fs.readFileSync(file, "utf8");
   const lines = text.split(/\r?\n/);
+  let linesSeen = 0;
   for (const line of lines) {
     if (!line) continue;
+    linesSeen += 1;
     // Fast reject before JSON.parse
     if (!line.includes('"usage"')) continue;
     let obj;
@@ -112,8 +102,9 @@ function scanFile(file, projectDirName) {
     const rec = emptyRecord("qoder-cn-cli");
     rec.time = toMs(obj.timestamp);
     rec.model = String(message.model || "unknown");
-    rec.modelDisplay = displayName(rec.model);
-    rec.modelResolved = rec.model;
+    const identity = resolveModelIdentity(rec.model);
+    rec.modelDisplay = identity.modelDisplay;
+    rec.modelResolved = identity.pricingKey || rec.model;
     rec.inputOther = n(usage.input_tokens);
     rec.output = n(usage.output_tokens);
     rec.inputCacheRead = n(usage.cache_read_input_tokens);
@@ -125,7 +116,7 @@ function scanFile(file, projectDirName) {
     rec.sessionHint = { session: rec.session, project: rec.project };
     records.push(rec);
   }
-  return records;
+  return { records, linesSeen };
 }
 
 const provider = {
@@ -158,8 +149,8 @@ const provider = {
       filesScanned += 1;
       const projectDirName = path.basename(path.dirname(file));
       try {
-        const recs = scanFile(file, projectDirName);
-        linesSeen += recs.length;
+        const { records: recs, linesSeen: fileLines } = scanFile(file, projectDirName);
+        linesSeen += fileLines;
         records.push(...recs);
       } catch (err) {
         errors.push({ file, message: String(err && err.message ? err.message : err) });

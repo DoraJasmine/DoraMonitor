@@ -114,6 +114,177 @@ const ZHIPU_PRICES = [
   },
 ];
 
+/**
+ * Alibaba Model Studio / QoderCN Qwen list prices (USD per 1M tokens).
+ *
+ * QoderCN records internal routing codes (qmodel_latest, qfmodel, ...) rather
+ * than model ids; model-identity.js maps those to the ids below so traffic is
+ * priced as the model actually served instead of falling through to the Kimi
+ * fallback. Sources: https://opencode.ai/docs/go (cached 2026-08-17) and
+ * https://www.alibabacloud.com/help/en/model-studio/model-pricing
+ */
+const QWEN_PRICES = [
+  {
+    id: "qwen3.8-max-preview",
+    patterns: [/^qwen3\.8[-_ ]?max(?:[-_ ]?preview)?$/i],
+    cacheHit: 0.25,
+    cacheWrite: 2.5,
+    input: 2.0,
+    output: 6.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.7-max",
+    patterns: [/^qwen3\.7[-_ ]?max$/i],
+    cacheHit: 0.5,
+    cacheWrite: 3.125,
+    input: 2.5,
+    output: 7.5,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.7-plus",
+    patterns: [/^qwen3\.7[-_ ]?plus$/i, /^qwen3\.7$/i],
+    cacheHit: 0.04,
+    cacheWrite: 0.5,
+    input: 0.4,
+    output: 1.6,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.6-flash",
+    patterns: [/^qwen3\.6[-_ ]?flash$/i],
+    cacheHit: 0.04,
+    cacheWrite: 0.5,
+    input: 0.4,
+    output: 1.6,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.6-plus",
+    patterns: [/^qwen3\.6[-_ ]?plus$/i],
+    cacheHit: 0.05,
+    cacheWrite: 0.625,
+    input: 0.5,
+    output: 3.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.5-plus",
+    patterns: [/^qwen3\.5[-_ ]?plus$/i],
+    cacheHit: 0.02,
+    cacheWrite: 0.25,
+    input: 0.2,
+    output: 1.2,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3-max",
+    patterns: [/^qwen3[-_ ]?max$/i],
+    cacheHit: 0.3,
+    cacheWrite: 2.5,
+    input: 1.6,
+    output: 6.4,
+    context: 262_144,
+    currency: "USD",
+  },
+  {
+    id: "qwen3-coder-plus",
+    patterns: [/^qwen3[-_ ]?coder[-_ ]?plus$/i, /^qwen3[-_ ]?coder$/i],
+    cacheHit: 0.2,
+    cacheWrite: 1.0,
+    input: 1.0,
+    output: 5.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+];
+
+/**
+ * MiniMax list prices (USD per 1M tokens), used by QoderCN's "mmodel" code.
+ * Source: https://opencode.ai/docs/zen (cached 2026-08-17)
+ */
+const MINIMAX_PRICES = [
+  {
+    id: "minimax-m3",
+    patterns: [/^minimax[-_ ]?m3$/i],
+    cacheHit: 0.06,
+    cacheWrite: 0.375,
+    input: 0.3,
+    output: 1.2,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "minimax-m2.7",
+    patterns: [/^minimax[-_ ]?m2\.7$/i],
+    cacheHit: 0.06,
+    cacheWrite: 0.375,
+    input: 0.3,
+    output: 1.2,
+    context: 1_000_000,
+    currency: "USD",
+  },
+];
+
+/**
+ * Additional Chinese-vendor ids recorded by dsh plugins but absent from the
+ * BigModel/Kimi tables above. Sources note the vendor attribution where it is
+ * not officially published.
+ */
+const VENDOR_EXTRA_PRICES = [
+  {
+    id: "glm-5.2",
+    patterns: [/^glm[-_ ]?5\.2$/i],
+    cacheHit: 2.0,
+    cacheWrite: 0,
+    input: 8.0,
+    output: 28.0,
+    context: 1_000_000,
+    currency: "CNY",
+  },
+  {
+    id: "glm-5",
+    patterns: [/^glm[-_ ]?5$/i, /^z-?ai\/glm-5$/i],
+    cacheHit: 2.0,
+    cacheWrite: 0,
+    input: 4.0,
+    output: 16.0,
+    context: 1_000_000,
+    currency: "CNY",
+  },
+  {
+    // dsh's buddy plugin records the bare code "hy3". DSH's own cost meter
+    // books it under Tencent at the OpenCode Go catalog rate and marks the
+    // vendor attribution as unpublished — mirrored here so the number agrees.
+    id: "hy3",
+    patterns: [/^hy3(?:-x)?$/i, /^hy4[-_]preview$/i],
+    cacheHit: 0.035,
+    cacheWrite: 0.14,
+    input: 0.14,
+    output: 0.58,
+    context: 192_000,
+    currency: "USD",
+  },
+];
+
+const ALL_PRICE_TABLES = () => [
+  ...KIMI_PRICES,
+  ...DEEPSEEK_PRICES,
+  ...ZHIPU_PRICES,
+  ...QWEN_PRICES,
+  ...MINIMAX_PRICES,
+  ...VENDOR_EXTRA_PRICES,
+  ...OPENAI_PRICES,
+  ...CLAUDE_PRICES,
+];
+
 /** Fallback when model cannot be mapped to a Kimi SKU — estimate only. */
 const FALLBACK_PRICE = {
   id: "kimi-k2.6",
@@ -334,7 +505,7 @@ function matchPrice(modelName, options = {}) {
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
-  for (const row of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES, ...CLAUDE_PRICES]) {
+  for (const row of ALL_PRICE_TABLES()) {
     for (const re of row.patterns) {
       if (re.test(bare) || re.test(name)) {
         const timeOfUse = deepSeekTimeOfUse(row, options.time);
@@ -542,7 +713,7 @@ function num(v) {
 
 function listPrices(options = {}) {
   const rows = [];
-  for (const p of [...KIMI_PRICES, ...DEEPSEEK_PRICES, ...ZHIPU_PRICES, ...OPENAI_PRICES, ...CLAUDE_PRICES]) {
+  for (const p of ALL_PRICE_TABLES()) {
     const add = (period, multiplier) => rows.push({
       id: p.id,
       cacheHit: p.cacheHit * multiplier * priceToCnyMultiplier(p, options.fxRate),
@@ -562,7 +733,13 @@ function listPrices(options = {}) {
             ? "https://www.anthropic.com/pricing"
             : ZHIPU_PRICES.includes(p)
               ? "https://docs.bigmodel.cn/cn/guide/models"
-          : "https://platform.kimi.com/",
+              : QWEN_PRICES.includes(p)
+                ? "https://opencode.ai/docs/go"
+                : MINIMAX_PRICES.includes(p)
+                  ? "https://opencode.ai/docs/zen"
+                  : VENDOR_EXTRA_PRICES.includes(p)
+                    ? "https://opencode.ai/docs/go"
+                    : "https://platform.kimi.com/",
     });
     if (p.offPeakMultiplier) {
       add("peak", 1);
@@ -578,6 +755,9 @@ module.exports = {
   KIMI_PRICES,
   DEEPSEEK_PRICES,
   ZHIPU_PRICES,
+  QWEN_PRICES,
+  MINIMAX_PRICES,
+  VENDOR_EXTRA_PRICES,
   OPENAI_PRICES,
   CLAUDE_PRICES,
   FALLBACK_PRICE,
