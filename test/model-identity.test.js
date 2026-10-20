@@ -21,7 +21,9 @@ const {
 const ROUTING_TIERS = new Set(["auto", "efficient", "lite", "performance", "ultimate"]);
 
 test("model-identity: QoderCN routing codes resolve to display names", () => {
-  assert.strictEqual(resolveModelIdentity("dfmodel").modelDisplay, "DeepSeek-V4-Flash");
+  assert.strictEqual(resolveModelIdentity("dfmodel").modelDisplay, "DeepSeek-V4.1-Flash");
+  assert.strictEqual(resolveModelIdentity("deepseek-v4.1-flash").modelDisplay, "DeepSeek-V4.1-Flash");
+  assert.strictEqual(resolveModelIdentity("deepseek-flash").modelDisplay, "DeepSeek-V4.1-Flash");
   assert.strictEqual(resolveModelIdentity("dmodel").modelDisplay, "DeepSeek-V4-Pro");
   assert.strictEqual(resolveModelIdentity("qfmodel").modelDisplay, "Qwen3.8-Flash");
   assert.strictEqual(resolveModelIdentity("qmodel_latest").modelDisplay, "Qwen3.7-Max");
@@ -60,8 +62,8 @@ test("model-identity: unmapped codes pass through unchanged", () => {
 });
 
 test("model-identity: lookup is case-insensitive and provider-qualified", () => {
-  assert.strictEqual(resolveModelIdentity("DFMODEL").modelDisplay, "DeepSeek-V4-Flash");
-  assert.strictEqual(resolveModelIdentity("qodercn:dfmodel").modelDisplay, "DeepSeek-V4-Flash");
+  assert.strictEqual(resolveModelIdentity("DFMODEL").modelDisplay, "DeepSeek-V4.1-Flash");
+  assert.strictEqual(resolveModelIdentity("qodercn:dfmodel").modelDisplay, "DeepSeek-V4.1-Flash");
   assert.strictEqual(resolveModelIdentity("vendor/qfmodel").modelDisplay, "Qwen3.8-Flash");
 });
 

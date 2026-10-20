@@ -75,7 +75,7 @@ test("dsh: a plugin routing code renders as the model name, not the raw code", (
   assert.strictEqual(out.records.length, 1);
   const rec = out.records[0];
   assert.strictEqual(rec.model, "dfmodel", "raw id is preserved for traceability");
-  assert.strictEqual(rec.modelDisplay, "DeepSeek-V4-Flash");
+  assert.strictEqual(rec.modelDisplay, "DeepSeek-V4.1-Flash");
   assert.strictEqual(rec.modelProvider, "qodercn", "upstream provider is recorded");
   // The priced row must be the DeepSeek model, not the Kimi K2.6 fallback.
   assert.strictEqual(rec.priceId, "deepseek-flash");

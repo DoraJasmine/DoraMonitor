@@ -109,7 +109,7 @@ test("dsh provider: parses multi-frame zstd, maps DeepSeek token fields", zstdOp
   assert.strictEqual(r.inputCacheCreation, 50);
   assert.strictEqual(r.output, 200);
   assert.strictEqual(r.model, "deepseek-flash");
-  assert.strictEqual(r.modelDisplay, "deepseek-flash");
+  assert.strictEqual(r.modelDisplay, "DeepSeek-V4.1-Flash");
   assert.strictEqual(r.project, "G:\\3dgs\\3DGS");
   assert.strictEqual(r.session, "session-aaa");
   assert.strictEqual(r.time, T1);

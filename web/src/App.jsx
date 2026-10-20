@@ -67,7 +67,7 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
  *
  * Optimised for readability: when a provider can resolve a display name
  * (dsh records another vendor's routing code such as "dfmodel", QoderCN
- * resolves it to "DeepSeek-V4-Flash"), that name wins. The raw id is still
+ * resolves it to "DeepSeek-V4.1-Flash"), that name wins. The raw id is still
  * rendered underneath in smaller type and used in the tooltip, so
  * traceability is preserved — but the raw code never stands in for a name we
  * actually know. Falls back to the raw id when no mapping exists.

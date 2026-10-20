@@ -10,12 +10,12 @@
  *                             provider's own id unchanged.
  * Before this module existed the mapping lived in two provider files, so dsh
  * records (which had no mapping at all) rendered as the raw code while the
- * identical QoderCN traffic rendered as "DeepSeek-V4-Flash".
+ * identical QoderCN traffic rendered as "DeepSeek-V4.1-Flash".
  *
  * Lookup order:
  *   1. exact code (case-insensitive)
  *   2. `provider` prefix + code, e.g. "qodercn:qfmodel"
- *   3. a small set of obvious aliases (dfmodel ↔ deepseek-v4-flash)
+ *   3. a small set of obvious aliases (dfmodel ↔ deepseek-flash)
  *
  * Unmapped codes pass through unchanged: a new routing code must never make a
  * record disappear or throw — it should just stay visible as its raw id.
@@ -45,8 +45,8 @@ const QODER_DISPLAY_NAMES = Object.freeze({
   q36fmodel: "Qwen3.6-Flash",
   // "qfmodel" is the fast-tier Qwen routing code → Qwen3.8 Flash.
   qfmodel: "Qwen3.8-Flash",
-  // DeepSeek
-  dfmodel: "DeepSeek-V4-Flash",
+  // DeepSeek — "dfmodel" is the flash-tier routing code → DeepSeek V4.1 Flash.
+  dfmodel: "DeepSeek-V4.1-Flash",
   dmodel: "DeepSeek-V4-Pro",
   // Zhipu GLM
   gmodel: "GLM-5",
@@ -67,7 +67,9 @@ const EXTRA_DISPLAY_NAMES = Object.freeze({
   hy3: "Hy3",
   "hy3-x": "Hy3",
   "hy4-preview": "Hy4 Preview",
-  dfmodel: "DeepSeek-V4-Flash",
+  dfmodel: "DeepSeek-V4.1-Flash",
+  "deepseek-v4.1-flash": "DeepSeek-V4.1-Flash",
+  "deepseek-flash": "DeepSeek-V4.1-Flash",
 });
 
 /**
@@ -87,7 +89,7 @@ const PRICING_KEYS = Object.freeze({
   dashscope_qmodel: "qwen3.7-plus",
   dashscope_qwen3_coder: "qwen3-coder-plus",
   dashscope_qwen_max_latest: "qwen3-max",
-  dfmodel: "deepseek-v4-flash",
+  dfmodel: "deepseek-flash",
   dmodel: "deepseek-v4-pro",
   gmodel: "glm-5",
   gm51model: "glm-5.2",
