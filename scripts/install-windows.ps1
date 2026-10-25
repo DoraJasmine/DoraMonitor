@@ -65,7 +65,7 @@ Info "Installed to $InstallDir"
 
 # ---------- 3. 同步配置 ----------
 Info "Writing sync config..."
-$cfgDir = "$env:USERPROFILE.doramonitor"
+$cfgDir = "$env:USERPROFILE\.doramonitor"
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 $cfg = [ordered]@{
   currency = "CNY"
