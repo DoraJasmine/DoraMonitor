@@ -33,6 +33,10 @@ DoraMonitor 支持 7 个工具 provider。本文逐一说明每个 provider 的�
   qoder-cn-cli 额外要求 credits 也为 0）——error/cancelled 且无 token 的行不算请求。
 - 记录按 `time` 降序输出；`meta.errors` 截断为 20 条。
 - 递归遍历时跳过 `blobs/`、`tasks/`、`node_modules/` 目录。
+- **按文件增量缓存**（kimi-code / codex / dsh）：解析结果按 (路径 + mtimeMs +
+  size) 缓存，重扫只重读变化的文件；跨文件去重与配额挑选跑在廉价的后处理里。
+  `meta.filesReread` 表示本次实际重读的文件数。`collect.invalidate()`（设置
+  变更、会话移动）会清空这些缓存以保证费用重算。
 - home 展开：支持 `~`、`~/`、`~\` 与 Windows `%VAR%` 环境变量。
 - SQLite 只读：优先 `node:sqlite`（Node 22.5+ 的 `DatabaseSync`，`readOnly: true`），
   否则回退 `sqlite3` CLI（`-readonly -json`，参数绑定，30s 超时）；两者皆无则报

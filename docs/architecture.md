@@ -102,7 +102,14 @@
   - TTL 内且未强制 → 直接返回快照并标记 `fromCache: true`；
   - 否则对每个 provider 做**文件戳探测**（路径+mtimeMs+size，stat-only）：
     戳未变 → 复用上次 records（不重扫）；变了 → 重扫。
+  - **按文件增量缓存**（kimi-code / codex / dsh 三个大头 provider）：解析结果按
+    文件缓存（key = 路径 + mtimeMs + size）。JSONL/rollout 是追加型文件，重扫时
+    只有真正变化的文件会被重读重解析，跨文件去重与配额挑选在廉价的后处理里跑
+    （对已解析记录做一次哈希 + 排序）。缓存按 home 命名空间隔离；
+    `collect.invalidate()` 会同时清空 provider 的文件缓存——费用设置变更后
+    成本必须重算。
   - 单个 provider 抛异常 → 用空结果占位（`meta.errors`），**绝不拖垮其他工具**。
+- 快照（records 合并 + 全局排序）按扫描代数缓存一次，TTL 命中路径零重排。
 - 快照形状：`{ byTool, records, events, tools, scannedAt }`；`records` 全局按
   `time` 降序。`events` 目前只有 kimi-code 的 `tool.call` 事件（WebSearch、
   FetchURL 等工具调用计数）。
