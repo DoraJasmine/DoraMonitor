@@ -20,6 +20,8 @@ const cache = {
   byTool: new Map(),
   /** tool id -> { files: [{path, mtimeMs, size, exists}] } */
   stamps: new Map(),
+  /** snapshot built for the current scannedAt generation (records sorted once) */
+  snapshot: null,
 };
 
 function stampsEqual(prev, files) {
@@ -38,12 +40,16 @@ function stampsEqual(prev, files) {
 }
 
 function probeStamps(provider, home) {
-  return sourceFiles(provider, home).map((p) => {
-    const st = fileStamp(p);
-    return st
-      ? { path: p, exists: true, mtimeMs: st.mtimeMs, size: st.size }
-      : { path: p, exists: false };
-  });
+  // Sorted by path so a readdir-order change cannot read as "something
+  // changed" and trigger a pointless full rescan.
+  return sourceFiles(provider, home)
+    .map((p) => {
+      const st = fileStamp(p);
+      return st
+        ? { path: p, exists: true, mtimeMs: st.mtimeMs, size: st.size }
+        : { path: p, exists: false };
+    })
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 function scanProvider(provider, home) {
@@ -67,7 +73,7 @@ function collect({ force = false } = {}) {
     now - cache.scannedAt < COLLECT_TTL_MS &&
     cache.byTool.size > 0
   ) {
-    return { ...snapshot(), fromCache: true };
+    return { ...cachedSnapshot(), fromCache: true };
   }
 
   const tools = listProviders();
@@ -105,25 +111,44 @@ function collect({ force = false } = {}) {
   }
 
   cache.scannedAt = now;
-  return { ...snapshot(), fromCache: false, reused, rescanned };
+  cache.snapshot = null; // new scan generation → rebuild the sorted snapshot once
+  return { ...cachedSnapshot(), fromCache: false, reused, rescanned };
+}
+
+function cachedSnapshot() {
+  if (!cache.snapshot) {
+    const byTool = new Map(cache.byTool);
+    const records = [];
+    const events = [];
+    const tools = [];
+    for (const [id, entry] of byTool) {
+      records.push(...entry.records);
+      if (entry.events) events.push(...entry.events);
+      tools.push({ id, recordCount: entry.records.length, meta: entry.meta });
+    }
+    records.sort((a, b) => b.time - a.time);
+    cache.snapshot = { byTool, records, events, tools, scannedAt: cache.scannedAt };
+  }
+  return cache.snapshot;
 }
 
 function snapshot() {
-  const byTool = new Map(cache.byTool);
-  const records = [];
-  const events = [];
-  const tools = [];
-  for (const [id, entry] of byTool) {
-    records.push(...entry.records);
-    if (entry.events) events.push(...entry.events);
-    tools.push({ id, recordCount: entry.records.length, meta: entry.meta });
-  }
-  records.sort((a, b) => b.time - a.time);
-  return { byTool, records, events, tools, scannedAt: cache.scannedAt };
+  return { ...cachedSnapshot() };
 }
 
+/**
+ * Drop all caches: the scan generation, the built snapshot, and every
+ * provider's per-file parse cache. Must be called when pricing settings
+ * change (cached records carry costCny computed under the old settings) and
+ * after session files move or are deleted.
+ */
 function invalidate() {
   cache.scannedAt = 0;
+  cache.snapshot = null;
+  for (const tool of listProviders()) {
+    const provider = getProvider(tool.id);
+    if (provider && typeof provider.clearCache === "function") provider.clearCache();
+  }
 }
 
 module.exports = { collect, invalidate, COLLECT_TTL_MS };

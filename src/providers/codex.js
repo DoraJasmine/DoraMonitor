@@ -3,7 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, emptyRecord, expandHome } = require("./base");
+const { n, emptyRecord, expandHome, fileStamp } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
 
@@ -30,6 +30,14 @@ const { loadSettings } = require("../settings");
  * carries a `rate_limits` snapshot (primary = 5-hour rolling window,
  * secondary = weekly). The newest event wins, so quota refreshes whenever
  * token usage does.
+ *
+ * INCREMENTAL CACHE: rollout files are append-only in practice, so parsed
+ * records are cached per file keyed on (mtimeMs, size) — a rescan re-reads
+ * only files that changed (577 MB of history stays untouched otherwise).
+ * The cross-file response_id dedup and the global newest-quota selection
+ * still run over the full set on every scan (cheap pass over parsed
+ * records). collect.invalidate() → clearCache() drops the caches when
+ * pricing settings change.
  */
 const provider = {
   id: "codex",
@@ -46,18 +54,17 @@ const provider = {
     return fs.existsSync(path.join(home, "sessions"));
   },
 
+  /** Drop all per-file parse caches (used when pricing settings change). */
+  clearCache() {
+    fileCaches.clear();
+  },
+
   scan(home) {
     const roots = [
       path.join(home, "sessions"),
       path.join(home, "archived_sessions"),
     ];
-    const records = [];
     const errors = [];
-    const seenResponses = new Set();
-    let filesScanned = 0;
-    let linesSeen = 0;
-    // Newest rate_limits snapshot across all scanned files, { ts, windows }.
-    let bestQuota = null;
 
     const settings = (() => {
       try {
@@ -67,122 +74,82 @@ const provider = {
       }
     })();
 
+    // Roots keep their order (sessions/ wins the response_id dedup against
+    // archived copies, as before); files are sorted inside each root for a
+    // deterministic first-wins order.
+    const orderedFiles = [];
     for (const root of roots) {
-      for (const file of listRolloutFiles(root)) {
-        filesScanned += 1;
-        try {
-          const text = readRolloutText(file);
-          const lines = text.split(/\r?\n/);
+      for (const file of listRolloutFiles(root).sort()) orderedFiles.push(file);
+    }
 
-          // turn_id -> { model, cwd } from turn_context events; also the
-          // most recent values as a fallback for records whose turn has no
-          // context line in this file.
-          const turnInfo = new Map();
-          let lastModel = null;
-          let lastCwd = null;
-          // Newest rate_limits within THIS file (each file is read whole).
-          let fileQuota = null;
+    let cache = fileCaches.get(home);
+    if (!cache) {
+      cache = new Map();
+      fileCaches.set(home, cache);
+    }
 
-          for (const line of lines) {
-            if (!line) continue;
-            linesSeen += 1;
-            // Fast reject before full parse
-            if (
-              !line.includes('"token_usage_record"') &&
-              !line.includes('"turn_context"') &&
-              !line.includes('"rate_limits"')
-            ) {
-              continue;
-            }
-            let obj;
-            try {
-              obj = JSON.parse(line);
-            } catch {
-              continue;
-            }
-
-            if (obj.type === "turn_context") {
-              const p = obj.payload || {};
-              if (p.model) lastModel = String(p.model);
-              if (p.cwd) lastCwd = String(p.cwd);
-              if (p.turn_id) {
-                turnInfo.set(String(p.turn_id), { model: lastModel, cwd: lastCwd });
-              }
-              continue;
-            }
-
-            // Cloud quota snapshot: keep the newest rate_limits in the file.
-            if (obj.type === "event_msg" && obj.payload && obj.payload.rate_limits) {
-              const ts = Date.parse(obj.timestamp) || 0;
-              if (!fileQuota || ts >= fileQuota.ts) {
-                fileQuota = { ts, windows: quotaWindows(obj.payload.rate_limits) };
-              }
-              continue;
-            }
-
-            if (obj.type !== "token_usage_record") continue;
-            const payload = obj.payload || {};
-            const usage = payload.usage;
-            if (!usage || typeof usage !== "object") continue;
-
-            const cached = n(usage.cached_input_tokens);
-            const inputTotal = n(usage.input_tokens);
-            const inputOther = Math.max(0, inputTotal - cached);
-            const output = n(usage.output_tokens);
-            const cacheCreate = n(usage.cache_write_input_tokens);
-            // Skip all-zero placeholders BEFORE dedupe: registering the id first
-            // would let a zero-usage placeholder swallow the real record that
-            // carries the same response_id.
-            if (inputOther + cached + cacheCreate + output <= 0) continue;
-
-            const responseId = String(payload.response_id || "");
-            if (responseId) {
-              if (seenResponses.has(responseId)) continue;
-              seenResponses.add(responseId);
-            }
-
-            const ti = payload.turn_id ? turnInfo.get(String(payload.turn_id)) : null;
-            const model = (ti && ti.model) || lastModel || "unknown";
-            const project = (ti && ti.cwd) || lastCwd || null;
-
-            const rec = emptyRecord("codex");
-            rec.time = Date.parse(obj.timestamp) || 0;
-            rec.model = model;
-            rec.modelDisplay = model;
-            rec.modelResolved = model;
-            rec.inputOther = inputOther;
-            rec.output = output;
-            rec.inputCacheRead = cached;
-            rec.inputCacheCreation = cacheCreate;
-            const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
-            rec.costCny = cost.total;
-            rec.costEstimated = cost.estimated;
-            rec.priceId = cost.priceId;
-            rec.project = project;
-            rec.session = String(payload.session_id || payload.thread_id || rolloutBasename(file));
-            rec.sessionHint = { session: rec.session, project: rec.project };
-            records.push(rec);
-          }
-          // A full file read always ends at its newest line, so the last
-          // fileQuota seen is the freshest; keep the newest across files.
-          if (fileQuota && fileQuota.windows.length && (!bestQuota || fileQuota.ts >= bestQuota.ts)) {
-            bestQuota = fileQuota;
-          }
-        } catch (err) {
-          errors.push({ file, message: String(err && err.message ? err.message : err) });
-        }
+    // Per-file parse (cached), then a cheap post-pass for cross-file state:
+    // response_id dedup, global newest quota, sort.
+    const parsedFiles = [];
+    let filesReread = 0;
+    for (const file of orderedFiles) {
+      const st = fileStamp(file);
+      const stamp = st ? { mtimeMs: st.mtimeMs, size: st.size } : null;
+      const cached = cache.get(file);
+      if (cached && sameStamp(cached.stamp, stamp)) {
+        parsedFiles.push(cached.parsed);
+        continue;
+      }
+      const parsed = parseRolloutFile(file, settings);
+      cache.set(file, { stamp, parsed });
+      parsedFiles.push(parsed);
+      filesReread += 1;
+      for (const err of parsed.errors) errors.push(err);
+    }
+    // Prune cache entries for files that disappeared.
+    if (cache.size > orderedFiles.length) {
+      const present = new Set(orderedFiles);
+      for (const key of [...cache.keys()]) {
+        if (!present.has(key)) cache.delete(key);
       }
     }
 
+    const records = [];
+    const seenResponses = new Set();
+    let bestQuota = null;
+    let duplicatesSkipped = 0;
+    let linesSeen = 0;
+    for (const parsed of parsedFiles) {
+      linesSeen += parsed.lines;
+      // A full file read always ends at its newest line, so the last
+      // fileQuota seen is the freshest; keep the newest across files.
+      if (parsed.fileQuota && parsed.fileQuota.windows.length && (!bestQuota || parsed.fileQuota.ts >= bestQuota.ts)) {
+        bestQuota = parsed.fileQuota;
+      }
+      for (const entry of parsed.entries) {
+        // The same thread can appear in both sessions/ and archived_sessions/
+        // after archiving — dedupe by response_id across files.
+        if (entry.key) {
+          if (seenResponses.has(entry.key)) {
+            duplicatesSkipped += 1;
+            continue;
+          }
+          seenResponses.add(entry.key);
+        }
+        records.push(entry.rec);
+      }
+    }
     // newest first for "recent"
     records.sort((a, b) => b.time - a.time);
 
     return {
       records,
       meta: {
-        filesScanned,
+        filesScanned: orderedFiles.length,
+        filesReread,
         linesSeen,
         recordCount: records.length,
+        duplicatesSkipped,
         home,
         sessionsRoot: path.join(home, "sessions"),
         errors: errors.slice(0, 20),
@@ -191,6 +158,116 @@ const provider = {
     };
   },
 };
+
+/** home -> Map(file path -> { stamp, parsed }) */
+const fileCaches = new Map();
+
+function sameStamp(a, b) {
+  if (!a || !b) return false;
+  return a.mtimeMs === b.mtimeMs && a.size === b.size;
+}
+
+/**
+ * Parse one rollout file: costed token records (pre-dedup, paired with their
+ * response_id keys), the file's newest quota snapshot, and line count.
+ * Files are append-only in practice, so unchanged files are never re-read.
+ */
+function parseRolloutFile(file, settings) {
+  const parsed = { entries: [], fileQuota: null, lines: 0, errors: [] };
+  let text;
+  try {
+    text = readRolloutText(file);
+  } catch (err) {
+    parsed.errors.push({ file, message: String(err && err.message ? err.message : err) });
+    return parsed;
+  }
+  const lines = text.split(/\r?\n/);
+
+  // turn_id -> { model, cwd } from turn_context events; also the
+  // most recent values as a fallback for records whose turn has no
+  // context line in this file.
+  const turnInfo = new Map();
+  let lastModel = null;
+  let lastCwd = null;
+
+  for (const line of lines) {
+    if (!line) continue;
+    parsed.lines += 1;
+    // Fast reject before full parse
+    if (
+      !line.includes('"token_usage_record"') &&
+      !line.includes('"turn_context"') &&
+      !line.includes('"rate_limits"')
+    ) {
+      continue;
+    }
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (obj.type === "turn_context") {
+      const p = obj.payload || {};
+      if (p.model) lastModel = String(p.model);
+      if (p.cwd) lastCwd = String(p.cwd);
+      if (p.turn_id) {
+        turnInfo.set(String(p.turn_id), { model: lastModel, cwd: lastCwd });
+      }
+      continue;
+    }
+
+    // Cloud quota snapshot: keep the newest rate_limits in the file.
+    if (obj.type === "event_msg" && obj.payload && obj.payload.rate_limits) {
+      const ts = Date.parse(obj.timestamp) || 0;
+      if (!parsed.fileQuota || ts >= parsed.fileQuota.ts) {
+        parsed.fileQuota = { ts, windows: quotaWindows(obj.payload.rate_limits) };
+      }
+      continue;
+    }
+
+    if (obj.type !== "token_usage_record") continue;
+    const payload = obj.payload || {};
+    const usage = payload.usage;
+    if (!usage || typeof usage !== "object") continue;
+
+    const cached = n(usage.cached_input_tokens);
+    const inputTotal = n(usage.input_tokens);
+    const inputOther = Math.max(0, inputTotal - cached);
+    const output = n(usage.output_tokens);
+    const cacheCreate = n(usage.cache_write_input_tokens);
+    // Skip all-zero placeholders BEFORE dedupe: registering the id first
+    // would let a zero-usage placeholder swallow the real record that
+    // carries the same response_id.
+    if (inputOther + cached + cacheCreate + output <= 0) continue;
+
+    const responseId = String(payload.response_id || "");
+
+    const ti = payload.turn_id ? turnInfo.get(String(payload.turn_id)) : null;
+    const model = (ti && ti.model) || lastModel || "unknown";
+    const project = (ti && ti.cwd) || lastCwd || null;
+
+    const rec = emptyRecord("codex");
+    rec.time = Date.parse(obj.timestamp) || 0;
+    rec.model = model;
+    rec.modelDisplay = model;
+    rec.modelResolved = model;
+    rec.inputOther = inputOther;
+    rec.output = output;
+    rec.inputCacheRead = cached;
+    rec.inputCacheCreation = cacheCreate;
+    const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
+    rec.costCny = cost.total;
+    rec.costEstimated = cost.estimated;
+    rec.priceId = cost.priceId;
+    rec.project = project;
+    rec.session = String(payload.session_id || payload.thread_id || rolloutBasename(file));
+    rec.sessionHint = { session: rec.session, project: rec.project };
+    parsed.entries.push({ rec, key: responseId });
+  }
+  return parsed;
+}
 
 /** Map a rate_limits snapshot to the same window shape the Kimi quota emits. */
 function quotaWindows(rl) {

@@ -70,7 +70,20 @@ function readStateSafe(sessionDir) {
   }
 }
 
+// Session sizes are display hints, but dirSizeApprox walks every file —
+// caching them for a minute keeps the sessions list O(sessions) statt
+// O(files under every session). Nested appends (wire.jsonl growing) do not
+// bump the session dir's mtime, so the cache is TTL-based rather than
+// mtime-based; a ≤60s-stale size is fine for a card.
+const SIZE_CACHE_TTL_MS = 60_000;
+const sizeCache = new Map(); // dir -> { at, bytes, files }
+
 function dirSizeApprox(dir) {
+  const cached = sizeCache.get(dir);
+  const now = Date.now();
+  if (cached && now - cached.at < SIZE_CACHE_TTL_MS) {
+    return { bytes: cached.bytes, files: cached.files };
+  }
   let total = 0;
   let files = 0;
   const stack = [dir];
@@ -95,6 +108,7 @@ function dirSizeApprox(dir) {
       }
     }
   }
+  sizeCache.set(dir, { at: now, bytes: total, files });
   return { bytes: total, files };
 }
 
@@ -436,6 +450,9 @@ function safeListNames(dir) {
 
 const PREVIEW_MAX_MESSAGES = 80;
 const PREVIEW_MAX_CHARS = 2500;
+/** Stop streaming the wire after this many lines — previews cap at 80
+ *  messages anyway; beyond this the transcript is all tool noise. */
+const PREVIEW_MAX_LINES = 8000;
 
 function clipText(s, max = PREVIEW_MAX_CHARS) {
   // Strip NULs and lone surrogates so JSON.stringify never emits invalid UTF-8/JSON.
@@ -568,16 +585,10 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
   const messages = [];
   let truncated = false;
   if (wirePath) {
-    let text = "";
-    try {
-      text = fs.readFileSync(wirePath, "utf8");
-    } catch {
-      text = "";
-    }
-    const lines = text.split(/\r?\n/);
     // stepKey -> { texts:[], time }
     let currentAssistant = null;
     let currentStepKey = null;
+    let lineCount = 0;
 
     const maybeStartAssistantStep = (stepKey, time) => {
       if (currentStepKey && currentStepKey !== stepKey) {
@@ -592,11 +603,17 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
       }
     };
 
-    for (const line of lines) {
-      if (!line) continue;
+    // Returns true when the caller should stop reading the file.
+    const handleLine = (line) => {
+      if (!line) return false;
+      lineCount += 1;
       if (messages.length >= PREVIEW_MAX_MESSAGES) {
         truncated = true;
-        break;
+        return true;
+      }
+      if (lineCount > PREVIEW_MAX_LINES) {
+        truncated = true;
+        return true;
       }
       // Fast path filter
       if (
@@ -606,13 +623,13 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
         !line.includes('"content.part"') &&
         !line.includes('"step.end"')
       ) {
-        continue;
+        return false;
       }
       let obj;
       try {
         obj = JSON.parse(line);
       } catch {
-        continue;
+        return false;
       }
       const type = obj.type;
 
@@ -625,9 +642,9 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
         }
         const msg = obj.message || {};
         const role = msg.role || "unknown";
-        if (role === "tool") continue;
+        if (role === "tool") return false;
         const raw = extractTextParts(msg.content);
-        if (!raw.trim()) continue;
+        if (!raw.trim()) return false;
         pushPreviewMessage(messages, {
           role,
           time: obj.time || null,
@@ -635,13 +652,13 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
             ? "[redacted: possible secret content]"
             : raw,
         });
-        continue;
+        return false;
       }
 
       if (type === "turn.steer" || type === "turn.prompt") {
         // Only use as user fallback; dedupe will drop if append_message already added it.
         const raw = extractTurnInputText(obj.input);
-        if (!raw.trim()) continue;
+        if (!raw.trim()) return false;
         // Prefer not to interrupt assistant reconstruction mid-step unless empty
         pushPreviewMessage(messages, {
           role: "user",
@@ -650,7 +667,7 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
             ? "[redacted: possible secret content]"
             : raw,
         });
-        continue;
+        return false;
       }
 
       if (type === "context.append_loop_event") {
@@ -666,7 +683,7 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
             maybeStartAssistantStep(stepKey, obj.time || null);
             currentAssistant.texts.push(part.text);
           }
-          continue;
+          return false;
         }
         if (evType === "step.end") {
           flushAssistantStep(messages, currentAssistant);
@@ -674,10 +691,66 @@ function getSessionPreview(home, workspaceId, sessionId, statusHint) {
           currentStepKey = null;
         }
       }
+      return false;
+    };
+
+    // Stream the wire in chunks instead of readFileSync — a large session's
+    // wire.jsonl can be tens of MB while the preview stops at 80 messages /
+    // 8000 lines anyway. Chunks split on the last raw \n byte so multi-byte
+    // UTF-8 characters are never cut in half (continuation bytes are ≥0x80).
+    const CHUNK = 1024 * 1024;
+    let fd = null;
+    try {
+      fd = fs.openSync(wirePath, "r");
+      const buf = Buffer.alloc(CHUNK);
+      let carry = Buffer.alloc(0);
+      let done = false;
+      // Track the position explicitly: a null position must advance the fd
+      // cursor, but re-reading from an unadvanced cursor would replay the
+      // same chunk forever (observed), so never rely on it here.
+      let pos = 0;
+      for (;;) {
+        // fs.readSync returns the byte count directly (not { bytesRead } —
+        // that's the promise-based fs.read). Destructuring it yields
+        // undefined and the loop would process the whole 1 MB buffer.
+        const bytesRead = fs.readSync(fd, buf, 0, CHUNK, pos);
+        if (bytesRead <= 0) break;
+        pos += bytesRead;
+        const chunk = carry.length
+          ? Buffer.concat([carry, buf.subarray(0, bytesRead)])
+          : buf.subarray(0, bytesRead);
+        let nl = chunk.lastIndexOf(10);
+        if (nl === -1) {
+          carry = chunk;
+          continue;
+        }
+        carry = chunk.subarray(nl + 1);
+        const text = chunk.subarray(0, nl).toString("utf8");
+        for (const line of text.split("\n")) {
+          if (handleLine(line.endsWith("\r") ? line.slice(0, -1) : line)) {
+            done = true;
+            break;
+          }
+        }
+        if (done) break;
+      }
+      if (!done && carry.length) {
+        const line = carry.toString("utf8");
+        handleLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+      }
+    } catch {
+      /* preview is best-effort */
+    } finally {
+      if (fd !== null) {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          /* ignore */
+        }
+      }
     }
     // trailing assistant buffer
     flushAssistantStep(messages, currentAssistant);
-    if (lines.length > 8000) truncated = true;
     if (messages.length >= PREVIEW_MAX_MESSAGES) truncated = true;
   }
 

@@ -196,6 +196,28 @@ const CONTENT_TYPES = {
 // Vite emits content-hashed asset names, so they can be cached forever.
 const IMMUTABLE_RE = /-[A-Za-z0-9_-]{8,}\.(js|css|woff2|png|svg|webp|jpg|jpeg)$/;
 
+// Gzip results cached per (path, mtime) — re-compressing the ~300 KB JS
+// bundle on every request is pure CPU waste, and the inputs only change on
+// rebuild. Bounded: clear the whole cache past ~40 MB of retained buffers.
+const gzipCache = new Map();
+const GZIP_CACHE_MAX_BYTES = 40 * 1024 * 1024;
+let gzipCacheBytes = 0;
+
+function cachedGzip(filePath, mtimeMs, buf) {
+  const key = `${filePath}|${mtimeMs}`;
+  const hit = gzipCache.get(key);
+  if (hit) return hit;
+  const { gzipSync } = require("zlib");
+  const gz = gzipSync(buf);
+  if (gzipCacheBytes + gz.length > GZIP_CACHE_MAX_BYTES) {
+    gzipCache.clear();
+    gzipCacheBytes = 0;
+  }
+  gzipCache.set(key, gz);
+  gzipCacheBytes += gz.length;
+  return gz;
+}
+
 function sendFile(res, filePath, reqHeaders) {
   const ext = path.extname(filePath).toLowerCase();
   fs.readFile(filePath, (err, buf) => {
@@ -213,9 +235,9 @@ function sendFile(res, filePath, reqHeaders) {
     // gzip text assets — the JS bundle dominates page weight on slow links.
     const accept = String((reqHeaders && reqHeaders["accept-encoding"]) || "");
     if (accept.includes("gzip") && /\.(js|css|html|svg|json)$/i.test(ext) && buf.length > 1024) {
-      const { gzipSync } = require("zlib");
       try {
-        buf = gzipSync(buf);
+        const mtime = fs.statSync(filePath).mtimeMs;
+        buf = cachedGzip(filePath, mtime, buf);
         headers["Content-Encoding"] = "gzip";
       } catch {
         // fall through uncompressed
@@ -274,9 +296,9 @@ async function handleApi(req, res, url, cliHome) {
     const toolParam = url.searchParams.get("tool") || "all";
     const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
 
-    // Device dimension: local records are tagged device:"local"; peers come
-    // from the sync cache so requests never block on the network.
-    const localRecords = collected.records.map((r) => ({ ...r, device: "local" }));
+    // Device dimension: local records carry device:"local" from the scan;
+    // peers come from the sync cache so requests never block on the network.
+    const localRecords = collected.records;
     const settingsNow = loadSettings();
     const syncOn = syncEnabled(settingsNow);
     const peerRecords = syncOn ? peerRecordsCached() : [];

@@ -140,6 +140,10 @@ function emptyRecord(tool) {
   return {
     tool,
     time: 0,
+    /** Device attribution: local scans are always "local"; only sync.js
+     *  synthesizes records for peer devices. Set here so the API layer never
+     *  needs to shallow-copy the whole record set on every request. */
+    device: "local",
     model: "unknown",
     modelDisplay: "unknown",
     modelResolved: null,
