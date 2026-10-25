@@ -85,8 +85,10 @@ test("claude provider: parses usage with Anthropic input convention, resolves pr
   assert.strictEqual(r.project, "D:\\proj");
   assert.strictEqual(r.session, "session-a");
   assert.strictEqual(r.time, Date.parse("2026-09-17T01:55:44.123Z"));
-  // Sonnet rates in CNY/M: in 21.6, cache read 2.16, cache write 27, out 108
-  assert.ok(Math.abs(r.costCny - 0.045414) < 1e-9, `costCny=${r.costCny}`);
+  // Sonnet USD/M: in 3, cache read 0.3, cache write 3.75, out 15 — converted
+  // with the fxRate the provider itself reads (user settings), whatever it is.
+  const fx = require("../src/settings").loadSettings().fxRate || 6.67;
+  assert.ok(Math.abs(r.costCny - (0.0063075 * fx)) < 1e-9, `costCny=${r.costCny} fx=${fx}`);
   assert.strictEqual(r.costEstimated, false);
   assert.strictEqual(r.priceId, "claude-sonnet");
 });

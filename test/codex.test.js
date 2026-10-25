@@ -86,8 +86,9 @@ test("codex provider: parses per-response usage, splits cached input, resolves m
   assert.strictEqual(r.project, "G:\\proj");
   assert.strictEqual(r.session, "sess-1");
   assert.ok(r.time > 0);
-  // Terra cache writes are billed at $2.50/M: (600*2 + 400*.2 + 50*2.5 + 200*12) / 1e6
-  assert.ok(Math.abs(r.costCny - 0.003805 * 7.2) < 1e-9, `costCny=${r.costCny}`);
+  // Terra cache writes are billed at $2.50/M: (600*2 + 400*.2 + 50*2.5 + 200*12) / 1e6 USD
+  const fx = require("../src/settings").loadSettings().fxRate || 6.67;
+  assert.ok(Math.abs(r.costCny - 0.003805 * fx) < 1e-9, `costCny=${r.costCny} fx=${fx}`);
   assert.strictEqual(r.costEstimated, false);
   assert.strictEqual(r.priceId, "gpt-5.6-terra");
 });
