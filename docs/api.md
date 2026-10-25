@@ -132,7 +132,7 @@
     "nativeCurrency": "CNY", "unit": "CNY / 1M tokens",
     "display": { "currency": "CNY", "symbol": "¥", "cacheHit": 1.3, "cacheWrite": 13.0, "input": 13.0, "output": 68.0 }
   } ],
-  "currency": "CNY", "currencySymbol": "¥", "fxRate": 7.2, "customPrices": []
+  "currency": "CNY", "currencySymbol": "¥", "fxRate": 6.67, "customPrices": []
 }
 ```
 

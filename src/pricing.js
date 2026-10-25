@@ -646,11 +646,11 @@ function priceForCell(modelName, rateKey, options = {}) {
   // No row → fallback estimate; its rates are already approximate, so the
   // recorded modifier is ignored rather than compounding the guess.
   if (!row) {
-    const fx0 = Number(options.fxRate) > 0 ? Number(options.fxRate) : 7.2;
+    const fx0 = Number(options.fxRate) > 0 ? Number(options.fxRate) : 6.67;
     const fb = normalizedFallbackPrice(fx0, String(modelName || ""));
     return { id: fb.id, cacheHit: fb.cacheHit, cacheWrite: fb.cacheWrite, input: fb.input, output: fb.output, estimated: true };
   }
-  const fxRate = Number(options.fxRate) > 0 ? Number(options.fxRate) : 7.2;
+  const fxRate = Number(options.fxRate) > 0 ? Number(options.fxRate) : 6.67;
   const cny = priceToCnyMultiplier(row, fxRate);
   let inputMult = 1;
   let outputMult = 1;
@@ -734,7 +734,7 @@ function normalizedFallbackPrice(fxRate, match) {
 function priceToCnyMultiplier(row, fxRate) {
   if (row.currency !== "USD") return 1;
   const fx = Number(fxRate);
-  return Number.isFinite(fx) && fx > 0 ? fx : 7.2;
+  return Number.isFinite(fx) && fx > 0 ? fx : 6.67;
 }
 
 /**
@@ -806,7 +806,7 @@ function matchCustomPrice(modelName, customPrices, fxRate, fallbackPrice = FALLB
     }
   }
   if (!best) return null;
-  const fx = Number(fxRate) > 0 ? Number(fxRate) : 7.2;
+  const fx = Number(fxRate) > 0 ? Number(fxRate) : 6.67;
   const input = customComponentCny(best.input, best.currency, fx);
   const cacheHit = customComponentCny(best.cacheHit, best.currency, fx);
   const output = customComponentCny(best.output, best.currency, fx);
@@ -844,7 +844,7 @@ function costForUsage(modelName, usage, options = {}) {
     }
   }
   const u = usage || {};
-  const fxRate = Number(settings?.fxRate) > 0 ? Number(settings.fxRate) : 7.2;
+  const fxRate = Number(settings?.fxRate) > 0 ? Number(settings.fxRate) : 6.67;
   const inputOther = num(u.inputOther);
   const output = num(u.output);
   const cacheRead = num(u.inputCacheRead);

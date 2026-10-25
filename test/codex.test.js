@@ -8,6 +8,7 @@ const path = require("path");
 
 const codex = require("../src/providers/codex");
 const { matchPrice } = require("../src/pricing");
+const matchPriceFx = (name) => matchPrice(name, { fxRate: 7.2 });
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "aum-codex-test-"));
@@ -197,12 +198,12 @@ test("codex provider: keeps newest quota across files and archived_sessions", ()
 });
 
 test("openai price table: known models and estimate flags", () => {
-  assert.equal(matchPrice("gpt-6-astra").id, "gpt-6-astra");
-  assert.equal(matchPrice("gpt-5.6-luna").output, 1.2 * 7.2);
-  assert.equal(matchPrice("GPT-5.6-Terra").input, 2.0 * 7.2);
-  assert.equal(matchPrice("gpt-5.6").id, "gpt-5.6-sol");
-  assert.equal(matchPrice("gpt-5.6-sol").input, 4.0 * 7.2);
-  assert.equal(matchPrice("gpt-5.6-sol").cacheWrite, 5.0 * 7.2);
-  assert.equal(matchPrice("codex-auto-review").estimated, true);
-  assert.equal(matchPrice("gpt-6-astra").estimated, false);
+  assert.equal(matchPriceFx("gpt-6-astra").id, "gpt-6-astra");
+  assert.equal(matchPriceFx("gpt-5.6-luna").output, 1.2 * 7.2);
+  assert.equal(matchPriceFx("GPT-5.6-Terra").input, 2.0 * 7.2);
+  assert.equal(matchPriceFx("gpt-5.6").id, "gpt-5.6-sol");
+  assert.equal(matchPriceFx("gpt-5.6-sol").input, 4.0 * 7.2);
+  assert.equal(matchPriceFx("gpt-5.6-sol").cacheWrite, 5.0 * 7.2);
+  assert.equal(matchPriceFx("codex-auto-review").estimated, true);
+  assert.equal(matchPriceFx("gpt-6-astra").estimated, false);
 });

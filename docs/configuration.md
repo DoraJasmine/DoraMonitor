@@ -17,7 +17,7 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
 {
   "currency": "CNY",            // 显示币种，仅 "CNY" | "USD"
   "currencySymbol": "¥",        // 符号（trim 后最多 4 字符；切币种自动带出 $/¥）
-  "fxRate": 7.2,                // USD→CNY 汇率，合法 (0, 100000)
+  "fxRate": 6.67,               // USD→CNY 汇率（默认取 2026-10 市场中间价），合法 (0, 100000)
   "customPrices": [],           // 自定义价格，见下
   "sync": {                     // 多设备同步，详见 docs/sync.md
     "enabled": false,

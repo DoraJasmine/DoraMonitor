@@ -661,9 +661,10 @@ function toolEventsFromBuckets(eventDays, range, nowMs = Date.now(), tool = "all
 }
 
 /** Per-tool totals from buckets (the bucket twin of aggregateByTool). */
-function byToolFromBuckets(buckets, range, toolMeta, nowMs = Date.now()) {
+function byToolFromBuckets(buckets, range, toolMeta, nowMs = Date.now(), options = {}) {
   const startDay = calendarStartDay(range, nowMs);
   const { priceForCell: pfc } = require("./pricing");
+  const pricingOpts = { fxRate: options.fxRate, customPrices: options.customPrices };
   const byTool = new Map();
   for (const bucket of Array.isArray(buckets) ? buckets : []) {
     if (!bucket || typeof bucket !== "object") continue;
@@ -684,7 +685,7 @@ function byToolFromBuckets(buckets, range, toolMeta, nowMs = Date.now()) {
           for (const rateKey of RATE_KEYS) {
             const cell = entry[rateKey];
             if (!cell) continue;
-            const price = pfc(entry.pricingKey || model, rateKey);
+            const price = pfc(entry.pricingKey || model, rateKey, pricingOpts);
             row.requests += cell.req || 0;
             row.inputOther += cell.i || 0;
             row.output += cell.o || 0;

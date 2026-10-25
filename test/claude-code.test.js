@@ -8,6 +8,7 @@ const path = require("path");
 
 const claudeCode = require("../src/providers/claude-code");
 const { matchPrice } = require("../src/pricing");
+const matchPriceFx = (name) => matchPrice(name, { fxRate: 7.2 });
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "aum-claude-test-"));
@@ -223,30 +224,30 @@ test("claude provider: exposes no quota (by design, unlike codex)", () => {
 });
 
 test("anthropic price table: known families and USD->CNY conversion", () => {
-  assert.equal(matchPrice("claude-sonnet-4-5-20250929").id, "claude-sonnet");
-  assert.equal(matchPrice("claude-sonnet-4-5-20250929").input, 3.0 * 7.2);
-  assert.equal(matchPrice("claude-sonnet-4-5-20250929").cacheWrite, 3.75 * 7.2);
+  assert.equal(matchPriceFx("claude-sonnet-4-5-20250929").id, "claude-sonnet");
+  assert.equal(matchPriceFx("claude-sonnet-4-5-20250929").input, 3.0 * 7.2);
+  assert.equal(matchPriceFx("claude-sonnet-4-5-20250929").cacheWrite, 3.75 * 7.2);
   // Opus 5.5 (2026-09-22) has its own cheaper tier; 5 and 4.5–4.8 share $5/$25
-  assert.equal(matchPrice("claude-opus-5-5-20260922").id, "claude-opus-5-5");
-  assert.equal(matchPrice("claude-opus-5-5-20260922").input, 4.0 * 7.2);
-  assert.equal(matchPrice("claude-opus-5-5-20260922").cacheWrite, 5.0 * 7.2);
-  assert.equal(matchPrice("claude-opus-5-5-20260922").cacheHit, 0.2 * 7.2);
-  assert.equal(matchPrice("claude-opus-5-20260609").id, "claude-opus-5");
-  assert.equal(matchPrice("claude-opus-5-20260609").input, 5.0 * 7.2);
-  assert.equal(matchPrice("claude-opus-4-5-20251101").id, "claude-opus-5");
-  assert.equal(matchPrice("claude-opus-4-8-20260415").id, "claude-opus-5");
-  assert.equal(matchPrice("claude-sonnet-5-20260609").id, "claude-sonnet-5");
-  assert.equal(matchPrice("claude-sonnet-5-20260609").input, 2.0 * 7.2);
-  assert.equal(matchPrice("claude-sonnet-5-20260609").cacheWrite, 2.5 * 7.2);
-  assert.equal(matchPrice("claude-fable-5-20260301").id, "claude-fable-5");
-  assert.equal(matchPrice("claude-fable-5-20260301").input, 10.0 * 7.2);
+  assert.equal(matchPriceFx("claude-opus-5-5-20260922").id, "claude-opus-5-5");
+  assert.equal(matchPriceFx("claude-opus-5-5-20260922").input, 4.0 * 7.2);
+  assert.equal(matchPriceFx("claude-opus-5-5-20260922").cacheWrite, 5.0 * 7.2);
+  assert.equal(matchPriceFx("claude-opus-5-5-20260922").cacheHit, 0.2 * 7.2);
+  assert.equal(matchPriceFx("claude-opus-5-20260609").id, "claude-opus-5");
+  assert.equal(matchPriceFx("claude-opus-5-20260609").input, 5.0 * 7.2);
+  assert.equal(matchPriceFx("claude-opus-4-5-20251101").id, "claude-opus-5");
+  assert.equal(matchPriceFx("claude-opus-4-8-20260415").id, "claude-opus-5");
+  assert.equal(matchPriceFx("claude-sonnet-5-20260609").id, "claude-sonnet-5");
+  assert.equal(matchPriceFx("claude-sonnet-5-20260609").input, 2.0 * 7.2);
+  assert.equal(matchPriceFx("claude-sonnet-5-20260609").cacheWrite, 2.5 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-20260301").id, "claude-fable-5");
+  assert.equal(matchPriceFx("claude-fable-5-20260301").input, 10.0 * 7.2);
   // Mythos 5 shares Fable 5 pricing
-  assert.equal(matchPrice("claude-mythos-5-20260301").id, "claude-fable-5");
-  assert.equal(matchPrice("claude-opus-4-1-20250805").id, "claude-opus");
-  assert.equal(matchPrice("claude-opus-4-1-20250805").input, 15.0 * 7.2);
-  assert.equal(matchPrice("claude-haiku-4-5-20251001").id, "claude-haiku-4-5");
-  assert.equal(matchPrice("claude-3-5-haiku-20241022").id, "claude-3-5-haiku");
-  assert.equal(matchPrice("claude-3-5-haiku-20241022").input, 0.8 * 7.2);
-  assert.equal(matchPrice("claude-3-haiku-20240307").id, "claude-3-haiku");
-  assert.equal(matchPrice("claude-sonnet-4-5-20250929").estimated, false);
+  assert.equal(matchPriceFx("claude-mythos-5-20260301").id, "claude-fable-5");
+  assert.equal(matchPriceFx("claude-opus-4-1-20250805").id, "claude-opus");
+  assert.equal(matchPriceFx("claude-opus-4-1-20250805").input, 15.0 * 7.2);
+  assert.equal(matchPriceFx("claude-haiku-4-5-20251001").id, "claude-haiku-4-5");
+  assert.equal(matchPriceFx("claude-3-5-haiku-20241022").id, "claude-3-5-haiku");
+  assert.equal(matchPriceFx("claude-3-5-haiku-20241022").input, 0.8 * 7.2);
+  assert.equal(matchPriceFx("claude-3-haiku-20240307").id, "claude-3-haiku");
+  assert.equal(matchPriceFx("claude-sonnet-4-5-20250929").estimated, false);
 });

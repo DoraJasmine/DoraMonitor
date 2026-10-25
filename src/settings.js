@@ -23,7 +23,7 @@ const path = require("path");
 const DEFAULTS = {
   currency: "CNY", // display currency: "CNY" | "USD"
   currencySymbol: "¥", // display symbol (auto-set from currency, overridable)
-  fxRate: 7.2, // USD -> CNY
+  fxRate: 6.67, // USD -> CNY
   customPrices: [], // see module doc
   sync: {
     enabled: false,

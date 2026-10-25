@@ -414,7 +414,10 @@ async function handleApi(req, res, url, cliHome) {
       cells: (heatmap.cells || []).map((cell) => displayCost(cell, settingsNow)),
     };
     const byToolRange = (cached.toolEvents
-      ? byToolFromBuckets(selectedBuckets, range, toolMeta)
+      ? byToolFromBuckets(selectedBuckets, range, toolMeta, Date.now(), {
+          fxRate: settingsNow.fxRate,
+          customPrices: settingsNow.customPrices,
+        })
       : aggregateByTool(aggRecords, range, toolMeta)
     ).map((row) => displayCost(row, settingsNow));
     const displayRangeTotals = Object.fromEntries(

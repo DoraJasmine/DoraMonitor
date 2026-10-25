@@ -234,7 +234,7 @@ describe("pricing", () => {
       inputCacheRead: 1_000,
       inputCacheCreation: 1_000,
       output: 1_000,
-    }, { skipSettings: true });
+    }, { skipSettings: true, settings: { fxRate: 7.2, customPrices: [] } });
     // Over 272K: input/cache x2, output x1.5; Sol cache write is $5/M.
     const expected = ((272_001 * 8) + (1_000 * 0.8) + (1_000 * 10) + (1_000 * 30)) / 1e6;
     assert.ok(Math.abs(c.total - expected * 7.2) < 1e-12);

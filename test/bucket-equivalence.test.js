@@ -164,7 +164,7 @@ for (const seed of [1, 2, 3, 4, 5]) {
     const buckets = bucketsFromCorpus(records, events, now);
     for (const range of ["today", "all"]) {
       const a = aggregate(records, range, now, "all");
-      const b = aggregateFromBuckets(buckets, { range, nowMs: now, tool: "all" });
+      const b = aggregateFromBuckets(buckets, { range, nowMs: now, tool: "all", fxRate: 7.2, customPrices: [] });
       assert.ok(close(a.totals.totalTokens, b.totals.totalTokens, 1e-6), `tokens ${a.totals.totalTokens} vs ${b.totals.totalTokens}`);
       assert.ok(close(a.totals.costCny, b.totals.costCny, 1e-7), `cost ${a.totals.costCny} vs ${b.totals.costCny}`);
       assert.equal(a.totals.requests, b.totals.requests, "requests");
@@ -177,7 +177,7 @@ for (const seed of [1, 2, 3, 4, 5]) {
   test(`bucket equivalence (seed ${seed}): heatmap, byTool, toolEvents`, () => {
     const { records, events, now } = buildCorpus(seed);
     const buckets = bucketsFromCorpus(records, events, now);
-    const aggAll = aggregateFromBuckets(buckets, { range: "all", nowMs: now, tool: "all" });
+    const aggAll = aggregateFromBuckets(buckets, { range: "all", nowMs: now, tool: "all", fxRate: 7.2 });
 
     const h1 = buildHeatmap(records, now, 53, "all");
     const h2 = buildHeatmapFromDaily(new Map(aggAll.daily.map((d) => [d.date, d])), now, 53);
@@ -191,7 +191,7 @@ for (const seed of [1, 2, 3, 4, 5]) {
     }
 
     const bt1 = aggregateByTool(records, "all", toolMeta, now);
-    const bt2 = byToolFromBuckets(buckets, "all", toolMeta, now);
+    const bt2 = byToolFromBuckets(buckets, "all", toolMeta, now, { fxRate: 7.2 });
     assert.deepEqual(
       bt1.map((r) => ({ id: r.id, requests: r.requests, totalTokens: r.totalTokens, credits: r.credits })),
       bt2.map((r) => ({ id: r.id, requests: r.requests, totalTokens: r.totalTokens, credits: r.credits }))
@@ -214,7 +214,7 @@ test("bucket equivalence: 7d/30d bucket path is a superset of the rolling window
   const buckets = bucketsFromCorpus(records, events, now);
   for (const range of ["7d", "30d"]) {
     const rolling = aggregate(records, range, now, "all");
-    const calendar = aggregateFromBuckets(buckets, { range, nowMs: now, tool: "all" });
+    const calendar = aggregateFromBuckets(buckets, { range, nowMs: now, tool: "all", fxRate: 7.2, customPrices: [] });
     // The calendar window (last N local days incl. today) always covers the
     // rolling N*24h window ending now, plus up to ~half a day extra.
     assert.ok(calendar.totals.totalTokens >= rolling.totals.totalTokens - 1e-6);
@@ -226,8 +226,8 @@ test("bucket equivalence: 7d/30d bucket path is a superset of the rolling window
 test("bucket equivalence: merge order is irrelevant", () => {
   const { records, events, now } = buildCorpus(7);
   const buckets = bucketsFromCorpus(records, events, now);
-  const forward = aggregateFromBuckets(buckets, { range: "all", nowMs: now });
-  const reversed = aggregateFromBuckets([...buckets].reverse(), { range: "all", nowMs: now });
+  const forward = aggregateFromBuckets(buckets, { range: "all", nowMs: now, fxRate: 7.2 });
+  const reversed = aggregateFromBuckets([...buckets].reverse(), { range: "all", nowMs: now, fxRate: 7.2 });
   assert.ok(close(forward.totals.costCny, reversed.totals.costCny));
   assert.equal(forward.totals.totalTokens, reversed.totals.totalTokens);
   assert.deepEqual(stripModels(forward.models), stripModels(reversed.models));

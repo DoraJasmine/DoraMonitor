@@ -9,7 +9,7 @@ DoraMonitor 的费用估算全部由 `src/pricing.js` 实现。本文说明计�
 - 所有费用在**内部一律以人民币记账**（字段 `costCny`）：
   - 人民币计价厂商（Kimi、DeepSeek、智谱）：直接用官方 CNY 价。
   - 美元计价厂商（OpenAI、Anthropic、Qwen/MiniMax/hy3 等）：入账时按
-    `fxRate`（默认 7.2）**一次性**换算成 CNY。
+    `fxRate`（默认 6.67，2026-10 市场中间价；随市场浮动，可在界面改）**一次性**换算成 CNY。
 - 展示层选择美元时，再把 CNY **除回** `fxRate`（`toDisplay`）。
 - **换算只发生一次**：聚合缓存里的成本值永远保持 CNY，币种转换只发生在 API
   输出层（`displayCost` / `displayCosts`），改币种不会重扫、也不会累积误差。
@@ -195,7 +195,7 @@ K3 系列官方缓存写入分 TTL 档：5min（默认）与 1h（价格为 5min
 
 ## 5. 汇率（fxRate）
 
-- 语义：**USD → CNY**，默认 7.2，合法范围 (0, 100000)。
+- 语义：**USD → CNY**，默认 6.67（2026-10 市场中间价），合法范围 (0, 100000)。
 - 只影响美元厂商的入账与美元显示；界面上改汇率后立即重算。
 - CLI 状态栏的货币符号优先级：命令行 flag > settings.currencySymbol >
   `~/.kimi-code/kimi-status.toml` 的 `currency_symbol` > `"$"`。
