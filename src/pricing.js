@@ -16,8 +16,40 @@ const { loadSettings } = require("./settings");
  */
 const KIMI_PRICES = [
   {
+    // High-speed K3.1 Pro variant, listed at exactly 2× the standard K3.1
+    // Pro rates (cache reads stay at ¥1.30). Must precede the kimi-k3.1-pro
+    // row: /k3[._-]1[_-]?pro/ matches the highspeed id too.
+    id: "kimi-k3.1-pro-highspeed",
+    patterns: [
+      /^kimi-k3[._-]1[_-]?pro[_-]?highspeed$/i,
+      /k3[._-]1[_-]?pro[_-]?highspeed/i,
+    ],
+    cacheHit: 1.3,
+    cacheWrite: 26.0,
+    input: 26.0,
+    output: 136.0,
+    context: 1_048_576,
+    currency: "CNY",
+  },
+  {
+    // Official China API prices, published 2026-10-24 on the pricing page.
+    // Official cache write bills by TTL: ¥13 (5min, the default) / ¥26 (1h);
+    // the usage wire carries no TTL, so the default tier is billed.
+    // Must precede the kimi-k3 row: /kimi[_-]?k3/ matches K3.1 ids too.
+    id: "kimi-k3.1-pro",
+    patterns: [/^kimi-k3[._-]1(?:[-_ ]?pro)?$/i, /kimi[_-]?k3[._-]1/i, /k3[._-]1[_-]?pro/i],
+    cacheHit: 1.3,
+    cacheWrite: 13.0,
+    input: 13.0,
+    output: 68.0,
+    context: 1_048_576,
+    currency: "CNY",
+  },
+  {
     id: "kimi-k3",
     // k3-256k is the same model at a longer context — same unit price.
+    // Official cache write bills by TTL: ¥20 (5min, the default) / ¥40 (1h);
+    // the usage wire carries no TTL, so the default tier is billed.
     patterns: [/^kimi-k3$/i, /^k3$/i, /\/kimi-k3$/i, /kimi[_-]?k3/i, /k3[_-]?256k/i],
     cacheHit: 2.0,
     cacheWrite: 20.0,
@@ -27,8 +59,30 @@ const KIMI_PRICES = [
     currency: "CNY",
   },
   {
+    // High-speed K2.7 Code variant (~180 tok/s output), listed on the
+    // official price page at exactly 2× the standard K2.7 Code rates.
+    // Must precede the kimi-k2.7-code row: /k2\.7[_-]?code/ matches the
+    // highspeed id too.
+    id: "kimi-k2.7-code-highspeed",
+    patterns: [
+      /^kimi-k2\.7-code-highspeed$/i,
+      /k2\.7[_-]?code[_-]?highspeed/i,
+      // The Coding Plan highspeed tier (config label: K2.7 Code Highspeed).
+      /kimi[_-]?for[_-]?coding[_-]?highspeed/i,
+    ],
+    cacheHit: 2.6,
+    input: 13.0,
+    output: 54.0,
+    context: 262_144,
+    currency: "CNY",
+  },
+  {
     id: "kimi-k2.7-code",
-    // kimi-for-coding is the Coding Plan model id — priced as k2.7-code.
+    // kimi-for-coding is the Coding Plan model id. The plan currently serves
+    // it as K2.8 Preview (Kimi Code model picker, 2026-10-24), but with no
+    // published K2.8 API price it keeps billing at these K2.7 Code rates.
+    // K2 models stop accepting new users 2026-10-31 and retire end of
+    // 2026-12 (existing users unaffected); prices stay until then.
     patterns: [/^kimi-k2\.7-code$/i, /kimi[_-]?k2\.7[_-]?code/i, /k2\.7[_-]?code/i, /kimi[_-]?for[_-]?coding/i],
     cacheHit: 1.3,
     input: 6.5,

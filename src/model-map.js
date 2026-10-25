@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const { configPath } = require("./paths");
+const { displayNameFor } = require("./model-identity");
 
 const ENV_MODEL_ALIAS = "__kimi_env_model__";
 
@@ -131,12 +132,14 @@ function resolveModel(rawModel, map) {
       fromEnv: !!alias.fromEnv,
     };
   }
-  // provider/model form — use bare model for pricing match
+  // provider/model form — use bare model for pricing match; the identity
+  // layer names well-known plan ids (e.g. kimi-for-coding → K2.8 Preview)
+  // that Kimi Code records without their config alias.
   const bare = raw.includes("/") ? raw.split("/").pop() : raw;
   return {
     raw,
     resolved: bare,
-    display: raw,
+    display: displayNameFor(bare),
     provider: raw.includes("/") ? raw.split("/")[0] : null,
     fromEnv: false,
   };

@@ -19,6 +19,37 @@ describe("pricing", () => {
     assert.equal(p.estimated, false);
   });
 
+  it("prices K3.1 Pro at its official published rates", () => {
+    for (const name of ["kimi-k3.1-pro", "kimi-k3.1", "k3.1-pro", "k3-1-pro"]) {
+      const p = matchPrice(name, { fxRate: 7.2 });
+      assert.equal(p.id, "kimi-k3.1-pro", name);
+      assert.equal(p.input, 13.0, name);
+      assert.equal(p.output, 68.0, name);
+      assert.equal(p.cacheHit, 1.3, name);
+      assert.equal(p.cacheWrite, 13.0, name);
+      assert.equal(p.estimated, false, name);
+    }
+  });
+
+  it("matches k2.7 code highspeed at its own official rates", () => {
+    const p = matchPrice("kimi-k2.7-code-highspeed", { fxRate: 7.2 });
+    assert.equal(p.id, "kimi-k2.7-code-highspeed");
+    assert.equal(p.cacheHit, 2.6);
+    assert.equal(p.input, 13.0);
+    assert.equal(p.output, 54.0);
+    assert.equal(p.estimated, false);
+  });
+
+  it("matches k3.1 pro highspeed at its own official rates", () => {
+    const p = matchPrice("kimi-k3.1-pro-highspeed", { fxRate: 7.2 });
+    assert.equal(p.id, "kimi-k3.1-pro-highspeed");
+    assert.equal(p.input, 26.0);
+    assert.equal(p.output, 136.0);
+    assert.equal(p.cacheHit, 1.3);
+    assert.equal(p.cacheWrite, 26.0);
+    assert.equal(p.estimated, false);
+  });
+
   it("matches k2.7 code", () => {
     const p = matchPrice("workbuddy/kimi-k2.7-code", { fxRate: 7.2 });
     assert.equal(p.id, "kimi-k2.7-code");
@@ -110,6 +141,9 @@ describe("pricing", () => {
     const prices = listPrices({ fxRate: 7.2 });
     const ids = new Set(prices.map((p) => p.id));
     assert.ok(ids.has("kimi-k3"));
+    assert.ok(ids.has("kimi-k3.1-pro"));
+    assert.ok(ids.has("kimi-k3.1-pro-highspeed"));
+    assert.ok(ids.has("kimi-k2.7-code-highspeed"));
     assert.ok(ids.has("deepseek-flash"));
     assert.ok(ids.has("deepseek-v4-pro"));
     assert.ok(ids.has("glm-5.3"));

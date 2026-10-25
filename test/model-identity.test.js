@@ -32,6 +32,21 @@ test("model-identity: QoderCN routing codes resolve to display names", () => {
   assert.strictEqual(resolveModelIdentity("kmodel").modelDisplay, "Kimi-K2.7-Code");
 });
 
+test("model-identity: Coding Plan ids name their served model and bill at K2.7 rates", () => {
+  const { matchPrice } = require("../src/pricing");
+  const plan = resolveModelIdentity("kimi-for-coding");
+  assert.strictEqual(plan.modelDisplay, "K2.8 Preview");
+  assert.strictEqual(plan.pricingKey, "kimi-k2.7-code");
+  const hs = resolveModelIdentity("kimi-for-coding-highspeed");
+  assert.strictEqual(hs.modelDisplay, "K2.7 Code Highspeed");
+  assert.strictEqual(hs.pricingKey, "kimi-k2.7-code-highspeed");
+  assert.strictEqual(matchPrice("kimi-for-coding", { fxRate: 7.2 }).id, "kimi-k2.7-code");
+  assert.strictEqual(
+    matchPrice("kimi-for-coding-highspeed", { fxRate: 7.2 }).id,
+    "kimi-k2.7-code-highspeed"
+  );
+});
+
 test("model-identity: every mapped model code also yields a pricing key", () => {
   // A name without a price is exactly the bug that made Qwen traffic bill at
   // Kimi K2.6 rates; keep the two tables in step. Routing tiers are exempt —

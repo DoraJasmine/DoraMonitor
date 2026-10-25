@@ -70,6 +70,12 @@ const EXTRA_DISPLAY_NAMES = Object.freeze({
   dfmodel: "DeepSeek-V4.1-Flash",
   "deepseek-v4.1-flash": "DeepSeek-V4.1-Flash",
   "deepseek-flash": "DeepSeek-V4.1-Flash",
+  // Kimi Code Coding Plan ids. The plan routes kimi-for-coding to K2.8
+  // Preview (Kimi Code model picker / config display_name, 2026-10-24) while
+  // its highspeed tier still serves K2.7 Code Highspeed. No official K2.8
+  // API price exists yet, so both stay priced on the K2.7 Code rows.
+  "kimi-for-coding": "K2.8 Preview",
+  "kimi-for-coding-highspeed": "K2.7 Code Highspeed",
 });
 
 /**
@@ -95,6 +101,11 @@ const PRICING_KEYS = Object.freeze({
   gm51model: "glm-5.2",
   kmodel: "kimi-k2.7-code",
   mmodel: "minimax-m3",
+  // Kimi Code Coding Plan ids: served as K2.8 Preview / K2.7 Code Highspeed
+  // respectively, but with no published K2.8 API price both bill at the
+  // K2.7 Code rates (see KIMI_PRICES in pricing.js).
+  "kimi-for-coding": "kimi-k2.7-code",
+  "kimi-for-coding-highspeed": "kimi-k2.7-code-highspeed",
 });
 
 function normalizeCode(value) {

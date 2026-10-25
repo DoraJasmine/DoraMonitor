@@ -65,6 +65,17 @@ model = "other-model"
     assert.equal(r.provider, "demo");
   });
 
+  it("names known Coding Plan ids recorded without their config alias", () => {
+    const map = loadModelMap(tmp);
+    const r = resolveModel("kimi-for-coding", map);
+    assert.equal(r.resolved, "kimi-for-coding");
+    assert.equal(r.display, "K2.8 Preview");
+    const hs = resolveModel("kimi-code/kimi-for-coding-highspeed", map);
+    assert.equal(hs.display, "K2.7 Code Highspeed");
+    // Unmapped ids keep passing through untouched.
+    assert.equal(resolveModel("k3-256k", map).display, "k3-256k");
+  });
+
   it("resolves __kimi_env_model__ via KIMI_MODEL_NAME", () => {
     const prev = process.env.KIMI_MODEL_NAME;
     process.env.KIMI_MODEL_NAME = "kimi-k3";
