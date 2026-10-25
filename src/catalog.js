@@ -18,11 +18,14 @@ const { loadConfig, saveConfig, ConfigError } = require("./config-store");
 
 /**
  * models.dev official data via the gh-proxy.org mirror of the JochenYang fork
- * (GitHub raw content, full snapshot, reasoning_options kept). The fork tracks
- * models.dev closely; the bundled snapshot is the offline fallback.
+ * (raw.githubusercontent content, full snapshot, reasoning_options kept). The
+ * fork tracks models.dev closely; the bundled snapshot is the offline
+ * fallback. raw.githubusercontent is the canonical content URL — a /blob/
+ * page URL only works because gh-proxy happens to rewrite it to raw, which
+ * is too implicit to rely on.
  */
 const DEFAULT_CATALOG_URL =
-  "https://gh-proxy.org/https://github.com/JochenYang/models.dev/blob/main/api.json";
+  "https://gh-proxy.org/https://raw.githubusercontent.com/JochenYang/models.dev/main/api.json";
 const BUILTIN_PATH = path.join(__dirname, "data", "builtin-catalog.json");
 /** Persisted full snapshot written after each successful remote fetch. */
 const DEFAULT_CACHE_FILE = path.join(

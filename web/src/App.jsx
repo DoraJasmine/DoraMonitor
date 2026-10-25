@@ -194,6 +194,7 @@ export default function App() {
   // Play entrance motion only once — refresh must not re-trigger fade/stagger.
   const entered = useRef(false);
   const loadingRef = useRef(false);
+  const loadSeq = useRef(0);
   const flashTimer = useRef(null);
 
   useEffect(() => {
@@ -228,8 +229,13 @@ export default function App() {
       setRefreshFlash(false);
       setError(null);
       const started = Date.now();
+      // Sequence guard: range/tool/device switches fire concurrent loads and
+      // responses can resolve out of order — only the newest request may
+      // apply its result, or a stale response overwrites the newer choice.
+      const seq = ++loadSeq.current;
       try {
         const summary = await fetchSummary(nextHome, nextRange, refresh, nextTool, nextDevice);
+        if (seq !== loadSeq.current) return;
         setData(summary);
         setHome(summary.home || nextHome);
         setHomeInput(summary.home || nextHome);
@@ -240,9 +246,11 @@ export default function App() {
           flashTimer.current = setTimeout(() => setRefreshFlash(false), 1200);
         }
       } catch (e) {
+        if (seq !== loadSeq.current) return;
         setData(null);
         setError(e.data?.message || e.message || t("homeInvalid"));
       } finally {
+        if (seq !== loadSeq.current) return; // superseded — the newer request owns the UI state
         // Keep spinner visible briefly so fast cache hits still feel intentional
         const minMs = refresh ? 320 : 0;
         const wait = Math.max(0, minMs - (Date.now() - started));
@@ -276,7 +284,11 @@ export default function App() {
         }
       })
       .catch(() => {});
-    loadSummary({ refresh: true }).finally(() => {
+    // refresh:false — the backend keeps a 15s scan cache and per-file
+    // incremental caches; forcing a full rescan on every page mount made
+    // load time grow linearly with history size. The refresh button still
+    // forces (refresh:true).
+    loadSummary({ refresh: false }).finally(() => {
       rangeReady.current = true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

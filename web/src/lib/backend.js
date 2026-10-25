@@ -69,10 +69,15 @@ export async function fetchPrices() {
 export async function fetchSummary(home, range = "30d", refresh = false, tool = "all", device = "all") {
   const invoke = await getInvoke();
   if (invoke) {
+    // tool/device ride along so the Rust command can honor them once
+    // implemented — dropping them silently made the desktop shell always
+    // show the merged "all tools / all devices" view.
     return invoke("get_summary", {
       homeOverride: home || null,
       range: range || "30d",
       refresh: Boolean(refresh),
+      tool: tool || "all",
+      device: device || "all",
     });
   }
   const qs = withHome({ range }, home);
