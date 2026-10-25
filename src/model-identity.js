@@ -69,7 +69,11 @@ const EXTRA_DISPLAY_NAMES = Object.freeze({
   "hy4-preview": "Hy4 Preview",
   dfmodel: "DeepSeek-V4.1-Flash",
   "deepseek-v4.1-flash": "DeepSeek-V4.1-Flash",
+  // -1017 is a dated internal suffix codex records; same model.
+  "deepseek-v4.1-flash-1017": "DeepSeek-V4.1-Flash",
   "deepseek-flash": "DeepSeek-V4.1-Flash",
+  // OpenAI's newest Sol generation, kept readable for the models roster.
+  "gpt-6.1-sol": "GPT-6.1 Sol",
   // Kimi Code Coding Plan ids. The plan routes kimi-for-coding to K2.8
   // Preview (Kimi Code model picker / config display_name, 2026-10-24) while
   // its highspeed tier still serves K2.7 Code Highspeed. No official K2.8

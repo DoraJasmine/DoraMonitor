@@ -116,7 +116,9 @@ const DEEPSEEK_PRICES = [
     id: "deepseek-flash",
     patterns: [
       /^deepseek[-_ ]?flash$/i,
-      /^deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?vision[-_ ]?exp)?$/i,
+      // -1017 is a dated internal suffix (codex records it as
+      // deepseek-v4.1-flash-1017) — same model, same price row.
+      /^deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?\d{4})?(?:[-_ ]?vision[-_ ]?exp)?$/i,
       /^deepseek[-_ ]?(chat|reasoner)$/i,
       /^dfmodel$/i,
     ],
@@ -370,6 +372,21 @@ const FALLBACK_PRICE = {
  * list price — costed like Luna and flagged as an estimate.
  */
 const OPENAI_PRICES = [
+  {
+    // Announced 2026-10 with a 95% cache discount ($0.10). OpenAI has not
+    // published a separate cache-write rate — it bills at the input price,
+    // same policy as the gpt-5 row. Long-context tier assumed to match the
+    // rest of the GPT-6 generation (272K threshold).
+    id: "gpt-6.1-sol",
+    patterns: [/gpt[_-]?6\.1([_-]?sol)?$/i, /gpt[_-]?6\.1[_-]?sol/i, /^gpt[_-]?6\.1$/i],
+    cacheHit: 0.1,
+    cacheWrite: 2.0,
+    input: 2.0,
+    output: 10.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
   {
     id: "gpt-6-astra",
     patterns: [/gpt[_-]?6[_-]?astra/i],

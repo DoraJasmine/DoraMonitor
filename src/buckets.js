@@ -29,7 +29,7 @@ const { rateKeyFor } = require("./pricing");
  * the local timezone changed, or the fold logic version bumped.
  */
 
-const BUCKET_VERSION = 1;
+const BUCKET_VERSION = 2;
 const BUCKETS_DIR = path.join(os.homedir(), ".doramonitor", "buckets");
 /** git-index style guard: a file whose mtime is this fresh may have been
  *  written within the same timestamp granularity as our own scan — never
@@ -97,7 +97,12 @@ function foldRecordInto(bucket, rec) {
   cell.cc += rec.inputCacheCreation || 0;
   cell.req += reqs;
   cell.credits += rec.credits || 0;
-  if (rec.costEstimated || rate.estimated) cell.estReq += reqs;
+  // Only TIME-derived estimated-ness folds here (no-timestamp DeepSeek);
+  // table-row estimated-ness (fallback pricing) is derived at query time by
+  // priceForCell, so adding a price row retroactively clears the flag
+  // without re-folding. v2: folding rec.costEstimated baked stale table
+  // state into buckets.
+  if (rate.estimated) cell.estReq += reqs;
   if (!entry.display || entry.display === modelKey) {
     const d = rec.modelDisplay || modelKey;
     if (d && d !== modelKey) entry.display = d;

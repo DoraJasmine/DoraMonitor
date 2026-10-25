@@ -62,6 +62,24 @@ describe("pricing", () => {
     assert.equal(p.output, 27.0);
   });
 
+  it("prices gpt-6.1-sol at its announced rates", () => {
+    for (const name of ["gpt-6.1-sol", "gpt-6.1", "codex/gpt-6.1-sol"]) {
+      const p = matchPrice(name, { fxRate: 7.2 });
+      assert.equal(p.id, "gpt-6.1-sol", name);
+      assert.equal(p.input, 2.0 * 7.2, name);
+      assert.equal(p.cacheHit, 0.1 * 7.2, name);
+      assert.equal(p.output, 10.0 * 7.2, name);
+      assert.equal(p.estimated, false, name);
+    }
+  });
+
+  it("maps the dated deepseek flash suffix to the flash price row", () => {
+    const p = matchPrice("deepseek-v4.1-flash-1017", { fxRate: 7.2, time: Date.UTC(2026, 9, 20, 2) });
+    assert.equal(p.id, "deepseek-flash");
+    assert.equal(p.input, 2.0);
+    assert.equal(p.estimated, false);
+  });
+
   it("falls back for non-kimi models", () => {
     const p = matchPrice("grok-api/grok-4.5");
     assert.equal(p.estimated, true);
