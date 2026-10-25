@@ -3,7 +3,9 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, emptyRecord, expandHome, fileStamp } = require("./base");
+const { n, emptyRecord, expandHome } = require("./base");
+const { scanFilesWithBuckets } = require("./file-scan");
+const { bucketFromRecords } = require("../buckets");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
 const { resolveModelIdentity } = require("../model-identity");
@@ -24,8 +26,9 @@ const { resolveModelIdentity } = require("../model-identity");
  * DeepSeek's inputTokens EXCLUDES the cached portions
  * (total = input + output + cacheRead), so inputOther is inputTokens as-is.
  *
- * Responses are de-duplicated by message.id. Project/cwd come from the
- * session header line (first line of each file).
+ * Responses are de-duplicated by message.id (stored as _dedupKey); dedup and
+ * per-file day-bucket folding run inside the shared file-scan skeleton.
+ * Project/cwd come from the session header line (first line of each file).
  *
  * MODEL NAMES: when a dsh plugin proxies another vendor, the plugin records
  * that vendor's own routing code on source.model and names itself on
@@ -34,15 +37,12 @@ const { resolveModelIdentity } = require("../model-identity");
  * the same table the QoderCN providers use — and the provider id is kept on
  * the record for provenance. Unmapped codes stay visible as their raw id.
  *
- * INCREMENTAL CACHE: transcripts are append-only, so parsed records are
- * cached per file keyed on (mtimeMs, size) — a rescan re-reads only files
- * that changed instead of re-decompressing all 19+ MB of zstd frames. The
- * cross-file message.id dedup still runs over the full set on every scan
- * (cheap pass over parsed records). collect.invalidate() → clearCache()
- * drops the caches when pricing settings change.
- *
  * No quota part by design — dsh's provider-snapshots.json carries no quota.
  */
+
+/** home -> Map(file path -> { stamp, parsed, bucket, racy }) */
+const fileCaches = new Map();
+
 const provider = {
   id: "dsh",
   label: "dsh",
@@ -58,12 +58,12 @@ const provider = {
     return fs.existsSync(path.join(home, "sessions"));
   },
 
-  /** Drop all per-file parse caches (used when pricing settings change). */
+  /** Drop all per-file caches (used when pricing settings change). */
   clearCache() {
     fileCaches.clear();
   },
 
-  scan(home) {
+  scan(home, opts = {}) {
     const root = path.join(home, "sessions");
     const errors = [];
 
@@ -87,94 +87,51 @@ const provider = {
       }
     })();
 
-    // Sorted for a deterministic message.id dedup order ("first file wins").
-    const files = listTranscriptFiles(root).sort();
     let cache = fileCaches.get(home);
     if (!cache) {
       cache = new Map();
       fileCaches.set(home, cache);
     }
 
-    // Per-file parse (cached), then a cheap post-pass for the cross-file
-    // message.id dedup and the newest-first sort.
-    const parsedFiles = [];
-    let filesReread = 0;
-    for (const file of files) {
-      const st = fileStamp(file);
-      const stamp = st ? { mtimeMs: st.mtimeMs, size: st.size } : null;
-      const cached = cache.get(file);
-      if (cached && sameStamp(cached.stamp, stamp)) {
-        parsedFiles.push(cached.parsed);
-        continue;
-      }
-      const parsed = parseTranscriptFile(file, Decompress, settings);
-      cache.set(file, { stamp, parsed });
-      parsedFiles.push(parsed);
-      filesReread += 1;
-      for (const err of parsed.errors) errors.push(err);
-    }
-    // Prune cache entries for files that disappeared.
-    if (cache.size > files.length) {
-      const present = new Set(files);
-      for (const key of [...cache.keys()]) {
-        if (!present.has(key)) cache.delete(key);
-      }
-    }
-
-    const records = [];
-    const seenMessages = new Set();
-    let duplicatesSkipped = 0;
-    let linesSeen = 0;
-    for (const parsed of parsedFiles) {
-      linesSeen += parsed.lines;
-      for (const entry of parsed.entries) {
-        // Dedupe on message.id across files; without an id there is nothing
-        // stable to dedupe on, so count the line.
-        if (entry.key) {
-          if (seenMessages.has(entry.key)) {
-            duplicatesSkipped += 1;
-            continue;
-          }
-          seenMessages.add(entry.key);
-        }
-        records.push(entry.rec);
-      }
-    }
-    // newest first for "recent"
-    records.sort((a, b) => b.time - a.time);
+    const out = scanFilesWithBuckets({
+      id: provider.id,
+      home,
+      files: listTranscriptFiles(root),
+      cacheMap: cache,
+      recordSince: opts.recordSince,
+      settings,
+      parseFile: (file) => parseTranscriptFile(file, Decompress, settings),
+      signatureOf: (rec) => rec._dedupKey || "",
+      foldBucket: (contributed, parsed, relPath, stamp, sigs) => {
+        const bucket = bucketFromRecords(contributed, [], relPath, stamp, sigs);
+        bucket.lines = parsed.lines;
+        return bucket;
+      },
+    });
 
     return {
-      records,
+      records: out.records,
+      events: [],
+      buckets: out.buckets,
       meta: {
-        filesScanned: files.length,
-        filesReread,
-        linesSeen,
-        recordCount: records.length,
-        duplicatesSkipped,
+        ...out.meta,
+        linesSeen: out.buckets.reduce((sum, b) => sum + (b.bucket.lines || 0), 0),
         home,
         sessionsRoot: root,
-        errors: errors.slice(0, 20),
+        errors: [...errors, ...out.errors].slice(0, 20),
       },
     };
   },
 };
 
-/** home -> Map(file path -> { stamp, parsed }) */
-const fileCaches = new Map();
-
-function sameStamp(a, b) {
-  if (!a || !b) return false;
-  return a.mtimeMs === b.mtimeMs && a.size === b.size;
-}
-
 /**
- * Parse one transcript file: costed records (pre-dedup, paired with their
- * message.id keys). Per-file output is cached by the caller — the fzstd
+ * Parse one transcript file: costed records (pre-dedup, _dedupKey =
+ * message.id). Per-file output is cached by the scan skeleton — the fzstd
  * multi-frame decompression of a 1-2 MB .zstd costs hundreds of ms in pure
  * JS, so unchanged files must never be re-read.
  */
 function parseTranscriptFile(file, Decompress, settings) {
-  const parsed = { entries: [], lines: 0, errors: [] };
+  const parsed = { records: [], events: [], lines: 0, errors: [] };
   let text;
   if (file.endsWith(".zstd")) {
     if (!Decompress) {
@@ -264,7 +221,8 @@ function parseTranscriptFile(file, Decompress, settings) {
     rec.project = cwd;
     rec.session = sessionId;
     rec.sessionHint = { session: rec.session, project: rec.project };
-    parsed.entries.push({ rec, key: messageId });
+    rec._dedupKey = messageId;
+    parsed.records.push(rec);
   }
   return parsed;
 }

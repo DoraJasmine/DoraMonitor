@@ -2,7 +2,9 @@
 
 const fs = require("fs");
 const path = require("path");
-const { expandHome, n, emptyRecord, fileStamp } = require("./base");
+const { expandHome, n, emptyRecord } = require("./base");
+const { scanFilesWithBuckets } = require("./file-scan");
+const { bucketFromRecords } = require("../buckets");
 const { resolveModel } = require("../model-map");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
@@ -20,19 +22,13 @@ const { loadSettings } = require("../settings");
  * de-duplication keys on the value tuple
  * (model|time|inputOther|output|cacheRead|cacheCreate) that a copied line
  * reproduces byte-for-byte. Records with no timestamp cannot be told apart
- * from a legitimate repeat and are left alone.
- *
- * INCREMENTAL CACHE: wire.jsonl files are append-only, so parsed records are
- * cached per file keyed on (mtimeMs, size). Unchanged files are never
- * re-read or re-costed; a rescan only parses the files that actually
- * changed. The cross-file fork dedup still runs over the full set on every
- * scan — it is a cheap pass over already-parsed records. Caches are keyed by
- * home (the dashboard can point at different data roots) and must be
- * cleared when pricing settings change: collect.invalidate() calls
- * clearCache() for that.
+ * from a legitimate repeat and are left alone. The dedup runs inside the
+ * shared file-scan skeleton (oldest-mtime first, so the fork copy loses to
+ * its parent) and day-buckets fold the DEDUPED contribution per file —
+ * see providers/file-scan.js.
  */
 
-/** home -> Map(file path -> { stamp, parsed }) */
+/** home -> Map(file path -> { stamp, parsed, bucket, racy }) */
 const fileCaches = new Map();
 
 const provider = {
@@ -50,12 +46,12 @@ const provider = {
     return fs.existsSync(path.join(home, "sessions"));
   },
 
-  /** Drop all per-file parse caches (used when pricing settings change). */
+  /** Drop all per-file caches (used when pricing settings change). */
   clearCache() {
     fileCaches.clear();
   },
 
-  scan(home, modelMap) {
+  scan(home, modelMap, opts = {}) {
     const root = path.join(home, "sessions");
     // collect.js always passes a map, but scan() is also reachable directly
     // (tests, scripts). Treat a missing map as "no aliases configured" rather
@@ -66,6 +62,8 @@ const provider = {
       fileCaches.delete(home);
       return {
         records: [],
+        events: [],
+        buckets: [],
         meta: {
           filesScanned: 0,
           filesReread: 0,
@@ -85,100 +83,56 @@ const provider = {
       }
     })();
 
-    // Sorted for a deterministic fork-dedup order ("first file wins").
-    const wireFiles = listWireFiles(root).sort();
     let cache = fileCaches.get(home);
     if (!cache) {
       cache = new Map();
       fileCaches.set(home, cache);
     }
 
-    const parsedFiles = [];
-    const errors = [];
-    let filesReread = 0;
-    for (const file of wireFiles) {
-      const st = fileStamp(file);
-      const stamp = st ? { mtimeMs: st.mtimeMs, size: st.size } : null;
-      const cached = cache.get(file);
-      if (cached && sameStamp(cached.stamp, stamp)) {
-        parsedFiles.push(cached.parsed);
-        continue;
-      }
-      const parsed = parseWireFile(file, root, map, settings);
-      cache.set(file, { stamp, parsed });
-      parsedFiles.push(parsed);
-      filesReread += 1;
-      for (const err of parsed.errors) errors.push(err);
-    }
-    // Prune cache entries for files that disappeared.
-    if (cache.size > wireFiles.length) {
-      const present = new Set(wireFiles);
-      for (const key of [...cache.keys()]) {
-        if (!present.has(key)) cache.delete(key);
-      }
-    }
-
-    // Post-pass over already-parsed records: global fork dedup + newest first.
-    // Costed records from unchanged files are reused as-is; this pass is a
-    // cheap O(records) hash + sort, not a re-read.
-    const records = [];
-    const events = [];
-    const seenUsage = new Set();
-    let duplicatesSkipped = 0;
-    let linesSeen = 0;
-    for (const parsed of parsedFiles) {
-      linesSeen += parsed.lines;
-      for (const ev of parsed.events) events.push(ev);
-      for (const rec of parsed.records) {
-        // Forked-session dedup: only records with a timestamp can be told
-        // apart from a legitimate repeat.
-        if (rec.time) {
-          const signature = [
-            rec.model,
-            rec.time,
-            rec.inputOther,
-            rec.output,
-            rec.inputCacheRead,
-            rec.inputCacheCreation,
-          ].join("\u0000");
-          if (seenUsage.has(signature)) {
-            duplicatesSkipped += 1;
-            continue;
-          }
-          seenUsage.add(signature);
-        }
-        records.push(rec);
-      }
-    }
-    // newest first for "recent"
-    records.sort((a, b) => b.time - a.time);
-    events.sort((a, b) => b.time - a.time);
+    const out = scanFilesWithBuckets({
+      id: provider.id,
+      home,
+      files: listWireFiles(root),
+      cacheMap: cache,
+      recordSince: opts.recordSince,
+      settings,
+      parseFile: (file) => parseWireFile(file, root, map, settings),
+      signatureOf: (rec) =>
+        rec.time
+          ? [
+              rec.model,
+              rec.time,
+              rec.inputOther,
+              rec.output,
+              rec.inputCacheRead,
+              rec.inputCacheCreation,
+            ].join("\u0000")
+          : "",
+      foldBucket: (contributed, parsed, relPath, stamp, sigs) => {
+        const bucket = bucketFromRecords(contributed, parsed.events, relPath, stamp, sigs);
+        bucket.lines = parsed.lines;
+        return bucket;
+      },
+    });
 
     return {
-      records,
-      events,
+      records: out.records,
+      events: out.events,
+      buckets: out.buckets,
       meta: {
-        filesScanned: wireFiles.length,
-        filesReread,
-        linesSeen,
-        recordCount: records.length,
-        duplicatesSkipped,
+        ...out.meta,
+        linesSeen: out.buckets.reduce((sum, b) => sum + (b.bucket.lines || 0), 0),
         home,
         sessionsRoot: root,
-        errors: errors.slice(0, 20),
+        errors: out.errors.slice(0, 20),
       },
     };
   },
 };
 
-function sameStamp(a, b) {
-  if (!a || !b) return false;
-  return a.mtimeMs === b.mtimeMs && a.size === b.size;
-}
-
 /**
- * Parse one wire.jsonl: usage records (costed, pre-fork-dedup) plus
- * tool.call events. Per-file output is cached by the caller.
+ * Parse one wire.jsonl: usage records (costed, pre-dedup) plus tool.call
+ * events. Per-file output is cached by the scan skeleton.
  */
 function parseWireFile(file, sessionsRootPath, map, settings) {
   const parsed = { records: [], events: [], lines: 0, errors: [] };

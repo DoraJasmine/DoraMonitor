@@ -567,36 +567,125 @@ const CLAUDE_PRICES = [
   },
 ];
 
-function matchPrice(modelName, options = {}) {
-  if (!modelName) return normalizedFallbackPrice(options.fxRate, null);
+/** Find the first matching price row for a model id (first match wins). */
+function matchRow(modelName) {
+  if (!modelName) return null;
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
   for (const row of ALL_PRICE_TABLES()) {
     for (const re of row.patterns) {
-      if (re.test(bare) || re.test(name)) {
-        const timeOfUse = deepSeekTimeOfUse(row, options.time);
-        const currencyMultiplier = priceToCnyMultiplier(row, options.fxRate);
-        const context = longContextPricing(row, options.inputTokens);
-        return {
-          id: row.id,
-          cacheHit: row.cacheHit * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
-          cacheWrite: (row.cacheWrite ?? row.input) * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
-          input: row.input * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
-          output: row.output * timeOfUse.multiplier * context.outputMultiplier * currencyMultiplier,
-          context: row.context,
-          // Without a request timestamp, a time-of-use DeepSeek calculation
-          // cannot be exact.  We intentionally use the peak rate (the
-          // conservative documented rate) and surface it as an estimate.
-          estimated: !!row.estimated || timeOfUse.estimated,
-          match: bare,
-          ratePeriod: timeOfUse.ratePeriod,
-          contextTier: context.tier,
-        };
-      }
+      if (re.test(bare) || re.test(name)) return row;
     }
   }
-  return normalizedFallbackPrice(options.fxRate, bare);
+  return null;
+}
+
+/**
+ * Pricing modifier class for one usage record — the bucket layer's key.
+ * Query-time pricing (priceForCell) reproduces costForUsage exactly by
+ * combining the row price with the multiplier of the recorded key:
+ *   std  → no modifier
+ *   peak → DeepSeek time-of-use peak window (also the conservative key for
+ *          records without a timestamp; those carry estimated=true)
+ *   off  → DeepSeek off-peak window / statutory holiday (half price)
+ *   long → OpenAI long-context tier (single request input > threshold)
+ * The two modifiers are mutually exclusive across today's tables (DeepSeek
+ * rows have no longContextThreshold, OpenAI rows no offPeakMultiplier);
+ * long wins if a future row ever carries both.
+ */
+const RATE_KEYS = Object.freeze(["std", "peak", "off", "long"]);
+
+function rateKeyFor(modelName, usage = {}, time) {
+  const row = matchRow(modelName);
+  if (!row) return { key: "std", estimated: true }; // FALLBACK_PRICE is estimated
+  if (row.longContextThreshold) {
+    const tokens =
+      num(usage.inputOther) + num(usage.inputCacheRead) + num(usage.inputCacheCreation);
+    if (Number.isFinite(tokens) && tokens > row.longContextThreshold) {
+      return { key: "long", estimated: false };
+    }
+  }
+  if (row.offPeakMultiplier) {
+    const t = deepSeekTimeOfUse(row, time);
+    return t.multiplier === row.offPeakMultiplier
+      ? { key: "off", estimated: t.estimated }
+      : { key: "peak", estimated: t.estimated };
+  }
+  return { key: "std", estimated: false };
+}
+
+/**
+ * Price for one aggregated bucket cell: the matched row's list prices with
+ * the rateKey multiplier applied, normalized to the internal CNY ledger.
+ * Mirrors what matchPrice computes per record, so folding records into
+ * (model, rateKey) cells and pricing at query time reproduces costForUsage
+ * up to floating-point summation order (guarded by equivalence tests).
+ * Custom prices substitute components exactly like costForUsage does, with
+ * missing components inheriting the multiplied official rates.
+ */
+function priceForCell(modelName, rateKey, options = {}) {
+  const row = matchRow(modelName);
+  // No row → fallback estimate; its rates are already approximate, so the
+  // recorded modifier is ignored rather than compounding the guess.
+  if (!row) {
+    const fx0 = Number(options.fxRate) > 0 ? Number(options.fxRate) : 7.2;
+    const fb = normalizedFallbackPrice(fx0, String(modelName || ""));
+    return { id: fb.id, cacheHit: fb.cacheHit, cacheWrite: fb.cacheWrite, input: fb.input, output: fb.output, estimated: true };
+  }
+  const fxRate = Number(options.fxRate) > 0 ? Number(options.fxRate) : 7.2;
+  const cny = priceToCnyMultiplier(row, fxRate);
+  let inputMult = 1;
+  let outputMult = 1;
+  if (rateKey === "off") {
+    const off = row.offPeakMultiplier || 0.5;
+    inputMult = off;
+    outputMult = off;
+  } else if (rateKey === "long") {
+    inputMult = 2;
+    outputMult = 1.5;
+  }
+  const official = {
+    id: row.id,
+    cacheHit: row.cacheHit * inputMult * cny,
+    cacheWrite: (row.cacheWrite ?? row.input) * inputMult * cny,
+    input: row.input * inputMult * cny,
+    output: row.output * outputMult * cny,
+    estimated: !!row.estimated,
+  };
+  const custom = Array.isArray(options.customPrices)
+    ? matchCustomPrice(modelName, options.customPrices, fxRate, official)
+    : null;
+  return custom || official;
+}
+
+function matchPrice(modelName, options = {}) {
+  if (!modelName) return normalizedFallbackPrice(options.fxRate, null);
+  const name = String(modelName);
+  // Prefer the bare model segment after provider/
+  const bare = name.includes("/") ? name.split("/").pop() : name;
+  const row = matchRow(modelName);
+  if (!row) return normalizedFallbackPrice(options.fxRate, bare);
+  {
+    const timeOfUse = deepSeekTimeOfUse(row, options.time);
+    const currencyMultiplier = priceToCnyMultiplier(row, options.fxRate);
+    const context = longContextPricing(row, options.inputTokens);
+    return {
+      id: row.id,
+      cacheHit: row.cacheHit * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+      cacheWrite: (row.cacheWrite ?? row.input) * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+      input: row.input * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+      output: row.output * timeOfUse.multiplier * context.outputMultiplier * currencyMultiplier,
+      context: row.context,
+      // Without a request timestamp, a time-of-use DeepSeek calculation
+      // cannot be exact.  We intentionally use the peak rate (the
+      // conservative documented rate) and surface it as an estimate.
+      estimated: !!row.estimated || timeOfUse.estimated,
+      match: bare,
+      ratePeriod: timeOfUse.ratePeriod,
+      contextTier: context.tier,
+    };
+  }
 }
 
 function longContextPricing(row, inputTokens) {
@@ -828,6 +917,10 @@ module.exports = {
   OPENAI_PRICES,
   CLAUDE_PRICES,
   FALLBACK_PRICE,
+  matchRow,
+  rateKeyFor,
+  priceForCell,
+  RATE_KEYS,
   matchPrice,
   matchCustomPrice,
   costForUsage,

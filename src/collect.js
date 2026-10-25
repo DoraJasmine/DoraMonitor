@@ -2,6 +2,7 @@
 
 const { listProviders, getProvider, sourceFiles, fileStamp } = require("./providers");
 const { loadModelMap } = require("./model-map");
+const { bucketFromRecords } = require("./buckets");
 
 /**
  * Incremental, cached collector.
@@ -10,13 +11,29 @@ const { loadModelMap } = require("./model-map");
  * - Between TTLs, each provider's source files are probed with stat only;
  *   unchanged file sets reuse cached records instead of re-reading.
  * - force=true bypasses both layers (Refresh button).
+ * - Phase 3: the snapshot also carries per-file DAY BUCKETS (day × tool ×
+ *   model × rateKey token counts). Raw records are trimmed to a 30-day
+ *   window (see RECORD_WINDOW_DAYS) plus a hard cap — everything older is
+ *   represented by its buckets only, so resident memory stays bounded.
  */
 
 const COLLECT_TTL_MS = 15_000;
+/** Recent-records window: buckets cover all history; raw records (the
+ *  "recent requests" table) only keep this many days (+1 day margin). */
+const RECORD_WINDOW_DAYS = 30;
+/** Hard cap on resident raw records — a single pathological day must not
+ *  break the memory bound on its own. */
+const RECORD_CAP = 20_000;
+/** Heavy providers whose scan() accepts the incremental-bucket opts. */
+const BUCKET_PROVIDERS = new Set(["kimi-code", "codex", "dsh"]);
+
+function recordSince(now) {
+  return now - (RECORD_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000;
+}
 
 const cache = {
   scannedAt: 0,
-  /** tool id -> { records, meta, home } */
+  /** tool id -> { records, meta, home, buckets } */
   byTool: new Map(),
   /** tool id -> { files: [{path, mtimeMs, size, exists}] } */
   stamps: new Map(),
@@ -52,12 +69,28 @@ function probeStamps(provider, home) {
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-function scanProvider(provider, home) {
-  const modelMap = provider.id === "kimi-code" ? loadModelMap(home) : null;
-  const { records, meta, events, quota } = modelMap
-    ? provider.scan(home, modelMap)
-    : provider.scan(home);
-  return { records, meta, events, quota, home };
+function scanProvider(provider, home, since) {
+  if (provider.id === "kimi-code") {
+    const modelMap = loadModelMap(home);
+    const out = provider.scan(home, modelMap, { recordSince: since });
+    return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, buckets: out.buckets || [], home };
+  }
+  if (BUCKET_PROVIDERS.has(provider.id)) {
+    const out = provider.scan(home, { recordSince: since });
+    return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, buckets: out.buckets || [], home };
+  }
+  // Light providers: whole-scan each time (cheap); fold their output into
+  // a single in-memory bucket so aggregation has ONE code path. Wrapped in
+  // the same { relPath, bucket } shape the heavy providers emit.
+  const out = provider.scan(home);
+  return {
+    records: out.records,
+    meta: out.meta,
+    events: out.events,
+    quota: out.quota,
+    buckets: [{ relPath: ":memory", bucket: bucketFromRecords(out.records || [], out.events || [], `${provider.id}:memory`, null) }],
+    home,
+  };
 }
 
 /**
@@ -77,6 +110,7 @@ function collect({ force = false } = {}) {
   }
 
   const tools = listProviders();
+  const since = recordSince(now);
   let reused = 0;
   let rescanned = 0;
 
@@ -95,7 +129,7 @@ function collect({ force = false } = {}) {
       continue;
     }
     try {
-      cache.byTool.set(tool.id, scanProvider(provider, tool.home));
+      cache.byTool.set(tool.id, scanProvider(provider, tool.home, since));
       cache.stamps.set(tool.id, files);
       rescanned += 1;
     } catch {
@@ -105,6 +139,7 @@ function collect({ force = false } = {}) {
           records: [],
           meta: { filesScanned: 0, linesSeen: 0, recordCount: 0, home: tool.home, errors: [{ message: "scan failed" }] },
           home: tool.home,
+          buckets: [],
         });
       }
     }
@@ -120,14 +155,19 @@ function cachedSnapshot() {
     const byTool = new Map(cache.byTool);
     const records = [];
     const events = [];
+    const bucketsByTool = new Map();
     const tools = [];
     for (const [id, entry] of byTool) {
-      records.push(...entry.records);
+      for (const r of entry.records) records.push(r);
       if (entry.events) events.push(...entry.events);
+      if (entry.buckets) bucketsByTool.set(id, entry.buckets.map((b) => b.bucket));
       tools.push({ id, recordCount: entry.records.length, meta: entry.meta });
     }
+    // Newest-first, then the hard memory cap.
     records.sort((a, b) => b.time - a.time);
-    cache.snapshot = { byTool, records, events, tools, scannedAt: cache.scannedAt };
+    if (records.length > RECORD_CAP) records.length = RECORD_CAP;
+    events.sort((a, b) => b.time - a.time);
+    cache.snapshot = { byTool, records, events, bucketsByTool, tools, scannedAt: cache.scannedAt };
   }
   return cache.snapshot;
 }
@@ -151,4 +191,4 @@ function invalidate() {
   }
 }
 
-module.exports = { collect, invalidate, COLLECT_TTL_MS };
+module.exports = { collect, invalidate, COLLECT_TTL_MS, RECORD_WINDOW_DAYS, RECORD_CAP };

@@ -102,12 +102,22 @@
   - TTL 内且未强制 → 直接返回快照并标记 `fromCache: true`；
   - 否则对每个 provider 做**文件戳探测**（路径+mtimeMs+size，stat-only）：
     戳未变 → 复用上次 records（不重扫）；变了 → 重扫。
-  - **按文件增量缓存**（kimi-code / codex / dsh 三个大头 provider）：解析结果按
-    文件缓存（key = 路径 + mtimeMs + size）。JSONL/rollout 是追加型文件，重扫时
-    只有真正变化的文件会被重读重解析，跨文件去重与配额挑选在廉价的后处理里跑
-    （对已解析记录做一次哈希 + 排序）。缓存按 home 命名空间隔离；
-    `collect.invalidate()` 会同时清空 provider 的文件缓存——费用设置变更后
-    成本必须重算。
+- **按文件增量缓存**（kimi-code / codex / dsh 三个大头 provider）：解析结果按
+  文件缓存（key = 路径 + mtimeMs + size）。JSONL/rollout 是追加型文件，重扫时
+  只有真正变化的文件会被重读重解析，跨文件去重与配额挑选在廉价的后处理里跑
+  （对已解析记录做一次哈希 + 排序）。缓存按 home 命名空间隔离；
+  `collect.invalidate()` 会同时清空 provider 的文件缓存——费用设置变更后
+  成本必须重算。
+- **日聚合桶（阶段 3，已实施）**：每个源文件折算为 `日期×工具×模型×计价档`
+  的整数 token 计数并持久化到 `~/.doramonitor/buckets/<toolId>/`（原子写，
+  stamp/tzOffset/version 三重校验）。桶**不存费用**——聚合时用当前价目表
+  现算（`priceForCell`），厂商调价零失效。窗口内文件的"去重后贡献明细"
+  也随桶持久化并在加载后按现行价目重算，因此**冷启动零文件解析**
+  （实测 6s → ~300ms）。跨文件去重签名集随桶持久化，配合 mtime 序
+  first-wins 与传播窗口保证增量结果与全量一致。回滚开关：
+  `DORAMONITOR_DISABLE_BUCKETS=1`。
+  原始记录仅保留近 30 天（`RECORD_WINDOW_DAYS`，次级上限 2 万条）供
+  "最近请求"表使用；7d/30d 聚合为日历日窗口（与滚动窗口的差异见方案文档）。
   - 单个 provider 抛异常 → 用空结果占位（`meta.errors`），**绝不拖垮其他工具**。
 - 快照（records 合并 + 全局排序）按扫描代数缓存一次，TTL 命中路径零重排。
 - 快照形状：`{ byTool, records, events, tools, scannedAt }`；`records` 全局按

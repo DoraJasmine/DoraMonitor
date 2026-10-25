@@ -3,7 +3,9 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { n, emptyRecord, expandHome, fileStamp } = require("./base");
+const { n, emptyRecord, expandHome } = require("./base");
+const { scanFilesWithBuckets } = require("./file-scan");
+const { bucketFromRecords } = require("../buckets");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
 
@@ -19,8 +21,10 @@ const { loadSettings } = require("../settings");
  * input_tokens - cached_input_tokens. turn_token_usage / thread_token_usage
  * on the same event are cumulative running totals — never counted.
  *
- * Responses are de-duplicated by payload.response_id: the same thread can
- * appear in both sessions/ and archived_sessions/ after archiving.
+ * Responses are de-duplicated by payload.response_id (stored on the record
+ * as _dedupKey): the same thread can appear in both sessions/ and
+ * archived_sessions/ after archiving. Dedup and per-file day-bucket folding
+ * run inside the shared file-scan skeleton (oldest-mtime first).
  *
  * token_usage_record carries no model field; the model (and cwd) come from
  * the turn's `turn_context` event (payload.turn_id -> model/cwd), falling
@@ -30,15 +34,11 @@ const { loadSettings } = require("../settings");
  * carries a `rate_limits` snapshot (primary = 5-hour rolling window,
  * secondary = weekly). The newest event wins, so quota refreshes whenever
  * token usage does.
- *
- * INCREMENTAL CACHE: rollout files are append-only in practice, so parsed
- * records are cached per file keyed on (mtimeMs, size) — a rescan re-reads
- * only files that changed (577 MB of history stays untouched otherwise).
- * The cross-file response_id dedup and the global newest-quota selection
- * still run over the full set on every scan (cheap pass over parsed
- * records). collect.invalidate() → clearCache() drops the caches when
- * pricing settings change.
  */
+
+/** home -> Map(file path -> { stamp, parsed, bucket, racy }) */
+const fileCaches = new Map();
+
 const provider = {
   id: "codex",
   label: "Codex",
@@ -54,17 +54,16 @@ const provider = {
     return fs.existsSync(path.join(home, "sessions"));
   },
 
-  /** Drop all per-file parse caches (used when pricing settings change). */
+  /** Drop all per-file caches (used when pricing settings change). */
   clearCache() {
     fileCaches.clear();
   },
 
-  scan(home) {
+  scan(home, opts = {}) {
     const roots = [
       path.join(home, "sessions"),
       path.join(home, "archived_sessions"),
     ];
-    const errors = [];
 
     const settings = (() => {
       try {
@@ -74,102 +73,78 @@ const provider = {
       }
     })();
 
-    // Roots keep their order (sessions/ wins the response_id dedup against
-    // archived copies, as before); files are sorted inside each root for a
-    // deterministic first-wins order.
-    const orderedFiles = [];
-    for (const root of roots) {
-      for (const file of listRolloutFiles(root).sort()) orderedFiles.push(file);
-    }
-
     let cache = fileCaches.get(home);
     if (!cache) {
       cache = new Map();
       fileCaches.set(home, cache);
     }
 
-    // Per-file parse (cached), then a cheap post-pass for cross-file state:
-    // response_id dedup, global newest quota, sort.
-    const parsedFiles = [];
-    let filesReread = 0;
-    for (const file of orderedFiles) {
-      const st = fileStamp(file);
-      const stamp = st ? { mtimeMs: st.mtimeMs, size: st.size } : null;
-      const cached = cache.get(file);
-      if (cached && sameStamp(cached.stamp, stamp)) {
-        parsedFiles.push(cached.parsed);
-        continue;
-      }
-      const parsed = parseRolloutFile(file, settings);
-      cache.set(file, { stamp, parsed });
-      parsedFiles.push(parsed);
-      filesReread += 1;
-      for (const err of parsed.errors) errors.push(err);
-    }
-    // Prune cache entries for files that disappeared.
-    if (cache.size > orderedFiles.length) {
-      const present = new Set(orderedFiles);
-      for (const key of [...cache.keys()]) {
-        if (!present.has(key)) cache.delete(key);
-      }
+    // Per-file quota snapshots persist inside each file's day-bucket, so a
+    // cold start that reuses stored buckets still sees the newest
+    // rate_limits without re-reading any rollout file.
+    const quotaByFile = new Map();
+
+    const files = [];
+    for (const root of roots) {
+      for (const file of listRolloutFiles(root)) files.push(file);
     }
 
-    const records = [];
-    const seenResponses = new Set();
+    const out = scanFilesWithBuckets({
+      id: provider.id,
+      home,
+      files,
+      cacheMap: cache,
+      recordSince: opts.recordSince,
+      settings,
+      parseFile: (file) => {
+        const parsed = parseRolloutFile(file, settings);
+        if (parsed.fileQuota) quotaByFile.set(path.relative(home, file), parsed.fileQuota);
+        return {
+          records: parsed.entries.map((e) => {
+            e.rec._dedupKey = e.key;
+            return e.rec;
+          }),
+          events: [],
+          lines: parsed.lines,
+          errors: parsed.errors,
+        };
+      },
+      signatureOf: (rec) => rec._dedupKey || "",
+      foldBucket: (contributed, parsed, relPath, stamp, sigs) => {
+        const bucket = bucketFromRecords(contributed, [], relPath, stamp, sigs);
+        bucket.lines = parsed.lines;
+        bucket.quota = quotaByFile.get(relPath) || null;
+        return bucket;
+      },
+    });
+
     let bestQuota = null;
-    let duplicatesSkipped = 0;
-    let linesSeen = 0;
-    for (const parsed of parsedFiles) {
-      linesSeen += parsed.lines;
-      // A full file read always ends at its newest line, so the last
-      // fileQuota seen is the freshest; keep the newest across files.
-      if (parsed.fileQuota && parsed.fileQuota.windows.length && (!bestQuota || parsed.fileQuota.ts >= bestQuota.ts)) {
-        bestQuota = parsed.fileQuota;
-      }
-      for (const entry of parsed.entries) {
-        // The same thread can appear in both sessions/ and archived_sessions/
-        // after archiving — dedupe by response_id across files.
-        if (entry.key) {
-          if (seenResponses.has(entry.key)) {
-            duplicatesSkipped += 1;
-            continue;
-          }
-          seenResponses.add(entry.key);
-        }
-        records.push(entry.rec);
+    for (const { bucket } of out.buckets) {
+      const q = bucket.quota;
+      if (q && q.windows && q.windows.length && (!bestQuota || q.ts >= bestQuota.ts)) {
+        bestQuota = q;
       }
     }
-    // newest first for "recent"
-    records.sort((a, b) => b.time - a.time);
 
     return {
-      records,
+      records: out.records,
+      events: [],
+      buckets: out.buckets,
       meta: {
-        filesScanned: orderedFiles.length,
-        filesReread,
-        linesSeen,
-        recordCount: records.length,
-        duplicatesSkipped,
+        ...out.meta,
+        linesSeen: out.buckets.reduce((sum, b) => sum + (b.bucket.lines || 0), 0),
         home,
         sessionsRoot: path.join(home, "sessions"),
-        errors: errors.slice(0, 20),
+        errors: out.errors.slice(0, 20),
       },
       quota: quotaPayload(bestQuota),
     };
   },
 };
 
-/** home -> Map(file path -> { stamp, parsed }) */
-const fileCaches = new Map();
-
-function sameStamp(a, b) {
-  if (!a || !b) return false;
-  return a.mtimeMs === b.mtimeMs && a.size === b.size;
-}
-
 /**
- * Parse one rollout file: costed token records (pre-dedup, paired with their
- * response_id keys), the file's newest quota snapshot, and line count.
+ * Parse one rollout file: costed token records (pre-dedup, paired with
+ * their response_id keys), the file's newest quota snapshot, and line count.
  * Files are append-only in practice, so unchanged files are never re-read.
  */
 function parseRolloutFile(file, settings) {

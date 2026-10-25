@@ -9,7 +9,19 @@ const { URL } = require("url");
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
 const { collect, invalidate: invalidateCollect } = require("./collect");
 const { listProviders } = require("./providers");
-const { aggregate, summaryAllRanges, aggregateByTool, aggregateToolEvents, buildHeatmap } = require("./aggregate");
+const {
+  aggregate,
+  summaryAllRanges,
+  aggregateByTool,
+  aggregateToolEvents,
+  buildHeatmap,
+  aggregateFromBuckets,
+  buildHeatmapFromDaily,
+  toolEventsFromBuckets,
+  byToolFromBuckets,
+  recentFromRecords,
+} = require("./aggregate");
+const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const { listPrices } = require("./pricing");
 const { fetchQuota } = require("./quota");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
@@ -80,6 +92,11 @@ Prompts, replies, code, API keys, and provider credentials are never shown.
 // no recomputation even with peer/device filtering in play.
 const aggCache = new Map();
 
+/** Phase-3 bucket path toggle: set to 1 to fall back to the raw-records
+ *  aggregation (both paths produce equivalent numbers; the bucket path is
+ *  O(days) instead of O(records) and survives cold starts). */
+const BUCKETS_DISABLED = process.env.DORAMONITOR_DISABLE_BUCKETS === "1";
+
 function getHome(queryHome, cliHome) {
   if (queryHome) return resolveKimiHome(queryHome);
   if (cliHome) return resolveKimiHome(cliHome);
@@ -88,17 +105,48 @@ function getHome(queryHome, cliHome) {
 
 /**
  * Aggregated dashboard data for all ranges + heatmap, cached per scan
- * generation. Aggregating 4 ranges over ~16k records on every request would
- * waste tens of milliseconds; this runs once per scan instead.
+ * generation. Bucket path (default): aggregates from day-buckets with
+ * query-time pricing; recent rows are injected from the raw-record window.
+ * Fallback path (DORAMONITOR_DISABLE_BUCKETS=1): the original per-record
+ * aggregation over the full record list.
  */
-function ensureAggregates(collected, key, records, tool) {
+function ensureAggregates(collected, key, records, tool, buckets, settings) {
   const cacheKey = `${collected.scannedAt}|${key}|${tool}`;
   const hit = aggCache.get(cacheKey);
   if (hit) return hit;
-  const data = {
-    perRange: summaryAllRanges(records, Date.now(), tool),
-    heatmap: buildHeatmap(records, Date.now(), 53, tool),
-  };
+  let data;
+  if (BUCKETS_DISABLED || !Array.isArray(buckets) || buckets.length === 0) {
+    data = {
+      perRange: summaryAllRanges(records, Date.now(), tool),
+      heatmap: buildHeatmap(records, Date.now(), 53, tool),
+      toolEvents: null,
+    };
+    for (const r of Object.values(data.perRange)) {
+      Object.assign(r, recentFromRecords(records, r.range, Date.now(), tool));
+    }
+  } else {
+    const now = Date.now();
+    const perRange = {};
+    for (const range of ["today", "7d", "30d", "all"]) {
+      const agg = aggregateFromBuckets(buckets, {
+        range,
+        nowMs: now,
+        tool,
+        fxRate: settings?.fxRate,
+        customPrices: settings?.customPrices,
+      });
+      Object.assign(agg, recentFromRecords(records, range, now, tool));
+      perRange[range] = agg;
+    }
+    // Heatmap spans all history: reuse the "all" aggregation's daily rows.
+    const allDayMap = new Map(perRange.all.daily.map((d) => [d.date, d]));
+    const mergedEvents = mergeBuckets(buckets).eventDays;
+    data = {
+      perRange,
+      heatmap: buildHeatmapFromDaily(allDayMap, now, 53),
+      toolEvents: mergedEvents,
+    };
+  }
   // Bounded: a handful of device/tool combinations at most.
   if (aggCache.size > 32) aggCache.clear();
   aggCache.set(cacheKey, data);
@@ -310,8 +358,27 @@ async function handleApi(req, res, url, cliHome) {
         ? peerRecords.filter((r) => r.device === deviceParam)
         : [...localRecords, ...peerRecords];
 
+    // Day-buckets per device: local buckets come from the scan snapshot;
+    // peer summaries are folded on the fly (a few hundred cells, µs).
+    const localBuckets = BUCKETS_DISABLED
+      ? []
+      : [...(collected.bucketsByTool?.values() || [])].flat();
+    const peerBucketsByDevice = new Map();
+    if (!BUCKETS_DISABLED) {
+      for (const rec of peerRecords) {
+        if (!peerBucketsByDevice.has(rec.device)) {
+          peerBucketsByDevice.set(rec.device, newBucket(`${rec.device}:peer`, null));
+        }
+        foldRecordInto(peerBucketsByDevice.get(rec.device), rec);
+      }
+    }
+    const selectedBuckets =
+      deviceParam === "local" ? localBuckets
+      : peerBucketsByDevice.has(deviceParam) ? [peerBucketsByDevice.get(deviceParam)]
+      : [...localBuckets, ...peerBucketsByDevice.values()];
+
     const deviceKey = deviceParam === "all" && !peerRecords.length ? "local" : `dev:${deviceParam}:${peerRecords.length}`;
-    const cached = ensureAggregates(collected, deviceKey, aggRecords, tool);
+    const cached = ensureAggregates(collected, deviceKey, aggRecords, tool, selectedBuckets, settingsNow);
     const perRange = cached.perRange;
     const rangeAgg = perRange[range] || aggregate(aggRecords, range, Date.now(), tool);
     const heatmap = cached.heatmap;
@@ -346,8 +413,10 @@ async function handleApi(req, res, url, cliHome) {
       ...heatmap,
       cells: (heatmap.cells || []).map((cell) => displayCost(cell, settingsNow)),
     };
-    const byToolRange = aggregateByTool(aggRecords, range, toolMeta)
-      .map((row) => displayCost(row, settingsNow));
+    const byToolRange = (cached.toolEvents
+      ? byToolFromBuckets(selectedBuckets, range, toolMeta)
+      : aggregateByTool(aggRecords, range, toolMeta)
+    ).map((row) => displayCost(row, settingsNow));
     const displayRangeTotals = Object.fromEntries(
       Object.entries(rangeTotals).map(([key, totals]) => [key, displayCost(totals, settingsNow)])
     );
@@ -363,7 +432,9 @@ async function handleApi(req, res, url, cliHome) {
       tools: providerList,
       byTool: byToolRange,
       stats: displayAggregate,
-      toolEvents: aggregateToolEvents(collected.events, range, Date.now(), tool),
+      toolEvents: cached.toolEvents
+        ? toolEventsFromBuckets(cached.toolEvents, range, Date.now(), tool)
+        : aggregateToolEvents(collected.events, range, Date.now(), tool),
       device: deviceParam,
       devices: [
         { id: "local", label: "本机", available: true },

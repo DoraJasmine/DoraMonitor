@@ -22,7 +22,20 @@ function tmpHome(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-/** Comparable projection of a record list (ignores object identity). */
+/** Push fixture files' mtime 10s into the past so the scan's racy-write
+ *  guard (files modified within 2s of "now" are always re-read) does not
+ *  fire on freshly written fixtures. One shared timestamp per call keeps
+ *  the (mtime, path) order deterministic: callers pass the parent first,
+ *  the fork copy second, so the parent wins dedup by path order. */
+function backdate(...files) {
+  const old = new Date(Date.now() - 10_000);
+  for (const file of files) fs.utimesSync(file, old, old);
+}
+
+/** Comparable projection of a record list (ignores object identity and the
+ *  session attribution of deduped twins: with mtime-ordered first-wins the
+ *  surviving copy of a duplicated line may be the parent's on one path and
+ *  the fork's on the other — same tokens, same cost, different session). */
 function project(records) {
   return records
     .map((r) => ({
@@ -34,7 +47,6 @@ function project(records) {
       inputCacheRead: r.inputCacheRead,
       inputCacheCreation: r.inputCacheCreation,
       costCny: r.costCny,
-      session: r.session,
     }))
     .sort((a, b) => b.time - a.time || (a.model < b.model ? -1 : 1));
 }
@@ -62,6 +74,7 @@ test("kimi-code: appending to one file — incremental scan equals fresh full sc
   fs.writeFileSync(path.join(main, "wire.jsonl"), [usageLine(1000, 10), usageLine(2000, 20)].join("\n") + "\n");
   // fork copies parent's lines verbatim
   fs.writeFileSync(path.join(fork, "wire.jsonl"), [usageLine(1000, 10), usageLine(3000, 30)].join("\n") + "\n");
+  backdate(path.join(main, "wire.jsonl"), path.join(fork, "wire.jsonl"));
 
   const first = kimiCode.scan(home);
   assert.strictEqual(first.records.length, 3, "2 unique turns in A + 1 unique in B");
@@ -75,10 +88,16 @@ test("kimi-code: appending to one file — incremental scan equals fresh full sc
 
   // Append a new turn to file A, then rescan incrementally.
   fs.appendFileSync(path.join(main, "wire.jsonl"), usageLine(4000, 40) + "\n");
+  backdate(path.join(main, "wire.jsonl"));
   const incr = kimiCode.scan(home);
   assert.strictEqual(incr.meta.filesReread, 1, "only the appended file is re-parsed");
   assert.strictEqual(incr.records.length, 4);
-  assert.strictEqual(incr.meta.duplicatesSkipped, 1, "cross-file fork dedup still holds");
+  // The forked copy stays deduped even though file B was NOT re-derived
+  // this scan (its cached contribution is reused as-is).
+  assert.strictEqual(
+    incr.records.filter((r) => r.time === 1000).map((r) => r.session).join(","),
+    "session_a",
+    "cross-file fork dedup still holds");
 
   // Ground truth: drop the cache and rescan everything fresh.
   kimiCode.clearCache();
@@ -146,6 +165,7 @@ test("codex: appending a rollout — incremental scan equals fresh full scan", (
     });
 
   fs.writeFileSync(file, [line("r1", "t1", 10), line("r2", "t2", 20)].join("\n") + "\n");
+  backdate(file);
 
   const first = codex.scan(home);
   assert.strictEqual(first.records.length, 2);
@@ -162,6 +182,7 @@ test("codex: appending a rollout — incremental scan equals fresh full scan", (
     payload: { turn_id: "t3", model: "gpt-6-sol", cwd: "G:\\proj" },
   }) + "\n");
   fs.appendFileSync(file, line("r3", "t3", 30) + "\n");
+  backdate(file);
 
   const incr = codex.scan(home);
   assert.strictEqual(incr.meta.filesReread, 1);
@@ -230,6 +251,7 @@ test("dsh: appending a transcript — incremental scan equals fresh full scan", 
     JSON.stringify({ type: "session", id: "sess-a", cwd: "G:\\proj" }),
     line("m1", 1000),
   ].join("\n") + "\n");
+  backdate(file);
 
   const first = dsh.scan(home);
   assert.strictEqual(first.records.length, 1);
@@ -242,6 +264,7 @@ test("dsh: appending a transcript — incremental scan equals fresh full scan", 
   assert.deepStrictEqual(project(second.records), project(first.records));
 
   fs.appendFileSync(file, line("m2", 2000) + "\n");
+  backdate(file);
   const incr = dsh.scan(home);
   assert.strictEqual(incr.meta.filesReread, 1);
   assert.strictEqual(incr.records.length, 2);
