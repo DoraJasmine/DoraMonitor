@@ -11,6 +11,9 @@
 
 [English](./README.md) · **简体中文**
 
+> **📖 完整文档**：[docs/README.md](./docs/README.md) — 架构、数据源、计价体系、
+> API 参考、配置、会话管理、多设备同步、CLI、部署与开发指南。
+
 本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板
 （`~/.kimi-code` · Windows `%USERPROFILE%\.kimi-code`）。
 
@@ -25,7 +28,7 @@
 - **时间范围** — 今天 / 近 7 天 / 近 30 天 / 全部
 - **图表与表格** — 每日趋势（多模型 SVG 曲线）、模型统计、缓存命中率、最近请求、近一年热力图
 - **多语言** — 简体中文与英文；自动识别系统语言，可在应用内切换
-- **费用估算** — 按 [Kimi API Platform](https://platform.kimi.ai/) 官方标价（USD / 百万 Token）
+- **费用估算** — 多厂商官方价（Kimi / DeepSeek / 智谱人民币价，OpenAI / Anthropic / Qwen 等美元价按汇率换算），内部统一人民币账本；详见 [docs/pricing.md](./docs/pricing.md)
 - **模型映射** — `config.toml` 别名、`KIMI_MODEL_NAME` / `KIMI_MODEL_PROVIDER` / `KIMI_MODEL_ID`、`__kimi_env_model__`
 - **数据目录** — 自动识别 `KIMI_CODE_HOME`、`~/.kimi-code`、Windows 用户目录；也可在界面手动选择
 - **会话管理** — 按工作区列会话，归档 / 恢复、永久删除（单条或批量）、安全文本预览（不含工具详情与凭据）、删除空工作区
@@ -48,7 +51,7 @@
 ## 快速开始（Web）
 
 ```bash
-cd kimicode-dashboard
+cd DoraMonitor
 npm install
 npm run build    # 构建前端到 dist/
 npm start        # 本机 API + 静态页，127.0.0.1:3847
@@ -84,18 +87,11 @@ node src/server.js --help
 | `--no-open` | 启动时不自动打开浏览器 |
 | `-h`, `--help` | 打印帮助信息 |
 
-## 桌面端（Tauri）
+## 桌面端（Tauri，预留）
 
-```bash
-npm install
-npm run build          # 打包前端资源
-npm run tauri:dev      # 桌面开发窗口
-npm run tauri:build    # 安装包输出在 desktop/src-tauri/target/
-```
-
-桌面端用 **Rust** 完整实现了后端数据管道（扫描、聚合、定价、会话管理、热力图），JSON 形状与 Node `/api/*` 端点一致。前端通过 `@tauri-apps/api` invoke 调用，由 `web/src/lib/backend.js` 透明切换。
-
-CI：`.github/workflows/desktop.yml` 在 Windows / Ubuntu / macOS 构建（`v*` 标签可发 Release 产物）。
+前端已保留 Tauri 兼容（`web/src/lib/backend.js` 可透明切换 HTTP / `invoke`，
+`base: "./"` 支持自定义协议加载），但当前仓库**暂不包含** Tauri 壳源码；
+数据管道以 Node 后端为准。
 
 ## 界面技术栈
 
@@ -161,18 +157,21 @@ CI：`.github/workflows/desktop.yml` 在 Windows / Ubuntu / macOS 构建（`v*` 
 
 ## 费用参考表
 
-单位：USD / **百万** Token（以 [platform.kimi.ai](https://platform.kimi.ai/) 为准）：
+内部以人民币记账，各厂商按官方价计（单位：**元 / 百万 Token**）。摘录
+（完整价目表与计价规则见 [docs/pricing.md](./docs/pricing.md)）：
 
-| 模型 | Cache hit | Input | Output | 上下文 |
+| 模型 | 缓存命中 | 输入 | 输出 | 上下文 |
 | --- | ---: | ---: | ---: | ---: |
-| kimi-k3 | 0.30 | 3.00 | 15.00 | 1,048,576 |
-| kimi-k2.7-code | 0.19 | 0.95 | 4.00 | 262,144 |
-| kimi-k2.6 | 0.16 | 0.95 | 4.00 | 262,144 |
-| kimi-k2.5 | 0.10 | 0.60 | 3.00 | 262,144 |
-| kimi-k2-turbo | 0.15 | 1.15 | 8.00 | 262,144 |
-| kimi-k2 | 0.15 | 0.60 | 2.50 | 262,144 |
+| kimi-k3.1-pro | 1.30 | 13.00 | 68.00 | 1,048,576 |
+| kimi-k3 | 2.00 | 20.00 | 100.00 | 1,048,576 |
+| kimi-k2.7-code | 1.30 | 6.50 | 27.00 | 262,144 |
+| kimi-k2.6 | 1.10 | 6.50 | 27.00 | 262,144 |
+| deepseek-flash | 0.04 | 2.00 | 8.00 | 1,000,000（峰谷分时，谷半价） |
+| glm-5.3-flash | 0.23 | 0.80 | 2.80 | 1,000,000 |
 
-非 Kimi 模型回退到 K2.6 标价，并在界面标记为「估算」。
+- `kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按 kimi-k2.7-code 价计。
+- 非 Kimi 模型回退到 K2.6 标价，并在界面标记为「估算」。
+- K2 系列 2026-10-31 起对新用户关闭、12 月底下线（老用户不受影响）。
 
 ## 脚本
 
@@ -185,8 +184,8 @@ CI：`.github/workflows/desktop.yml` 在 Windows / Ubuntu / macOS 构建（`v*` 
 | `npm run build` | 生产前端 → `dist/` |
 | `npm run preview` | Vite 预览构建产物 |
 | `npm test` | Node 测试套件（`node --test test/*.test.js`） |
-| `npm run tauri:dev` | Tauri 桌面开发 |
-| `npm run tauri:build` | Tauri 发布包（未签名） |
+| `npm run status` | 单行用量状态摘要 |
+| `npm run daemon` | 常驻守护进程（写状态缓存 + 周期同步） |
 
 ## 隐私
 

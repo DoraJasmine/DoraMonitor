@@ -6,6 +6,8 @@
 
 ![截图](assets/screenshot.png)
 
+> **📖 完整文档**：[docs/README.md](./docs/README.md) — 架构总览、[数据源与采集](./docs/providers.md)、[计价体系](./docs/pricing.md)、[HTTP API 参考](./docs/api.md)、[配置与设置](./docs/configuration.md)、[会话管理](./docs/sessions.md)、[多设备同步](./docs/sync.md)、[CLI 与守护进程](./docs/cli.md)、[部署与运行](./docs/deployment.md)、[开发指南](./docs/development.md)、[隐私与安全](./docs/privacy.md)。
+
 ## 支持的工具
 
 | 工具 | 数据来源（只读） | 统计内容 |
@@ -156,7 +158,7 @@ Kimi 的额度模型**没有月度窗口**（官方文档）：
 
 「模型 → 定价与货币」页：
 
-- **显示货币**：USD 或 CNY；CNY 按可配置汇率（默认 7.2）由内部 USD 成本换算显示。
+- **显示货币**：USD 或 CNY。内部统一以**人民币**记账（人民币厂商直接用官方价，美元厂商入账时按汇率换算为人民币），显示美元时按同一汇率换出（默认 7.2）。
 - **自定义模型定价**：为官方价格表没有的模型（如 GLM）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
 
 配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex / Claude Code / dsh）的费用统一按此计算。
