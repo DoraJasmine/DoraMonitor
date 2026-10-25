@@ -118,6 +118,9 @@
   `DORAMONITOR_DISABLE_BUCKETS=1`。
   原始记录仅保留近 30 天（`RECORD_WINDOW_DAYS`，次级上限 2 万条）供
   "最近请求"表使用；7d/30d 聚合为日历日窗口（与滚动窗口的差异见方案文档）。
+  估算标记分两层：折算只记**时间性**估算（无时间戳 DeepSeek，桶 v2 起），
+  表行级估算（无价格行的兜底）由查询时 `priceForCell` 现算——因此**价格表
+  新增行后，新价格与"官方价"标记自动回溯全部历史，无需清桶**。
   - 单个 provider 抛异常 → 用空结果占位（`meta.errors`），**绝不拖垮其他工具**。
 - 快照（records 合并 + 全局排序）按扫描代数缓存一次，TTL 命中路径零重排。
 - 快照形状：`{ byTool, records, events, tools, scannedAt }`；`records` 全局按

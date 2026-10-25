@@ -168,6 +168,7 @@ node src/server.js --help
 | kimi-k2.6 | 1.10 | 6.50 | 27.00 | 262,144 |
 | deepseek-flash | 0.04 | 2.00 | 8.00 | 1,000,000（峰谷分时，谷半价） |
 | glm-5.3-flash | 0.23 | 0.80 | 2.80 | 1,000,000 |
+| gpt-6.1-sol（USD） | $0.10 | $2.00 | $10.00 | 1,050,000 |
 
 - `kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按 kimi-k2.7-code 价计。
 - 非 Kimi 模型回退到 K2.6 标价，并在界面标记为「估算」。

@@ -73,7 +73,7 @@ K3 系列官方缓存写入分 TTL 档：5min（默认）与 1h（价格为 5min
 
 | id | 匹配的模型名 | 缓存命中 | 输入 | 输出 | 上下文 |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `deepseek-flash` | `deepseek-flash`、`deepseek-v4(.1)-flash(-vision-exp)`、`deepseek-chat/reasoner`、`dfmodel` | 0.04 | 2.00 | 8.00 | 1,000,000 |
+| `deepseek-flash` | `deepseek-flash`、`deepseek-v4(.1)-flash(-vision-exp)`、带日期后缀的 `deepseek-v4.1-flash-1017`（同一模型）、`deepseek-chat/reasoner`、`dfmodel` | 0.04 | 2.00 | 8.00 | 1,000,000 |
 | `deepseek-v4-pro` | `deepseek-v4-pro…`、`dmodel` | 0.30 | 9.00 | 27.00 | 1,000,000 |
 
 **峰谷规则**：峰时 = 工作日（周一至五）北京时间 09:00–12:00 与 14:00–18:00，
@@ -131,6 +131,14 @@ K3 系列官方缓存写入分 TTL 档：5min（默认）与 1h（价格为 5min
 来源：<https://developers.openai.com/api/docs/pricing>
 所有带 `longContextThreshold: 272_000` 的模型：**单请求输入总量超过 272K** 时，
 输入与缓存价格 ×2、输出 ×1.5（按整个请求计，不拆分）。
+
+| id | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 | 长上下文阶梯 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `gpt-6.1-sol`（含裸 `gpt-6.1`） | 0.10 | 2.00* | 2.00 | 10.00 | 1,050,000 | 是 |
+
+> `gpt-6.1-sol`（2026-10 发布）：\* cache write 官方未单独公布，按输入价计
+> （与 `gpt-5` 行同策略）；长上下文阈值随 GPT-6 代取 272K。
+> 另有 `gpt-6.1-sol:flex` 变体（$1/$5）未收录——本地记录未出现该 id。
 
 | id | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 | 长上下文阶梯 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
