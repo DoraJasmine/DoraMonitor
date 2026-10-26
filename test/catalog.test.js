@@ -231,11 +231,23 @@ describe("catalog", () => {
     const cacheFile = path.join(tmp, "tauri-cache.json");
     fs.writeFileSync(
       cacheFile,
-      JSON.stringify({ fetched_at: 1700000000000, providers: [] }),
+      // Tauri shells must write the same schema version the Node side does —
+      // caches without it are treated as pre-cost-field stale and refetched.
+      JSON.stringify({ schema: 2, fetched_at: 1700000000000, providers: [] }),
       "utf8"
     );
     const disk = readDiskCache(cacheFile);
     assert.equal(disk.fetchedAt, 1700000000000);
     assert.deepEqual(disk.providers, []);
+  });
+
+  it("rejects pre-schema caches (they lack the cost field)", () => {
+    const cacheFile = path.join(tmp, "old-cache.json");
+    fs.writeFileSync(
+      cacheFile,
+      JSON.stringify({ fetchedAt: 1700000000000, providers: [] }),
+      "utf8"
+    );
+    assert.equal(readDiskCache(cacheFile), null);
   });
 });

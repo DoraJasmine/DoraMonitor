@@ -38,6 +38,7 @@ const KEEP_PROVIDER = ["id", "name", "api", "env", "npm", "type", "models"];
 const KEEP_MODEL = [
   "id",
   "name",
+  "cost",
   "family",
   "limit",
   "tool_call",
@@ -57,6 +58,8 @@ const PROVIDER_TYPES = [
   "google-genai",
   "vertexai",
 ];
+
+const CACHE_SCHEMA = 2; // 2 = providers keep the cost field (price page)
 
 let cache = { at: 0, data: null };
 
@@ -149,6 +152,8 @@ function readDiskCache(cacheFile) {
     if (!data || typeof data !== "object" || !Array.isArray(data.providers)) {
       return null;
     }
+    // schema mismatch → pre-cost-field cache (pre phase-3 price page); refetch
+    if (data.schema !== CACHE_SCHEMA) return null;
     const fetchedAt =
       typeof data.fetchedAt === "number"
         ? data.fetchedAt
@@ -168,7 +173,7 @@ function writeDiskCache(cacheFile, providers, fetchedAt) {
     fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
     fs.writeFileSync(
       cacheFile,
-      JSON.stringify({ fetchedAt, providers }, null, 2),
+      JSON.stringify({ schema: CACHE_SCHEMA, fetchedAt, providers }, null, 2),
       "utf8"
     );
   } catch {
@@ -300,6 +305,17 @@ function normalizeCatalogModel(m) {
     offEffort: thinking.offEffort,
     alwaysThinking: thinking.alwaysThinking,
     capabilities: caps.length > 0 ? caps : undefined,
+    // USD-per-1M entry prices from models.dev — the price page's
+    // "online update" source. Passed through verbatim.
+    cost:
+      m.cost && typeof m.cost === "object" && Number.isFinite(Number(m.cost.input))
+        ? {
+            input: Number(m.cost.input),
+            output: Number(m.cost.output),
+            cache_read: Number(m.cost.cache_read ?? m.cost.input),
+            cache_write: Number(m.cost.cache_write ?? m.cost.input),
+          }
+        : undefined,
   };
 }
 

@@ -187,6 +187,7 @@ export default function App() {
       const p = window.location.pathname;
       if (p.startsWith("/sessions")) return "sessions";
       if (p.startsWith("/models")) return "models";
+      if (p.startsWith("/prices")) return "prices";
     }
     return localStorage.getItem("kcd_page") || "usage";
   });
@@ -208,7 +209,13 @@ export default function App() {
     localStorage.setItem("kcd_page", next);
     if (typeof window !== "undefined") {
       const path =
-        next === "sessions" ? "/sessions" : next === "models" ? "/models" : "/";
+        next === "sessions"
+          ? "/sessions"
+          : next === "models"
+          ? "/models"
+          : next === "prices"
+          ? "/prices"
+          : "/";
       window.history.replaceState({}, "", path);
     }
   };
@@ -553,6 +560,13 @@ export default function App() {
               <SlidersHorizontal className="h-3.5 w-3.5" />
               {t("navModels")}
             </Button>
+            <Button
+              variant={page === "prices" ? "default" : "ghost"}
+              onClick={() => goPage("prices")}
+              className="gap-1.5"
+            >
+              {t("navPrices")}
+            </Button>
           </div>
           <Select value={locale} onValueChange={changeLocale}>
             <SelectTrigger className="w-[120px]" aria-label={t("language")}>
@@ -676,6 +690,7 @@ export default function App() {
       ) : null}
 
       {page === "models" ? <ModelsPage home={home} t={t} onPricingSaved={handlePricingSaved} /> : null}
+      {page === "prices" ? <PricesPage t={t} locale={locale} onSaved={handlePricingSaved} /> : null}
 
       {page === "usage" ? (
       <>

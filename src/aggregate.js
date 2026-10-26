@@ -563,7 +563,12 @@ function aggregateFromBuckets(buckets, options = {}) {
   return {
     range,
     tool,
-    totals,
+    totals: {
+      ...totals,
+      cacheHitRate: hitRate(totals),
+      totalTokens:
+        totals.inputOther + totals.output + totals.inputCacheRead + totals.inputCacheCreation,
+    },
     daily,
     dailyByModel,
     models,

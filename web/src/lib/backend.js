@@ -51,6 +51,13 @@ function withHome(params, home) {
   return qs;
 }
 
+/** GET /api/catalog/prices — models.dev entry prices (price page online update) */
+export async function fetchCatalogPrices(qs = "") {
+  const invoke = await getInvoke();
+  if (invoke) return invoke("get_catalog_prices", { query: qs });
+  return httpJson(`/api/catalog/prices?${qs}`);
+}
+
 /** GET /api/paths or invoke get_paths */
 export async function fetchPaths() {
   const invoke = await getInvoke();

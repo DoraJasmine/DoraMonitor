@@ -47,7 +47,6 @@ import {
   setSecondaryModel,
 } from "@/lib/backend";
 import { cn } from "@/lib/utils";
-import { PricingTab } from "@/components/PricingTab";
 
 const PROVIDER_TYPES = [
   "kimi",
@@ -695,7 +694,7 @@ export default function ModelsPage({ home, t, onPricingSaved }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [flash, setFlash] = useState(false);
-  const [tab, setTab] = useState("providers");
+  const [tab, setTab] = useState("providers"); // pricing tab moved to the dedicated price page
   const [providerDlg, setProviderDlg] = useState(null); // { mode:'add'|'edit', row? }
   const [modelDlg, setModelDlg] = useState(null); // { providerId, row? }
   const [deleteTarget, setDeleteTarget] = useState(null); // { kind, id | alias }
@@ -851,11 +850,8 @@ export default function ModelsPage({ home, t, onPricingSaved }) {
           <TabsTrigger value="providers">{t("tabProviders")}</TabsTrigger>
           <TabsTrigger value="models">{t("tabModels")}</TabsTrigger>
           <TabsTrigger value="secondary">{t("tabSecondary")}</TabsTrigger>
-          <TabsTrigger value="pricing">{t("tabPricing")}</TabsTrigger>
         </TabsList>
       </Tabs>
-
-      {tab === "pricing" ? <PricingTab t={t} onSaved={onPricingSaved} /> : null}
 
       {!config ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">

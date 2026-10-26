@@ -26,6 +26,7 @@ const TOOL_META = {
   codex: { label: "Codex", color: "#10a37f" },
   "claude-code": { label: "Claude Code", color: "#d97757" },
   dsh: { label: "dsh", color: "#4D6BFE" },
+  gemini: { label: "Gemini CLI", color: "#1a73e8" },
 };
 
 function toolMeta(id) {

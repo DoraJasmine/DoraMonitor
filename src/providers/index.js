@@ -10,6 +10,7 @@ const qoderCnCli = require("./qoder-cn-cli");
 const codex = require("./codex");
 const claudeCode = require("./claude-code");
 const dsh = require("./dsh");
+const gemini = require("./gemini");
 
 /**
  * Provider registry.
@@ -18,7 +19,7 @@ const dsh = require("./dsh");
  * Adding a tool = adding a module here; aggregation, pricing, and UI consume
  * the registry without knowing provider internals.
  */
-const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh];
+const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh, gemini];
 
 /** Resolve each provider's data home and availability. */
 function listProviders() {

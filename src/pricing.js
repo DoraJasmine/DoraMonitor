@@ -142,6 +142,45 @@ const DEEPSEEK_PRICES = [
 ];
 
 /**
+ * Official Google Gemini API list prices (USD per 1M tokens), used by the
+ * Gemini CLI provider. Source: https://ai.google.dev/gemini-api/docs/pricing
+ * Gemini context caching bills ~10% of the standard input rate across the
+ * family (3.8 Flash's published $0.075 on $0.75 input confirms the ratio);
+ * Pro models double above the 200K context tier (input ×2, output ×1.5 —
+ * same shape as the OpenAI long-context tier).
+ */
+const GOOGLE_PRICES = [
+  {
+    id: "gemini-3.1-pro",
+    patterns: [/^gemini[-_ ]?3\.1[-_ ]?pro/i],
+    cacheHit: 0.2,
+    input: 2.0,
+    output: 12.0,
+    context: 1_048_576,
+    longContextThreshold: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "gemini-3.8-flash",
+    patterns: [/^gemini[-_ ]?3\.8[-_ ]?flash/i],
+    cacheHit: 0.075,
+    input: 0.75,
+    output: 3.75,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    id: "gemini-3-flash",
+    patterns: [/^gemini[-_ ]?3[-_ ]?flash/i, /^gemini[-_ ]?3(?:\.0)?$/i],
+    cacheHit: 0.05,
+    input: 0.5,
+    output: 3.0,
+    context: 1_048_576,
+    currency: "USD",
+  },
+];
+
+/**
  * Official BigModel China list prices (CNY per 1M tokens).
  * Source: https://docs.bigmodel.cn/cn/guide/models
  * These are the current standard China API prices. BigModel currently lists
@@ -346,6 +385,7 @@ const VENDOR_EXTRA_PRICES = [
 const ALL_PRICE_TABLES = () => [
   ...KIMI_PRICES,
   ...DEEPSEEK_PRICES,
+  ...GOOGLE_PRICES,
   ...ZHIPU_PRICES,
   ...QWEN_PRICES,
   ...MINIMAX_PRICES,
@@ -906,7 +946,9 @@ function listPrices(options = {}) {
             ? "https://www.anthropic.com/pricing"
             : ZHIPU_PRICES.includes(p)
               ? "https://docs.bigmodel.cn/cn/guide/models"
-              : QWEN_PRICES.includes(p)
+              : GOOGLE_PRICES.includes(p)
+                  ? "https://ai.google.dev/gemini-api/docs/pricing"
+                  : QWEN_PRICES.includes(p)
                 ? "https://opencode.ai/docs/go"
                 : MINIMAX_PRICES.includes(p)
                   ? "https://opencode.ai/docs/zen"
@@ -927,6 +969,7 @@ function listPrices(options = {}) {
 module.exports = {
   KIMI_PRICES,
   DEEPSEEK_PRICES,
+  GOOGLE_PRICES,
   ZHIPU_PRICES,
   QWEN_PRICES,
   MINIMAX_PRICES,

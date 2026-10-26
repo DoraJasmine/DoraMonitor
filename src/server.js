@@ -707,6 +707,46 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   // --- Provider catalog (models.dev, with builtin fallback) ---
+  // --- Price directory: per-entry USD/1M costs from the models.dev catalog
+  // (the "online update" source of the price page). Costs live on the raw
+  // catalog models; the stripped view keeps them via the KEEP_MODEL whitelist.
+  if (url.pathname === "/api/catalog/prices" && req.method === "GET") {
+    const q = String(url.searchParams.get("q") || "").trim().toLowerCase();
+    try {
+      const force = url.searchParams.get("refresh") === "1";
+      const catalog = await fetchCatalogOrBuiltIn({ force });
+      const rows = [];
+      for (const p of catalog.providers || []) {
+        for (const m of catalogProviderModels(p) || []) {
+          const cost = m.cost && typeof m.cost === "object" ? m.cost : null;
+          if (!cost || !Number.isFinite(Number(cost.input))) continue;
+          const needle = `${p.id} ${p.name || ""} ${m.id} ${m.name || ""}`.toLowerCase();
+          if (q && !needle.includes(q)) continue;
+          rows.push({
+            modelId: m.id,
+            providerId: p.id,
+            providerName: p.name || p.id,
+            name: m.name || m.id,
+            // models.dev costs are USD per 1M tokens already.
+            input: Number(cost.input),
+            output: Number(cost.output),
+            cacheRead: Number(cost.cache_read ?? cost.input),
+            cacheWrite: Number(cost.cache_write ?? cost.input),
+          });
+          if (rows.length >= 200) break;
+        }
+        if (rows.length >= 200) break;
+      }
+      return json(res, 200, {
+        source: catalog.source,
+        fetchedAt: catalog.fetchedAt,
+        prices: rows,
+      });
+    } catch (err) {
+      return json(res, 500, { error: "catalog_unavailable", message: String(err && err.message ? err.message : err) });
+    }
+  }
+
   if (url.pathname === "/api/catalog" && req.method === "GET") {
     return runConfig(res, async () => {
       const force = url.searchParams.get("refresh") === "1";
@@ -767,7 +807,8 @@ function createServer(cliHome) {
         (rel === "/sessions" ||
           rel.startsWith("/sessions/") ||
           rel === "/models" ||
-          rel.startsWith("/models/"))
+          rel.startsWith("/models/") ||
+          rel === "/prices")
       ) {
         rel = "/index.html";
       }
