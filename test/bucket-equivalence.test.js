@@ -169,6 +169,9 @@ for (const seed of [1, 2, 3, 4, 5]) {
       assert.ok(close(a.totals.costCny, b.totals.costCny, 1e-7), `cost ${a.totals.costCny} vs ${b.totals.costCny}`);
       assert.equal(a.totals.requests, b.totals.requests, "requests");
       assert.equal(a.totals.credits, b.totals.credits, "credits");
+      // The top-level hit rate is what the KPI card renders — it regressed
+      // to undefined (displayed as 0.0%) when the bucket path shipped.
+      assert.ok(close(a.totals.cacheHitRate ?? 0, b.totals.cacheHitRate ?? -1, 1e-9), "totals.cacheHitRate");
       assert.deepEqual(stripDaily(a.daily), stripDaily(b.daily));
       assert.deepEqual(stripModels(a.models), stripModels(b.models));
     }
