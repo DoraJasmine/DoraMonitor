@@ -55,8 +55,10 @@ const {
 const DIST = path.join(__dirname, "..", "dist");
 const PUBLIC = fs.existsSync(DIST) ? DIST : path.join(__dirname, "..", "public");
 
+const DEFAULT_HOST = "127.0.0.1";
+
 function parseArgs(argv) {
-  const opts = { port: 3847, host: "127.0.0.1", home: null, open: true };
+  const opts = { port: 3847, host: DEFAULT_HOST, home: null, open: true };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port" || a === "-p") opts.port = Number(argv[++i]) || opts.port;
@@ -66,6 +68,13 @@ function parseArgs(argv) {
     else if (a === "--help" || a === "-h") opts.help = true;
   }
   return opts;
+}
+
+/** A host string that is safe to paste into a URL (bracket IPv6 literals). */
+function urlHost(host) {
+  if (!host) return "127.0.0.1";
+  if (host === "::" || host === "0.0.0.0") return "127.0.0.1";
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
 function printHelp() {
@@ -846,7 +855,9 @@ function main() {
   const home = resolveKimiHome(opts.home);
   const server = createServer(opts.home);
   server.listen(opts.port, opts.host, () => {
-    const url = `http://${opts.host}:${opts.port}/`;
+    // Show an address the user can actually click; the wildcard binds are
+    // not valid literals in a URL.
+    const url = `http://${urlHost(opts.host)}:${opts.port}/`;
     console.log(`DoraMonitor`);
     console.log(`  URL:  ${url}`);
     const tools = listProviders()
@@ -862,4 +873,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createServer, parseArgs };
+module.exports = { createServer, parseArgs, urlHost, DEFAULT_HOST };

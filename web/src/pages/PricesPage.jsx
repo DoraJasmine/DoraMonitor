@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,58 @@ export function PricesPage({ t, locale, onSaved }) {
     load();
   }, [load]);
 
+  /**
+   * Online catalog: NEVER on first paint.
+   *
+   * The catalog endpoint goes out to the network (measured ~5 s cold), so
+   * firing it with the page would hold the price table hostage to a remote
+   * fetch. Instead the page renders entirely from local data, then asks for
+   * the catalog once the browser is idle — after the first frame, and only
+   * when the tab is actually visible. A failure here is silent: the local
+   * table is already usable, so an offline machine sees no error banner.
+   */
+  const catalogRequested = useRef(false);
+  const catalogRequestId = useRef(0);
+  const autoSearchCatalog = useCallback(async () => {
+    if (catalogRequested.current) return;
+    catalogRequested.current = true;
+    const requestId = ++catalogRequestId.current;
+    setCatalogLoading(true);
+    try {
+      const data = await fetchCatalogPrices("");
+      if (requestId !== catalogRequestId.current) return;
+      setCatalogRows(data.prices || []);
+      setCatalogSource({ source: data.source, count: (data.prices || []).length });
+    } catch {
+      // Offline or upstream down: leave the table empty rather than showing
+      // an error the user did not ask for. The Search button reports errors.
+      if (requestId === catalogRequestId.current) setCatalogRows(null);
+    } finally {
+      if (requestId === catalogRequestId.current) setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // requestIdleCallback is not in Safari; the timeout fallback covers it.
+    const hasIdle = typeof window !== "undefined" && typeof window.requestIdleCallback === "function";
+    let handle = null;
+    let timer = null;
+    const kick = () => {
+      if (document.visibilityState === "hidden") return;
+      autoSearchCatalog();
+    };
+    document.addEventListener("visibilitychange", kick);
+    if (hasIdle) handle = window.requestIdleCallback(kick, { timeout: 4000 });
+    else timer = setTimeout(kick, 1200);
+    return () => {
+      document.removeEventListener("visibilitychange", kick);
+      if (handle !== null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(handle);
+      }
+      if (timer) clearTimeout(timer);
+    };
+  }, [autoSearchCatalog]);
+
   const updateRow = (idx, key, value) => {
     setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
   };
@@ -141,6 +193,8 @@ export function PricesPage({ t, locale, onSaved }) {
   };
 
   const searchCatalog = async (refresh = false) => {
+    catalogRequested.current = true;
+    const requestId = ++catalogRequestId.current;
     setCatalogLoading(true);
     setCatalogError(null);
     try {
@@ -148,13 +202,15 @@ export function PricesPage({ t, locale, onSaved }) {
       if (query.trim()) qs.set("q", query.trim());
       if (refresh) qs.set("refresh", "1");
       const data = await fetchCatalogPrices(qs.toString());
+      if (requestId !== catalogRequestId.current) return;
       setCatalogRows(data.prices || []);
       setCatalogSource({ source: data.source, count: (data.prices || []).length });
     } catch (e) {
+      if (requestId !== catalogRequestId.current) return;
       setCatalogError(e.message || String(e));
       setCatalogRows(null);
     } finally {
-      setCatalogLoading(false);
+      if (requestId === catalogRequestId.current) setCatalogLoading(false);
     }
   };
 

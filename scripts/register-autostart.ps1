@@ -24,7 +24,7 @@ if (-not $Node) { throw "未找到 node.exe，请先安装 Node.js 22.5+" }
 # --- 生成隐藏窗口启动器（ASCII + CRLF，与 install-windows.ps1 同款） ---
 $launchers = @(
   @{ file = "daemon-hidden.vbs"; line = 'CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\doramonitor.js"" daemon", 0, False' -f $Node, $InstallDir },
-  @{ file = "web-hidden.vbs";    line = ('CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\server.js"" --host :: --port 3847 --no-open", 0, True' -f $Node, $InstallDir) + "`r`n" + 'WScript.Quit 1' },
+  @{ file = "web-hidden.vbs";    line = ('CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\server.js"" --host 127.0.0.1 --port 3847 --no-open", 0, True' -f $Node, $InstallDir) + "`r`n" + 'WScript.Quit 1' },
   @{ file = "start-doramonitor.bat"; line = '@echo off' + "`r`n" + 'cd /d ' + $InstallDir + "`r`n" + 'start "doramonitor" /min "' + $Node + '" src\server.js --no-open' }
 )
 foreach ($l in $launchers) {

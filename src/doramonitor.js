@@ -75,15 +75,19 @@ function openBrowser(url) {
 }
 
 function cmdWeb(rest) {
-  const opts = { port: 3847, host: "127.0.0.1", open: true };
+  const opts = { port: 3847, host: "127.0.0.1", open: true, background: false };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port" || a === "-p") opts.port = Number(rest[++i]) || opts.port;
     else if (a === "--host") opts.host = rest[++i] || opts.host;
     else if (a === "--no-open") opts.open = false;
+    else if (a === "--background" || a === "-d") opts.background = true;
   }
-  const http = require("http");
-  const { createServer } = require("./server");
+  if (opts.background) {
+    detachWebServer(opts);
+    return;
+  }
+  const { createServer, urlHost } = require("./server");
   const { listProviders } = require("./providers");
   const server = createServer(null);
   server.on("error", (err) => {
@@ -94,7 +98,7 @@ function cmdWeb(rest) {
     throw err;
   });
   server.listen(opts.port, opts.host, () => {
-    const url = `http://${opts.host}:${opts.port}/`;
+    const url = `http://${urlHost(opts.host)}:${opts.port}/`;
     console.log(`DoraMonitor v${pkg.version}`);
     console.log(`  URL:   ${url}`);
     const tools = listProviders()
@@ -104,6 +108,130 @@ function cmdWeb(rest) {
     console.log(`  Ctrl+C 退出`);
     if (opts.open) openBrowser(url);
   });
+}
+
+/**
+ * Start the web server detached from this terminal, with NO console window.
+ *
+ * Windows: hand off to wscript.exe running a tiny VBScript, which is the only
+ * way to launch a node process with no visible console — `start /min` still
+ * flashes a window and dies with the parent terminal. The VBScript is written
+ * to a temp file per launch so it never lands in the repo.
+ *
+ * POSIX: plain detached spawn with stdio ignored.
+ *
+ * The parent returns immediately after confirming the port accepts
+ * connections, so `doramonitor web -d` behaves like a real service start.
+ */
+async function detachWebServer(opts) {
+  const path = require("path");
+  const serverJs = path.join(__dirname, "server.js");
+  const argv = [
+    serverJs,
+    "--host",
+    opts.host,
+    "--port",
+    String(opts.port),
+    "--no-open",
+  ];
+
+  const already = await isPortOpen(opts.host, opts.port);
+  if (already) {
+    console.log(`DoraMonitor 已在 http://${urlHostLocal(opts.host)}:${opts.port}/ 运行`);
+    return;
+  }
+
+  launchDetached(argv);
+
+  waitForPort(opts.host, opts.port, 12_000, (ok) => {
+    const url = `http://${urlHostLocal(opts.host)}:${opts.port}/`;
+    if (ok) {
+      console.log(`DoraMonitor v${pkg.version} 已在后台启动`);
+      console.log(`  URL: ${url}`);
+      if (opts.open) openBrowser(url);
+    } else {
+      console.error(`后台启动失败：${url} 没有响应（查看日志或换端口重试）`);
+      process.exitCode = 1;
+    }
+  });
+}
+
+/**
+ * Spawn the server with no console window and no parent tie.
+ * Windows needs wscript.exe: `start /min` still flashes a console and the
+ * child dies with the terminal.
+ */
+function launchDetached(argv) {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const { spawn } = require("child_process");
+
+  if (process.platform === "win32") {
+    const vbs = path.join(os.tmpdir(), `doramonitor-web-${process.pid}-${Date.now()}.vbs`);
+    // Build exactly the command line wscript should run:
+    //   "C:\Program Files\nodejs\node.exe" "D:\...\server.js" --host 127.0.0.1 --port 3847 --no-open
+    // Inside a VBScript string literal every embedded quote doubles.
+    const cmdline = [`"${process.execPath}"`, `"${argv[0]}"`, ...argv.slice(1)].join(" ");
+    const literal = cmdline.replace(/"/g, '""');
+    fs.writeFileSync(
+      vbs,
+      `CreateObject("Wscript.Shell").Run "${literal}", 0, False\r\n`,
+      "ascii"
+    );
+    const wscript = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "wscript.exe");
+    // Detach through a throwaway cmd window that exits at once: `start /b`
+    // alone keeps the console attached, and spawn(detached) inherits a stdio
+    // pipe on some Windows shells. cmd + `start` gives wscript a clean parent.
+    require("child_process").spawn(
+      "cmd.exe",
+      ["/c", "start", "", "/b", wscript, `"${vbs}"`],
+      { detached: true, stdio: "ignore", windowsHide: true }
+    ).unref();
+    return;
+  }
+  const child = spawn(process.execPath, argv, { detached: true, stdio: "ignore" });
+  child.unref();
+}
+
+/** Address a human can click (wildcard binds are not valid URL hosts). */
+function urlHostLocal(host) {
+  if (!host || host === "::" || host === "0.0.0.0") return "127.0.0.1";
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+function isPortOpen(host, port) {
+  const target = !host || host === "::" || host === "0.0.0.0" ? "127.0.0.1" : host;
+  return new Promise((resolve) => {
+    const sock = require("net").connect({ host: target, port });
+    sock.setTimeout(1000, () => sock.destroy(new Error("timeout")));
+    sock.once("connect", () => {
+      sock.destroy();
+      resolve(true);
+    });
+    sock.once("error", () => {
+      sock.destroy();
+      resolve(false);
+    });
+  });
+}
+
+function waitForPort(host, port, timeoutMs, done) {
+  const target = !host || host === "::" || host === "0.0.0.0" ? "127.0.0.1" : host;
+  const started = Date.now();
+  const attempt = () => {
+    const sock = require("net").connect({ host: target, port });
+    sock.once("connect", () => {
+      sock.destroy();
+      done(true);
+    });
+    sock.once("error", () => {
+      sock.destroy();
+      if (Date.now() - started >= timeoutMs) return done(false);
+      setTimeout(attempt, 250);
+    });
+  };
+  attempt();
 }
 
 function cmdStatus(rest) {

@@ -104,7 +104,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {windows.map((w) => {
+            {[...windows].sort((a, b) => (a.kind === "session" ? 0 : 1) - (b.kind === "session" ? 0 : 1)).map((w) => {
               const used = Math.round(w.usedPercent);
               const remainingPercent = Math.max(0, Math.min(100, 100 - used));
               const remaining = countdown(w.resetsAt, Date.now());

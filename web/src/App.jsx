@@ -17,6 +17,7 @@ import {
 import AppLogo from "@/components/AppLogo";
 import SessionsPage from "@/pages/SessionsPage";
 import ModelsPage from "@/pages/ModelsPage";
+import { PricesPage } from "@/pages/PricesPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
