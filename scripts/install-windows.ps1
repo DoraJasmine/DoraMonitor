@@ -137,6 +137,6 @@ Write-Host "  App:      $InstallDir"
 Write-Host "  Status:   & `"$Node`" `"$InstallDir\src\doramonitor.js`" status"
 if ($WithWeb) {
   Write-Host "  Dashboard: http://127.0.0.1:3847 (starts at logon; or run now:)"
-  Write-Host '             Start-Process "$env:LOCALAPPDATA\doramonitor-node\node.exe" -ArgumentList "$env:USERPROFILE\DoraMonitor\src\server.js --host 127.0.0.1 --port 3847"'
+  Write-Host '             Start-Process "$env:LOCALAPPDATA\doramonitor-node\node.exe" -ArgumentList "$env:USERPROFILE\DoraMonitor\src\server.js --host :: --port 3847"'
 }
 Write-Host "  The Ubuntu dashboard will show a windows-pc device tab within ~5 min."
