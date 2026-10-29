@@ -216,3 +216,35 @@ test("sync: buildSummary ignores event-kind records", () => {
   const out = sync.buildSummary("d", [record({ kind: "event", eventName: "WebSearch", inputOther: 0, output: 0 })]);
   assert.deepStrictEqual(out.days, {});
 });
+
+test("sync: accumulates every token category across requests", () => {
+  const time = new Date(2026, 9, 29, 10, 0).getTime();
+  const records = [
+    record({ tool: "codex", model: "gpt-5", inputOther: 100, output: 50, inputCacheRead: 200, inputCacheCreation: 10, time }),
+    record({ tool: "codex", model: "gpt-5", inputOther: 20, output: 5, inputCacheRead: 40, inputCacheCreation: 2, time: time + 1000 }),
+  ];
+  const [restored] = sync.summaryToRecords(sync.buildSummary("wsl", records));
+  assert.deepStrictEqual({
+    inputOther: restored.inputOther,
+    output: restored.output,
+    inputCacheRead: restored.inputCacheRead,
+    inputCacheCreation: restored.inputCacheCreation,
+    requests: restored.requests,
+  }, {
+    inputOther: 120,
+    output: 55,
+    inputCacheRead: 240,
+    inputCacheCreation: 12,
+    requests: 2,
+  });
+});
+
+test("sync: carries codex quota and selects the newest device snapshot", () => {
+  const local = { available: true, fetchedAt: "2026-10-29T06:00:00.000Z", windows: [] };
+  const wsl = { available: true, fetchedAt: "2026-10-29T07:00:00.000Z", windows: [] };
+  const summary = sync.buildSummary("wsl", [], wsl);
+  assert.strictEqual(summary.codexQuota, wsl);
+  assert.strictEqual(sync.newestCodexQuota(local, [summary]), wsl);
+  assert.strictEqual(sync.newestCodexQuota(wsl, [{ codexQuota: local }]), wsl);
+  assert.strictEqual(sync.newestCodexQuota(local, [{ device: "old-peer" }]), local);
+});

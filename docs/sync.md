@@ -30,6 +30,14 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
   "device": "windows-pc",
   "generatedAt": 1761000000000,
   "updatedRange": { "start": "2026-10-01", "end": "2026-10-24" },
+  "codexQuota": {
+    "available": true,
+    "fetchedAt": "2026-10-24T12:00:00.000Z",
+    "windows": [
+      { "kind": "session", "label": "5-hour", "usedPercent": 42, "resetsAt": "2026-10-24T17:00:00.000Z" },
+      { "kind": "weekly", "label": "Weekly", "usedPercent": 18, "resetsAt": "2026-10-31T00:00:00.000Z" }
+    ]
+  },
   "days": {
     "2026-10-24": {
       "kimi-code": {
@@ -44,9 +52,11 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 
 要点：
 
-- `SUMMARY_VERSION = 1`；`buildSummary(device, records)` 生成。
+- `SUMMARY_VERSION = 1`；`buildSummary(device, records, codexQuota)` 生成。
 - `kind === "event"` 的记录（tool.call 事件）**不进摘要**。
 - 桶内累加四类 token（i/o/cr/cc）、请求数、credits。
+- `codexQuota` 是可选的最新 Codex 额度快照；旧版本对端会忽略该字段。
+  看板在本机和所有对端中采用 `fetchedAt` 最新的快照。
 
 ## 3. 对端记录还原（summaryToRecords）
 
@@ -106,8 +116,8 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 
 ## 8. 安全说明
 
-- 同步内容 = 每日 token 汇总 + 模型名 + 设备名。无提示词、无代码、无文件路径
-  之外的系统信息。
+- 同步内容 = 每日 token 汇总 + 模型名 + 设备名 + Codex 额度快照。
+  无提示词、代码、凭据或文件路径。
 - SSH 走你的既有凭据体系（免密公钥）；WebDAV 密码存于本机 `config.json`
   （明文，受文件系统权限保护——与 kimi-code 自身存储凭据的方式同级）。
 - 上传前 `deviceName` 做清洗（非法字符 → `_`），防止路径拼接类问题。

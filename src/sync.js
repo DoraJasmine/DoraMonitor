@@ -11,7 +11,7 @@ const { execFileSync } = require("child_process");
  * Each device maintains ONE small daily-summary file and uploads it to a
  * shared backend (SSH/SCP or WebDAV):
  *
- *   {version, device, generatedAt, updatedRange, days: {
+ *   {version, device, generatedAt, updatedRange, codexQuota, days: {
  *     "YYYY-MM-DD": { "<tool>": { "<model>": {i,o,cr,cc,req,credits} } }
  *   }}
  *
@@ -38,7 +38,7 @@ function dayKey(ms) {
 }
 
 /** Build the device summary from local usage records. */
-function buildSummary(deviceName, records) {
+function buildSummary(deviceName, records, codexQuota = null) {
   const days = {};
   let earliest = null;
   let latest = null;
@@ -60,13 +60,15 @@ function buildSummary(deviceName, records) {
     bucket.req += 1;
     bucket.credits += r.credits || 0;
   }
-  return {
+  const summary = {
     version: SUMMARY_VERSION,
     device: deviceName,
     generatedAt: new Date().toISOString(),
     updatedRange: earliest ? { start: earliest, end: latest } : null,
     days,
   };
+  if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
+  return summary;
 }
 
 /**
@@ -384,13 +386,13 @@ function loadCachedPeers() {
  * records: local usage records (from collect).
  * Returns { enabled, uploaded, downloaded, peers, fromCache, error }.
  */
-async function runSync(records, settings) {
+async function runSync(records, settings, codexQuota = null) {
   const cfg = settings.sync || {};
   if (!cfg.enabled) {
     return { enabled: false, peers: [], fromCache: false };
   }
   const deviceName = cfg.deviceName || os.hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const summary = buildSummary(deviceName, records);
+  const summary = buildSummary(deviceName, records, codexQuota);
 
   let uploaded = false;
   let uploadError = null;
@@ -444,6 +446,18 @@ function peerRecordsCached() {
   return records;
 }
 
+function newestCodexQuota(localQuota, peers) {
+  let best = localQuota && localQuota.available ? localQuota : null;
+  for (const peer of peers || []) {
+    const quota = peer && peer.codexQuota;
+    if (!quota || !quota.available) continue;
+    if (!best || (Date.parse(quota.fetchedAt || "") || 0) > (Date.parse(best.fetchedAt || "") || 0)) {
+      best = quota;
+    }
+  }
+  return best || localQuota || null;
+}
+
 function syncEnabled(settings) {
   const cfg = (settings && settings.sync) || {};
   return !!cfg.enabled;
@@ -454,6 +468,7 @@ module.exports = {
   summaryToRecords,
   runSync,
   peerRecordsCached,
+  newestCodexQuota,
   syncEnabled,
   savePeersToCache,
   loadCachedPeers,

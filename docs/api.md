@@ -146,7 +146,7 @@
 
 - `tool=kimi-code`：调用 Kimi 在线 usages API（`https://api.kimi.com/coding/v1/usages`，
   凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。60s 内存缓存。
-- `tool=codex`：读取本地 rollout 文件里的 `rate_limits` 快照（**无网络请求**）。
+- `tool=codex`：读取本地 rollout 和同步缓存中的 `rate_limits` 快照，采用 `fetchedAt` 最新的一份（**无网络请求**）。
 - 无数据：`200 { "available": false, "reason": "no_data", "windows": [], "tool": "codex" }`
 - 正常：`{ "fetchedAt": 0, "tool": "kimi-code", "available": true,
   "windows": [ { "kind": "session|weekly", "label": "5-hour", "usedPercent": 42.0,

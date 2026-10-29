@@ -294,7 +294,11 @@ function runDaemon(opts) {
           Promise.resolve(run),
         ]);
       })
-      .then(([collected, settings, run]) => run(collected.records, settings))
+      .then(([collected, settings, run]) => run(
+        collected.records,
+        settings,
+        collected.byTool.get("codex")?.quota
+      ))
       .then((r) => {
         if (r && r.uploaded) {
           atomicWrite(

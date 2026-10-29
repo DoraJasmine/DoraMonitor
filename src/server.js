@@ -25,7 +25,7 @@ const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const { listPrices } = require("./pricing");
 const { fetchQuota } = require("./quota");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
-const { runSync, peerRecordsCached, syncEnabled } = require("./sync");
+const { runSync, peerRecordsCached, syncEnabled, loadCachedPeers, newestCodexQuota } = require("./sync");
 const { toolMeta } = require("./providers/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -520,13 +520,15 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/quota") {
     const force = url.searchParams.get("refresh") === "1";
-    // ?tool=codex serves the rate_limits snapshot extracted from Codex's own
-    // rollout files (no network); default remains the Kimi usages API.
+    // Codex uses the newest local or synced rate_limits snapshot (no network);
+    // default remains the Kimi usages API.
     if (url.searchParams.get("tool") === "codex") {
       const { collect } = require("./collect");
       const collected = collect({ force });
       const entry = collected.byTool.get("codex");
-      const quota = entry && entry.quota ? entry.quota : { available: false, reason: "no_data", windows: [] };
+      const localQuota = entry && entry.quota ? entry.quota : null;
+      const peers = syncEnabled(loadSettings()) ? loadCachedPeers() : [];
+      const quota = newestCodexQuota(localQuota, peers) || { available: false, reason: "no_data", windows: [] };
       return json(res, 200, { ...quota, tool: "codex" });
     }
     const quota = await fetchQuota(getHome(null, cliHome), { force });
@@ -544,7 +546,11 @@ async function handleApi(req, res, url, cliHome) {
     }
     try {
       const collected = collect({ force: true });
-      const result = await runSync(collected.records, settings);
+      const result = await runSync(
+        collected.records,
+        settings,
+        collected.byTool.get("codex")?.quota
+      );
       return json(res, 200, {
         ok: result.uploaded || result.downloaded,
         uploaded: result.uploaded,

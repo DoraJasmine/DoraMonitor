@@ -254,9 +254,9 @@ async function cmdSync() {
     console.log("同步未启用。在 ~/.doramonitor-monitor/config.json 中配置 sync 段后重试。");
     process.exit(1);
   }
-  const { records } = collect({ force: true });
+  const collected = collect({ force: true });
   console.log("同步中…");
-  const r = await runSync(records, settings);
+  const r = await runSync(collected.records, settings, collected.byTool.get("codex")?.quota);
   if (r.uploaded) console.log("  本机用量已上传");
   else console.log(`  上传失败: ${r.uploadError || "未知错误"}`);
   if (r.downloaded) console.log(`  已拉取 ${r.peers.length} 台设备`);
