@@ -54,6 +54,7 @@ DoraMonitor 支持 7 个工具 provider。本文逐一说明每个 provider 的�
 | `codex` | Codex | `#10a37f` | `CODEX_HOME` → `~/.codex` | `sessions/` 存在 | JSONL（可 zstd 压缩） | Token |
 | `claude-code` | Claude Code | `#d97757` | `CLAUDE_CONFIG_DIR` → `~/.claude` | `projects/` 存在 | JSONL | Token |
 | `dsh` | dsh | `#4D6BFE` | `DSH_HOME` → `~/.dsh` | `sessions/` 存在 | JSONL（多帧 zstd） | Token |
+| `omp` | Oh My Pi | `#d946ef` | `PI_CODING_AGENT_DIR` → `~/.omp/agent`（回退 `~/.pi/agent`） | `sessions/` 存在（XDG 迁移时 `$XDG_DATA_HOME/omp/sessions`） | JSONL | Token |
 
 ---
 
@@ -239,7 +240,37 @@ fzstd 加载失败时记入 `meta.errors` 并跳过 .zstd 文件，**不抛异�
 
 ---
 
-## 8. QoderCN 路由码 / 通用模型身份（model-identity.js）
+## 8. Oh My Pi / omp（providers/omp.js）
+
+**扫描**：`sessionsRoot` 树下所有 `.jsonl`（递归，含 subagent 子会话——它们写在父会话同名
+artifact 目录里，即 `<bucket>/<会话文件名去 .jsonl>/<child>.jsonl`）。
+
+**文件格式**（上游 `@oh-my-pi/pi-coding-agent` src/session）：首行是 256 字节定宽
+title 槽（`{type:"title",...,pad}`，合法 JSON 但非 header）；其后为
+`{type:"session",version:3,id,timestamp,cwd}` 头 + 逐行 entry。
+无 session 头的 `.jsonl`（artifact 杂物）整体跳过。
+
+**解析的事件**：
+
+| 事件 | 处理 |
+| --- | --- |
+| `type === "session"` | 取 `id` / `cwd` 作为 session / project |
+| `type === "message"` 且 `message.role === "assistant"` | `message.usage.{input, output, cacheRead, cacheWrite}`；模型/厂商取 `message.model/provider`；时间取 `message.timestamp`（epoch ms） |
+| `type === "model_usage"` | 会话外模型调用（如标题生成）的 `usage`，同样计费 |
+| `toolResult`（含 task 子代理聚合 `details.usage`） | **跳过**——子代理会话有自己的 .jsonl，计入会双算 |
+
+pi 口径 `input` **不含**缓存（`totalTokens` 为四项之和），`inputOther` 原样。
+omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.js` 人民币表。
+
+**去重**：`/fork` 会把全部历史（entry id 与 timestamp 原样）复制进新文件，
+按 `id|timestamp` 全局去重（entry id 是短 hex，单用 id 可能跨会话碰撞）。
+全零 usage 占位条目在进入去重前跳过。
+
+**无配额**。
+
+---
+
+## 9. QoderCN 路由码 / 通用模型身份（model-identity.js）
 
 多个工具记录的是**内部路由码**而非真实模型 id。`model-identity.js` 是唯一映射点：
 
@@ -258,7 +289,7 @@ fzstd 加载失败时记入 `meta.errors` 并跳过 .zstd 文件，**不抛异�
 - 解析规则：大小写不敏感；`provider:code`、`vendor/code` 取尾段；
   **未映射码原样透传**（`known: false`），绝不消失或抛错。
 
-## 9. 增量缓存与探测（collect.js / providers/index.js）
+## 10. 增量缓存与探测（collect.js / providers/index.js）
 
 每个 provider 声明自己的"源文件集"用于 stat 探测：
 

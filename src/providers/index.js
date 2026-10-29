@@ -11,6 +11,7 @@ const codex = require("./codex");
 const claudeCode = require("./claude-code");
 const dsh = require("./dsh");
 const gemini = require("./gemini");
+const omp = require("./omp");
 
 /**
  * Provider registry.
@@ -19,7 +20,7 @@ const gemini = require("./gemini");
  * Adding a tool = adding a module here; aggregation, pricing, and UI consume
  * the registry without knowing provider internals.
  */
-const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh, gemini];
+const PROVIDERS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh, gemini, omp];
 
 /** Resolve each provider's data home and availability. */
 function listProviders() {
@@ -78,6 +79,9 @@ function sourceFiles(provider, home) {
       ...listFilesRecursive(path.join(home, "sessions"), ".jsonl.zstd", true),
       ...listFilesRecursive(path.join(home, "sessions"), ".jsonl", true),
     ];
+  }
+  if (provider.id === "omp") {
+    return listFilesRecursive(provider.sessionsRoot(home), ".jsonl", true);
   }
   return [];
 }

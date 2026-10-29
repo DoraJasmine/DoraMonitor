@@ -1,6 +1,6 @@
 # DoraMonitor
 
-本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex、Claude Code、dsh 的 token 用量、费用与额度。
+本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex、Claude Code、dsh、Oh My Pi 的 token 用量、费用与额度。
 
 由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 架构扩展而来（React 19 + Tailwind + Node 标准库 HTTP server，零后端框架依赖；SQLite 读取使用 Node 22 内置 `node:sqlite`）。
 
@@ -19,6 +19,7 @@
 | Codex | `~/.codex/sessions/**/*.jsonl` + `archived_sessions` | token（`token_usage_record`，按 `response_id` 去重；模型/cwd 取自 `turn_context`）、费用（OpenAI 官方价） |
 | Claude Code | `~/.claude/projects/**/*.jsonl`（`CLAUDE_CONFIG_DIR` 可覆盖） | token（Anthropic 口径，`input_tokens` 不含缓存；按 `message.id`+`requestId` 去重，防止 `--resume` 复制历史导致双算）、费用（Anthropic 官方价）；无额度部分 |
 | dsh（DeepSeek Harness） | `~/.dsh/sessions/**/session.v4.jsonl.zstd`（多帧 zstd，`DSH_HOME` 可覆盖） | token（`assistant/message` 的 `usage`，`inputTokens` 不含缓存；按 `message.id` 去重）、费用（DeepSeek 官方价）；无额度部分 |
+| Oh My Pi（omp） | `~/.omp/agent/sessions/**/*.jsonl`（`PI_CODING_AGENT_DIR` 可覆盖；兼容旧 `~/.pi/agent`） | token（assistant 消息与 `model_usage` 的 `usage`，`input` 不含缓存；按 entry `id`+`timestamp` 跨文件去重，防止 `/fork` 复制历史导致双算）、费用（按官方价表）；无额度部分 |
 
 - 所有 SQLite 均以**只读模式**打开，不影响运行中的工具。
 - 每个工具的数据缺失时自动降级为「不可用」，不影响其他工具展示。
@@ -181,6 +182,7 @@ src/
     codex.js         # rollout jsonl 扫描（token_usage_record）
     claude-code.js   # projects jsonl 转录扫描（message.usage，resume 去重）
     dsh.js           # sessions 多帧 zstd 扫描（assistant/message usage，message.id 去重）
+    omp.js           # Oh My Pi sessions jsonl 扫描（assistant/model_usage usage，fork 去重）
   collect.js         # 增量收集器（stat 探测 + TTL 缓存）
   aggregate.js       # 时间范围 / byTool / 热力图聚合
   quota.js           # Kimi 额度 API 客户端

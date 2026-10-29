@@ -27,6 +27,7 @@ const TOOL_META = {
   "claude-code": { label: "Claude Code", color: "#d97757" },
   dsh: { label: "dsh", color: "#4D6BFE" },
   gemini: { label: "Gemini CLI", color: "#1a73e8" },
+  omp: { label: "Oh My Pi", color: "#d946ef" },
 };
 
 function toolMeta(id) {
