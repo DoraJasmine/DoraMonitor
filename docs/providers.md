@@ -189,6 +189,17 @@ response_id、吞掉同 id 的真实记录（这是 data-accuracy 测试专门�
 跳过；clamp 0–100；`resets_at` 为 epoch **秒**（>1e11 的值按毫秒防御）。
 无数据 → `{available:false, reason:"no_data", windows:[]}`。
 
+**主动轮询**（`src/codex-quota.js`）：rollout 只在 Codex CLI 运行时产生，在其他
+客户端（omp、IDE 插件等）消耗同一账号额度时快照会变旧。`/api/quota?tool=codex`
+会（60s 节流）用 `~/.codex/auth.json` 的 OAuth token 请求
+`GET https://chatgpt.com/backend-api/wham/usage`（401 时用 refresh_token 换新并
+回写 auth.json），成功快照持久化到 `~/.doramonitor/codex-quota.json`；scan 把
+rollout 快照与轮询快照按 `fetchedAt` 取新合并，失败静默回退。
+
+**额度测算样本**：与卡片只取最新快照不同，解析器还把每个 `rate_limits` 的双窗口快照
+按原始时间写入 `quotaSamples`。Web 服务首次启动时一次性回补全部 rollout 历史，后续快照
+和主动轮询结果保存到 `~/.doramonitor/quota-estimator/samples.jsonl`，供等效 Token 容量测算。
+
 **会话/项目**：`payload.session_id || payload.thread_id || 文件名`；project =
 turn 的 `cwd`。
 

@@ -165,6 +165,10 @@ test("codex provider: extracts newest rate_limits as session+weekly quota window
   assert.strictEqual(five.resetsAt, new Date(1789649548 * 1000).toISOString());
   assert.strictEqual(week.kind, "weekly");
   assert.strictEqual(week.usedPercent, 18);
+  assert.strictEqual(out.quotaSamples.length, 4);
+  assert.deepStrictEqual(out.quotaSamples.filter((s) => s.window === "session").map((s) => s.usedPercent), [5, 9]);
+  assert.deepStrictEqual(out.quotaSamples.filter((s) => s.window === "weekly").map((s) => s.usedPercent), [17, 18]);
+  assert.ok(out.quotaSamples.every((s) => s.accountKey.startsWith("openai:")));
 });
 
 test("codex provider: quota unavailable when no rate_limits events exist", () => {

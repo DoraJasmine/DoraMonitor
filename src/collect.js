@@ -77,7 +77,7 @@ function scanProvider(provider, home, since) {
   }
   if (BUCKET_PROVIDERS.has(provider.id)) {
     const out = provider.scan(home, { recordSince: since });
-    return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, buckets: out.buckets || [], home };
+    return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, quotaSamples: out.quotaSamples || [], buckets: out.buckets || [], home };
   }
   // Light providers: whole-scan each time (cheap); fold their output into
   // a single in-memory bucket so aggregation has ONE code path. Wrapped in

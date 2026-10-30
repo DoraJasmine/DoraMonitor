@@ -49,14 +49,17 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
   （同源策略拦截）。
 - **无鉴权**：这是"仅本机"设计的前提——不要把 `--host 0.0.0.0` 暴露到不可信
   网络。
-- 出站网络请求**只有两处**，都可预期：
+- 出站网络请求**只有三类**，都可预期：
   1. `quota.js` → `https://api.kimi.com/coding/v1/usages` 与
      `https://auth.kimi.ai/api/oauth/token`（Kimi 额度卡；凭据来自本机
      kimi-code 的登录态）；
-  2. `catalog.js` → models.dev 在线目录镜像（模型目录导入功能；失败三级回退
+  2. `codex-quota.js` → `https://chatgpt.com/backend-api/wham/usage` 与 OpenAI
+     OAuth 刷新端点（Codex 额度；使用本机 Codex 登录态，60 秒节流）；
+  3. `catalog.js` → models.dev 在线目录镜像（模型目录导入功能；失败三级回退
      到缓存/内置快照）。
-- 多设备同步是**你显式配置后**才有的出站行为，且只传日粒度 token 汇总
-  （见[同步文档 → 安全说明](./sync.md)）。
+- 多设备同步是**你显式配置后**才有的出站行为。除日粒度 token 汇总外，额度测算还会
+  同步一分钟粒度的时间、工具、模型和 Token 元数据，以及额度百分比样本；不含提示词、
+  回复、项目名、会话正文或凭证（见[同步文档 → 安全说明](./sync.md)）。
 
 ## 4. 会话管理的高危操作防护
 
@@ -72,6 +75,7 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 | --- | --- |
 | 设置（含 WebDAV 密码、SSH 配置） | `~/.doramonitor/config.json`（本机明文，文件系统权限保护，与 kimi-code 自身凭据同级） |
 | 对端设备摘要缓存 | `~/.doramonitor/remote-cache/` |
+| 额度样本、测算历史和最高值 | `~/.doramonitor/quota-estimator/` |
 | 目录缓存 | `~/.kimicode-dashboard/catalog-cache.json` |
 | daemon 状态 | `~/.doramonitor/{status.cache,daemon.pid,sync.state}` |
 

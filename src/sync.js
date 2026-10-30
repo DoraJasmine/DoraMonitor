@@ -8,10 +8,12 @@ const { execFileSync } = require("child_process");
 /**
  * Cross-device usage sync.
  *
- * Each device maintains ONE small daily-summary file and uploads it to a
- * shared backend (SSH/SCP or WebDAV):
+ * Each device maintains ONE summary file and uploads it to a shared backend
+ * (SSH/SCP or WebDAV). Daily buckets power the dashboard; minute Token bins
+ * and quota milestones power capacity estimation:
  *
- *   {version, device, generatedAt, updatedRange, codexQuota, days: {
+ *   {version, device, generatedAt, updatedRange, codexQuota, quotaUsage,
+ *    quotaSamples, usageWaterMark, days: {
  *     "YYYY-MM-DD": { "<tool>": { "<model>": {i,o,cr,cc,req,credits} } }
  *   }}
  *
@@ -37,8 +39,46 @@ function dayKey(ms) {
   return `${y}-${m}-${day}`;
 }
 
+function buildQuotaUsage(records) {
+  const bins = new Map();
+  for (const r of records || []) {
+    if (!r || !r.time || r.kind === "event") continue;
+    const start = Math.floor(r.time / 60_000) * 60_000;
+    const tool = r.tool || "unknown";
+    const model = r.model || "unknown";
+    const modelResolved = r.modelResolved || model;
+    const modelProvider = r.modelProvider || null;
+    const key = [start, tool, model, modelResolved, modelProvider].join("\0");
+    if (!bins.has(key)) {
+      bins.set(key, { start: new Date(start).toISOString(), tool, model, modelResolved, modelProvider, i: 0, o: 0, cr: 0, cc: 0, c: 0, req: 0 });
+    }
+    const bucket = bins.get(key);
+    bucket.i += r.inputOther || 0;
+    bucket.o += r.output || 0;
+    bucket.cr += r.inputCacheRead || 0;
+    bucket.cc += r.inputCacheCreation || 0;
+    bucket.c += Number(r.costCny) || 0;
+    bucket.req += 1;
+  }
+  return [...bins.values()];
+}
+
+function quotaSamplesForSync(samples, now = Date.now()) {
+  const cutoff = now - 35 * 86_400_000;
+  const previous = new Map();
+  return (samples || []).filter((sample) => {
+    const time = Date.parse(sample.sampledAt || "");
+    if (!Number.isFinite(time) || time < cutoff) return false;
+    if (sample.source === "manual-calibration") return true;
+    const key = [sample.provider, sample.accountKey, sample.window].join("\0");
+    const before = previous.get(key);
+    previous.set(key, sample);
+    return !before || before.usedPercent !== sample.usedPercent || before.resetsAt !== sample.resetsAt;
+  });
+}
+
 /** Build the device summary from local usage records. */
-function buildSummary(deviceName, records, codexQuota = null) {
+function buildSummary(deviceName, records, codexQuota = null, quotaSamples = []) {
   const days = {};
   let earliest = null;
   let latest = null;
@@ -64,11 +104,32 @@ function buildSummary(deviceName, records, codexQuota = null) {
     version: SUMMARY_VERSION,
     device: deviceName,
     generatedAt: new Date().toISOString(),
+    usageWaterMark: new Date().toISOString(),
     updatedRange: earliest ? { start: earliest, end: latest } : null,
     days,
+    quotaUsage: buildQuotaUsage(records),
+    quotaSamples: Array.isArray(quotaSamples) ? quotaSamples : [],
   };
   if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
   return summary;
+}
+
+function quotaUsageRecords(summary) {
+  const device = String(summary && summary.device || "peer");
+  return (Array.isArray(summary && summary.quotaUsage) ? summary.quotaUsage : []).map((b) => ({
+    tool: b.tool,
+    time: Date.parse(b.start) || 0,
+    model: b.model,
+    modelResolved: b.modelResolved || b.model,
+    modelProvider: b.modelProvider || null,
+    inputOther: b.i || 0,
+    output: b.o || 0,
+    inputCacheRead: b.cr || 0,
+    inputCacheCreation: b.cc || 0,
+    costCny: Number(b.c) || 0,
+    device,
+    peer: true,
+  }));
 }
 
 /**
@@ -392,7 +453,8 @@ async function runSync(records, settings, codexQuota = null) {
     return { enabled: false, peers: [], fromCache: false };
   }
   const deviceName = cfg.deviceName || os.hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const summary = buildSummary(deviceName, records, codexQuota);
+  const { readSamples } = require("./quota-estimator-store");
+  const summary = buildSummary(deviceName, records, codexQuota, quotaSamplesForSync(readSamples()));
 
   let uploaded = false;
   let uploadError = null;
@@ -446,10 +508,17 @@ function peerRecordsCached() {
   return records;
 }
 
-function newestCodexQuota(localQuota, peers) {
+function peerQuotaUsageCached() {
+  const records = [];
+  for (const peer of loadCachedPeers()) records.push(...quotaUsageRecords(peer));
+  return records;
+}
+
+function newestCodexQuota(localQuota, peers, extraQuota) {
   let best = localQuota && localQuota.available ? localQuota : null;
-  for (const peer of peers || []) {
-    const quota = peer && peer.codexQuota;
+  const quotas = (peers || []).map((peer) => peer && peer.codexQuota);
+  if (extraQuota) quotas.push(extraQuota);
+  for (const quota of quotas) {
     if (!quota || !quota.available) continue;
     if (!best || (Date.parse(quota.fetchedAt || "") || 0) > (Date.parse(best.fetchedAt || "") || 0)) {
       best = quota;
@@ -466,8 +535,11 @@ function syncEnabled(settings) {
 module.exports = {
   buildSummary,
   summaryToRecords,
+  quotaUsageRecords,
+  quotaSamplesForSync,
   runSync,
   peerRecordsCached,
+  peerQuotaUsageCached,
   newestCodexQuota,
   syncEnabled,
   savePeersToCache,

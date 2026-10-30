@@ -1,0 +1,173 @@
+"use strict";
+
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const {
+  samplesFromQuota,
+  appendSamples,
+  readSamples,
+  getOrComputeCapacity,
+  readHistory,
+} = require("../src/quota-estimator-store");
+const { buildSummary, quotaUsageRecords } = require("../src/sync");
+
+function tmpRoot() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "dora-quota-store-"));
+}
+
+function capacity(now, tokens, confidence = "high", method = "interpolated") {
+  return {
+    provider: "openai",
+    accountKey: "openai:test",
+    usageScope: "all-clients",
+    generatedAt: new Date(now).toISOString(),
+    targets: [{
+      window: "session",
+      cacheHitRate: 0.95,
+      fullWindowTokens: tokens,
+      fullWindowCostCny: tokens / 100000,
+      sampleCount: 5,
+      percentSpan: 6,
+      coverage: "complete",
+      confidence,
+      confidenceScore: 90,
+      method,
+      dataRange: { start: new Date(now - 3600000).toISOString(), end: new Date(now).toISOString() },
+    }],
+  };
+}
+
+test("quota samples persist and deduplicate by source timestamp", () => {
+  const root = tmpRoot();
+  const quota = {
+    available: true,
+    accountKey: "openai:test",
+    fetchedAt: new Date().toISOString(),
+    windows: [{ kind: "session", usedPercent: 42, resetsAt: null }],
+  };
+  const samples = samplesFromQuota(quota, "openai", "test");
+  appendSamples(samples, root);
+  appendSamples(samples, root);
+  const restored = readSamples(root);
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].usedPercent, 42);
+});
+
+test("quota sample history pages newest first and can hide repeated percentages", () => {
+  const root = tmpRoot();
+  const samples = [10, 10, 11].map((usedPercent, index) => ({
+    provider: "openai", accountKey: "openai:test", window: "session", usedPercent,
+    sampledAt: new Date(Date.now() - (3 - index) * 60000).toISOString(), resetsAt: "r", source: "test",
+  }));
+  appendSamples(samples, root);
+  const { readSamplePage } = require("../src/quota-estimator-store");
+  assert.equal(readSamplePage({ provider: "openai" }, root).total, 3);
+  const changed = readSamplePage({ provider: "openai", changesOnly: true }, root);
+  assert.equal(changed.total, 2);
+  assert.deepEqual(changed.samples.map((sample) => sample.usedPercent), [11, 10]);
+});
+
+test("sync shares only recent quota milestones and manual anchors", () => {
+  const { quotaSamplesForSync } = require("../src/sync");
+  const now = Date.now();
+  const samples = [
+    { provider: "kimi", accountKey: "kimi:default", window: "weekly", sampledAt: new Date(now - 40 * 86400000).toISOString(), usedPercent: 1, resetsAt: "old", source: "api" },
+    { provider: "kimi", accountKey: "kimi:default", window: "weekly", sampledAt: new Date(now - 300000).toISOString(), usedPercent: 10, resetsAt: "r", source: "api" },
+    { provider: "kimi", accountKey: "kimi:default", window: "weekly", sampledAt: new Date(now - 240000).toISOString(), usedPercent: 10, resetsAt: "r", source: "api" },
+    { provider: "kimi", accountKey: "kimi:default", window: "weekly", sampledAt: new Date(now - 180000).toISOString(), usedPercent: 11, resetsAt: "r", source: "api" },
+    { provider: "kimi", accountKey: "kimi:default", window: "weekly", sampledAt: new Date(now - 120000).toISOString(), usedPercent: 11, resetsAt: "r", source: "manual-calibration" },
+  ];
+  const shared = quotaSamplesForSync(samples, now);
+  assert.deepEqual(shared.map((sample) => sample.usedPercent), [10, 11, 11]);
+  assert.equal(shared.at(-1).source, "manual-calibration");
+});
+
+test("capacity cache retains complete history, time links and accepted maxima", () => {
+  const root = tmpRoot();
+  let now = Date.now();
+  let calls = 0;
+  const compute = () => {
+    calls += 1;
+    return capacity(now, 1_000_000 + calls * 1000);
+  };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root };
+  getOrComputeCapacity({ ...options, compute, now });
+  getOrComputeCapacity({ ...options, compute, now: now + 1000 });
+  assert.equal(calls, 1);
+
+  for (let i = 0; i < 35; i += 1) {
+    now += 6 * 3600000 + 1;
+    getOrComputeCapacity({ ...options, compute, now });
+  }
+  const query = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients" };
+  const history = readHistory(query, root);
+  assert.equal(history.length, 36);
+  assert.equal(history[1].previousCalculationEndAt, history[0].calculationEndAt);
+  const { readHistoryPage } = require("../src/quota-estimator-store");
+  const page = readHistoryPage({ ...query, limit: 10, offset: 30 }, root);
+  assert.equal(page.total, 36);
+  assert.equal(page.history.length, 6);
+  const result = getOrComputeCapacity({ ...options, compute, now });
+  assert.ok(result.maxima[0].fullWindowTokens > 1_000_000);
+  assert.ok(result.maxima[0].fullWindowCostCny > 0);
+
+  const before = result.maxima[0].fullWindowTokens;
+  now += 6 * 3600000 + 1;
+  const rejected = getOrComputeCapacity({
+    ...options,
+    now,
+    force: true,
+    compute: () => capacity(now, before * 100, "low", "extrapolated"),
+  });
+  assert.equal(rejected.maxima[0].fullWindowTokens, before);
+});
+
+test("every real recalculation is appended even when the estimate is unchanged", () => {
+  const root = tmpRoot();
+  const now = Date.now();
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, force: true };
+  getOrComputeCapacity({ ...options, now, compute: () => capacity(now, 1_000_000) });
+  getOrComputeCapacity({ ...options, now: now + 1000, compute: () => capacity(now + 1000, 1_000_000) });
+  assert.equal(readHistory({ provider: "openai" }, root).length, 2);
+});
+
+test("sync minute bins preserve model identity without changing daily totals", () => {
+  const time = Date.parse("2026-10-30T10:00:20Z");
+  const records = [
+    { tool: "omp", model: "gpt-6", modelResolved: "gpt-6", modelProvider: "openai", time, inputOther: 10, inputCacheRead: 90, inputCacheCreation: 0, output: 5, costCny: 1.25, project: "private" },
+    { tool: "omp", model: "gpt-6", modelResolved: "gpt-6", modelProvider: "openai", time: time + 1000, inputOther: 20, inputCacheRead: 80, inputCacheCreation: 0, output: 5, costCny: 0.75 },
+  ];
+  const summary = buildSummary("wsl", records);
+  assert.equal(summary.quotaUsage.length, 1);
+  assert.equal(summary.days["2026-10-30"].omp["gpt-6"].i, 30);
+  const [restored] = quotaUsageRecords(summary);
+  assert.equal(restored.time, Date.parse("2026-10-30T10:00:00Z"));
+  assert.equal(restored.inputCacheRead, 170);
+  assert.equal(restored.costCny, 2);
+  assert.equal(restored.modelProvider, "openai");
+  assert.equal(restored.project, undefined);
+  assert.ok(summary.usageWaterMark);
+});
+
+test("Kimi estimation scope setting accepts booleans only", () => {
+  const { sanitizeSettings } = require("../src/settings");
+  assert.equal(sanitizeSettings({}).quotaEstimation.kimiCodeOnly, false);
+  assert.equal(sanitizeSettings({ quotaEstimation: { kimiCodeOnly: true } }).quotaEstimation.kimiCodeOnly, true);
+  assert.equal(sanitizeSettings({ quotaEstimation: { kimiCodeOnly: "true" } }).quotaEstimation.kimiCodeOnly, false);
+});
+
+test("peer coverage distinguishes complete, pending and stale provisional data", () => {
+  const { peerCoverage } = require("../src/quota-capacity");
+  const now = Date.parse("2026-10-30T12:00:00Z");
+  const start = now - 3600000;
+  const end = now - 60000;
+  const fresh = { generatedAt: new Date(now - 1000).toISOString(), usageWaterMark: new Date(now).toISOString(), quotaUsage: [] };
+  assert.equal(peerCoverage([fresh], start, end, true, now), "complete");
+  assert.equal(peerCoverage([{ ...fresh, usageWaterMark: new Date(end - 1).toISOString() }], start, end, true, now), "pending");
+  assert.equal(peerCoverage([{ ...fresh, generatedAt: new Date(now - 25 * 3600000).toISOString() }], start, end, true, now), "provisional");
+  assert.equal(peerCoverage([{ generatedAt: new Date(now - 1000).toISOString(), days: {} }], start, end, true, now), "provisional");
+  assert.equal(peerCoverage([], start, end, false, now), "complete");
+});

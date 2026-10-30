@@ -19,6 +19,9 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
   "currencySymbol": "¥",        // 符号（trim 后最多 4 字符；切币种自动带出 $/¥）
   "fxRate": 6.67,               // USD→CNY 汇率（默认取 2026-10 市场中间价），合法 (0, 100000)
   "customPrices": [],           // 自定义价格，见下
+  "quotaEstimation": {
+    "kimiCodeOnly": false        // true 时仅用 Kimi Code 中的 Kimi 模型估算额度
+  },
   "sync": {                     // 多设备同步，详见 docs/sync.md
     "enabled": false,
     "backend": "ssh",           // "ssh" | "webdav"
@@ -152,7 +155,8 @@ capabilities、thinking efforts、默认 effort=high），可选设置 default_m
 | `~/.doramonitor/status.cache` | CLI/daemon 状态行缓存 | `daemon` 每 30s（默认）原子覆盖 |
 | `~/.doramonitor/daemon.pid` | daemon pid | 单实例守卫 + `stop` 子命令用 |
 | `~/.doramonitor/sync.state` | 最近同步结果 `{lastSync, peers}` | daemon 同步成功后写 |
-| `~/.doramonitor/remote-cache/` | 对端设备日摘要缓存 | 同步拉取结果；dashboard 请求只读此缓存 |
+| `~/.doramonitor/remote-cache/` | 对端设备摘要缓存 | 日汇总、一分钟测算桶和额度样本；dashboard 请求只读此缓存 |
+| `~/.doramonitor/quota-estimator/` | 等效额度测算数据 | 90 天额度样本、6 小时测算缓存、追加式完整历史和最高有效纪录 |
 | `~/.kimicode-dashboard/catalog-cache.json` | models.dev 目录缓存 | 兼容 Tauri 的 `fetched_at` 蛇形命名 |
 
 内存缓存（无需清理，进程生命周期内有效）：

@@ -156,6 +156,28 @@
   js/css/html/svg/json 自动 gzip；`/sessions`、`/models` 等路径 SPA 回退到
   `index.html`。
 
+### 4.5 等效额度测算（quota-*.js）
+
+- `quota-sampler.js` 在 Web 服务内每 60 秒采样 Kimi/Codex 双窗口百分比；Codex 首次启动时
+  回补 rollout 中的全部历史 `rate_limits`，Kimi 历史只能从功能上线后积累。
+- `quota-models.js` 只纳入目标厂商的模型：GPT 可来自 Codex/OMP，Kimi 可来自 Kimi Code/OMP；
+  DeepSeek 等无关模型和未知模型默认排除。Kimi 可选择仅使用 Kimi Code 用量。
+- `sync.js` 在原日摘要之外增加 `quotaUsage` 一分钟桶与 `usageWaterMark`，并携带额度样本；
+  本机与 WSL 的用量因此能在同一时间区间对齐。旧格式或超过 24 小时的 peer 数据只产生
+  低置信度临时估算，新鲜 peer 水位未覆盖区间时则不测算。
+- `quota-estimator.js` 从同一窗口内严格增长的百分比构造区间，以 Token 组成和缓存命中率
+  做带时间衰减的稳健回归，输出 85% / 90% / 95% / 98% 四档等效 Token 与人民币容量；重置、
+  百分比下降及待同步区间不参与计算。样本不足时使用 API 刊例价弱先验推算，明确标记外推，
+  并输出 0–100 数据质量评分及原因，不能把评分解释为统计概率。
+- 长程稳健估算使用独立的 `longTermTargets`：5h 仅取 ≥30 分钟、weekly 仅取 ≥6 小时的完整
+  自动区间，至少 3 个区间和 5 个百分点；排除手动校准样本，历史以 `estimateKind` 隔离。
+- `quota-calibration.js` 支持手动设置测算起点、结束和取消；结束强制校验 5 分钟、10K 有效
+  Token、1 个百分点增量、窗口未重置及 peer 覆盖，失败保留起点。
+- `quota-estimator-store.js` 在 `~/.doramonitor/quota-estimator/` 保存 90 天样本、6 小时
+  测算缓存和最高有效纪录；每次实际重算追加到 `history.jsonl`，永久保留完整时间链、模型
+  结构和测算元数据，历史接口分页读取。所有结果都是推测值，与官方剩余百分比分开展示；
+  当前仅 Web 服务调度采样，daemon 不另行轮询。
+
 ## 5. 关键设计决策
 
 | 决策 | 原因 |

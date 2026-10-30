@@ -140,18 +140,49 @@
 - `display.*` 已按用户币种换算好，前端直接展示。
 - `estimated: true` 的行界面显示「估算」徽标。
 
-## 7. GET /api/quota
+## 7. GET /api/quota 与等效容量历史
 
-参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）。
+参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）。Kimi 另支持
+`scope=all-clients|kimi-code-only`，未传时读取设置中的 `quotaEstimation.kimiCodeOnly`。
 
 - `tool=kimi-code`：调用 Kimi 在线 usages API（`https://api.kimi.com/coding/v1/usages`，
   凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。60s 内存缓存。
-- `tool=codex`：读取本地 rollout 和同步缓存中的 `rate_limits` 快照，采用 `fetchedAt` 最新的一份（**无网络请求**）。
+- `tool=codex`：读取本地 rollout、同步缓存及主动轮询的 `rate_limits` 快照，采用
+  `fetchedAt` 最新的一份。主动轮询使用本机 Codex 登录态请求 `wham/usage`，60s 节流。
 - 无数据：`200 { "available": false, "reason": "no_data", "windows": [], "tool": "codex" }`
 - 正常：`{ "fetchedAt": 0, "tool": "kimi-code", "available": true,
   "windows": [ { "kind": "session|weekly", "label": "5-hour", "usedPercent": 42.0,
-  "resetsAt": "ISO 时间" } ] }`
+  "resetsAt": "ISO 时间" } ], "capacity": { ... } }`
 - 凭据失效：`reason: "token_expired" | "no_credentials" | "http_<status>"`。
+
+`capacity` 包含 `provider`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
+`maxima` 和 `calibrations`。`targets` 固定覆盖 `session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98`
+的组合；每项包含 `fullWindowTokens`、`fullWindowCostCny`、`confidence`、`confidenceScore`、
+`confidenceReasons`、`method`、`sampleCount`、`dataRange` 和 `modelMix`，数据足够时还包含
+Token/CNY 估算范围。人民币是 API 刊例价等效价值，不是真实账单。稀疏样本可用价格弱先验
+推算缺失档位，并标记 `modeled` / `extrapolated` 和低置信度。数据不足时数值字段为 `null`
+或缺省，不能当作官方额度或精确的零。`maxima` 仅记录完整覆盖、非外推且中高置信度的结果。
+`longTermTargets` 是独立长程序列：5h 仅采用 ≥30 分钟、weekly 仅采用 ≥6 小时的完整自动区间，
+至少 3 个区间和 5 个百分点，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离。
+
+`GET /api/quota/capacity/history` 查询参数为 `provider`、`accountKey`、`scope`、`window`、
+`cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
+`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`。每次实际重算均追加到
+`history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、模型结构、
+触发方式和算法元数据。
+
+`GET /api/quota/samples` 查询参数为 `provider`、`accountKey`、`window`、`changesOnly=1`、`limit`
+（默认 50，最大 200）和 `offset`，返回 `{ "samples": [...], "total", "limit", "offset" }`。
+原始额度样本每 60 秒记录并保留 90 天；`changesOnly` 仅在界面查询时过滤重复百分比和重复
+重置时间，不减少原始采样。
+
+`POST /api/quota/capacity/calibration` body：
+`{ "action": "start|end|cancel", "provider": "openai|kimi", "accountKey": "...",
+"scope": "all-clients", "window": "session|weekly" }`。`start` 刷新额度并记录精确起点；
+`end` 要求至少 5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；
+`cancel` 放弃进行中的区间。校验失败返回对应错误码且保留起点，可稍后继续结束。
+
+Web 服务每 60 秒被动采样；额度变化区间和合并用量通常每 6 小时重算一次，数据不足时每分钟重试。
 
 ## 8. GET /api/tools
 

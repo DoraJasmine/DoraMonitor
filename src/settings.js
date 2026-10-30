@@ -25,6 +25,9 @@ const DEFAULTS = {
   currencySymbol: "¥", // display symbol (auto-set from currency, overridable)
   fxRate: 6.67, // USD -> CNY
   customPrices: [], // see module doc
+  quotaEstimation: {
+    kimiCodeOnly: false,
+  },
   sync: {
     enabled: false,
     backend: "ssh", // "ssh" | "webdav"
@@ -71,6 +74,9 @@ function sanitizeSettings(raw) {
   const fx = Number(raw.fxRate);
   if (Number.isFinite(fx) && fx > 0 && fx < 100000) {
     out.fxRate = fx;
+  }
+  if (raw.quotaEstimation && typeof raw.quotaEstimation === "object") {
+    out.quotaEstimation = { kimiCodeOnly: raw.quotaEstimation.kimiCodeOnly === true };
   }
   if (raw.sync && typeof raw.sync === "object") {
     const s = raw.sync;

@@ -243,7 +243,7 @@ async function fetchQuota(home, { force = false } = {}) {
   // rotate the OAuth token on every quota fetch.
   const nowSec = Math.floor(now / 1000);
 
-  const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code" };
+  const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code", accountKey: "kimi:default" };
   let creds = readAccessTokenForCall(home);
   if (!creds) {
     cache = { fetchedAt: now, payload: { ...base, available: false, reason: "no_credentials", windows: [] } };

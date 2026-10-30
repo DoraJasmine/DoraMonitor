@@ -8,6 +8,7 @@ const { scanFilesWithBuckets } = require("./file-scan");
 const { bucketFromRecords } = require("../buckets");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
+const { readCachedCodexQuota, codexAccountKey } = require("../codex-quota");
 
 /**
  * Codex provider — recursively scans ~/.codex/sessions and
@@ -32,8 +33,9 @@ const { loadSettings } = require("../settings");
  *
  * Cloud quota rides on the same scan: every `event_msg`/`token_count` line
  * carries a `rate_limits` snapshot (primary = 5-hour rolling window,
- * secondary = weekly). The newest event wins, so quota refreshes whenever
- * token usage does.
+ * secondary = weekly). The scan merges that with the actively polled
+ * wham/usage snapshot cached by src/codex-quota.js, so quota also refreshes
+ * when GPT usage happens outside the Codex CLI (omp, IDEs, …).
  */
 
 /** home -> Map(file path -> { stamp, parsed, bucket, racy }) */
@@ -83,6 +85,8 @@ const provider = {
     // cold start that reuses stored buckets still sees the newest
     // rate_limits without re-reading any rollout file.
     const quotaByFile = new Map();
+    const quotaSamples = [];
+    const accountKey = codexAccountKey(home);
 
     const files = [];
     for (const root of roots) {
@@ -97,8 +101,9 @@ const provider = {
       recordSince: opts.recordSince,
       settings,
       parseFile: (file) => {
-        const parsed = parseRolloutFile(file, settings);
+        const parsed = parseRolloutFile(file, settings, accountKey);
         if (parsed.fileQuota) quotaByFile.set(path.relative(home, file), parsed.fileQuota);
+        quotaSamples.push(...parsed.quotaSamples);
         return {
           records: parsed.entries.map((e) => {
             e.rec._dedupKey = e.key;
@@ -126,6 +131,18 @@ const provider = {
       }
     }
 
+    // Newest of rollout-derived quota and the actively polled wham/usage
+    // snapshot (src/codex-quota.js) — the latter keeps quota fresh when GPT
+    // usage happens in other clients (omp, IDEs) that write no rollouts.
+    let quota = quotaPayload(bestQuota);
+    const polled = home === provider.defaultHome() ? readCachedCodexQuota() : null;
+    if (
+      polled &&
+      (Date.parse(polled.fetchedAt || "") || 0) > (Date.parse(quota.fetchedAt || "") || 0)
+    ) {
+      quota = polled;
+    }
+
     return {
       records: out.records,
       events: [],
@@ -137,8 +154,20 @@ const provider = {
         sessionsRoot: path.join(home, "sessions"),
         errors: out.errors.slice(0, 20),
       },
-      quota: quotaPayload(bestQuota),
+      quota,
+      quotaSamples,
     };
+  },
+
+  backfillQuotaSamples(home) {
+    const accountKey = codexAccountKey(home);
+    const files = [];
+    for (const root of [path.join(home, "sessions"), path.join(home, "archived_sessions")]) {
+      for (const file of listRolloutFiles(root)) files.push(file);
+    }
+    const samples = [];
+    for (const file of files) samples.push(...parseRolloutFile(file, null, accountKey).quotaSamples);
+    return samples;
   },
 };
 
@@ -147,8 +176,8 @@ const provider = {
  * their response_id keys), the file's newest quota snapshot, and line count.
  * Files are append-only in practice, so unchanged files are never re-read.
  */
-function parseRolloutFile(file, settings) {
-  const parsed = { entries: [], fileQuota: null, lines: 0, errors: [] };
+function parseRolloutFile(file, settings, accountKey = "openai:default") {
+  const parsed = { entries: [], fileQuota: null, quotaSamples: [], lines: 0, errors: [] };
   let text;
   try {
     text = readRolloutText(file);
@@ -193,11 +222,25 @@ function parseRolloutFile(file, settings) {
       continue;
     }
 
-    // Cloud quota snapshot: keep the newest rate_limits in the file.
     if (obj.type === "event_msg" && obj.payload && obj.payload.rate_limits) {
       const ts = Date.parse(obj.timestamp) || 0;
+      const windows = quotaWindows(obj.payload.rate_limits);
+      if (ts > 0) {
+        for (const window of windows) {
+          parsed.quotaSamples.push({
+            version: 1,
+            provider: "openai",
+            accountKey,
+            window: window.kind,
+            sampledAt: new Date(ts).toISOString(),
+            usedPercent: window.usedPercent,
+            resetsAt: window.resetsAt,
+            source: "codex-rollout",
+          });
+        }
+      }
       if (!parsed.fileQuota || ts >= parsed.fileQuota.ts) {
-        parsed.fileQuota = { ts, windows: quotaWindows(obj.payload.rate_limits) };
+        parsed.fileQuota = { ts, windows };
       }
       continue;
     }

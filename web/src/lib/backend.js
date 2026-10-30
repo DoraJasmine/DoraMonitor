@@ -96,12 +96,32 @@ export async function fetchSummary(home, range = "30d", refresh = false, tool = 
 
 /** GET /api/quota — Kimi 5-hour / weekly quota windows with reset times.
  *  tool="codex" reads the rate_limits snapshot from Codex rollout files. */
-export async function fetchQuota(refresh = false, tool = null) {
+export async function fetchQuota(refresh = false, tool = null, scope = null) {
   const qs = new URLSearchParams();
   if (refresh) qs.set("refresh", "1");
   if (tool) qs.set("tool", tool);
+  if (scope) qs.set("scope", scope);
   const q = qs.toString();
   return httpJson(`/api/quota${q ? `?${q}` : ""}`);
+}
+
+export async function fetchQuotaCapacityHistory({ provider, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {
+  const qs = new URLSearchParams({ provider, accountKey, scope, window, cacheHitRate: String(cacheHitRate), estimateKind, limit: String(limit), offset: String(offset) });
+  return httpJson(`/api/quota/capacity/history?${qs}`);
+}
+
+export async function fetchQuotaSampleHistory({ provider, accountKey, window, limit = 20, offset = 0 }) {
+  const qs = new URLSearchParams({ provider, accountKey, changesOnly: "1", limit: String(limit), offset: String(offset) });
+  if (window) qs.set("window", window);
+  return httpJson(`/api/quota/samples?${qs}`);
+}
+
+export async function runQuotaCalibration(body) {
+  return httpJson("/api/quota/capacity/calibration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 /** GET /api/settings — currency display + custom model prices */

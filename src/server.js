@@ -24,8 +24,12 @@ const {
 const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const { listPrices } = require("./pricing");
 const { fetchQuota } = require("./quota");
+const { codexAccountKey } = require("./codex-quota");
+const { persistQuota, persistCodexEntry, ensureCodexBackfill, startQuotaSampler } = require("./quota-sampler");
+const { getCapacityForProvider, getCapacityHistory, getQuotaSampleHistory, peerCoverage } = require("./quota-capacity");
+const { startCalibration, finishCalibration, cancelCalibration, listCalibrations } = require("./quota-calibration");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
-const { runSync, peerRecordsCached, syncEnabled, loadCachedPeers, newestCodexQuota } = require("./sync");
+const { runSync, peerRecordsCached, syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
 const { toolMeta } = require("./providers/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -110,6 +114,30 @@ function getHome(queryHome, cliHome) {
   if (queryHome) return resolveKimiHome(queryHome);
   if (cliHome) return resolveKimiHome(cliHome);
   return resolveKimiHome(null);
+}
+
+async function loadProviderQuota(provider, cliHome, force = false) {
+  if (provider === "openai") {
+    const { getCodexQuota } = require("./codex-quota");
+    const collected = collect({ force });
+    const entry = collected.byTool.get("codex");
+    persistCodexEntry(entry);
+    const localQuota = entry && entry.quota ? entry.quota : null;
+    const apiQuota = entry && entry.home ? await getCodexQuota(entry.home, { force }) : null;
+    persistQuota(apiQuota, "openai", "wham");
+    if (entry && entry.home) ensureCodexBackfill(entry.home);
+    const peers = syncEnabled(loadSettings()) ? loadCachedPeers() : [];
+    const quota = newestCodexQuota(localQuota, peers, apiQuota) || { available: false, reason: "no_data", windows: [] };
+    const accountKey = quota.accountKey || (entry && entry.home ? codexAccountKey(entry.home) : "openai:default");
+    return { quota, accountKey, collected, peers };
+  }
+  const quota = await fetchQuota(getHome(null, cliHome), { force });
+  persistQuota(quota, "kimi", "kimi-api");
+  return { quota, accountKey: quota.accountKey || "kimi:default", collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
+}
+
+function withCalibrations(capacity, provider, accountKey, usageScope) {
+  return { ...capacity, calibrations: listCalibrations({ provider, accountKey, usageScope }) };
 }
 
 /**
@@ -471,6 +499,7 @@ async function handleApi(req, res, url, cliHome) {
       const merged = {
         ...current,
         ...body,
+        quotaEstimation: { ...current.quotaEstimation, ...body.quotaEstimation },
         sync: body.sync
           ? {
               ...current.sync,
@@ -518,21 +547,86 @@ async function handleApi(req, res, url, cliHome) {
     });
   }
 
+  if (url.pathname === "/api/quota/capacity/calibration" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const provider = ["openai", "kimi"].includes(body.provider) ? body.provider : null;
+      const window = ["session", "weekly"].includes(body.window) ? body.window : null;
+      const usageScope = ["all-clients", "kimi-code-only"].includes(body.scope) ? body.scope : "all-clients";
+      if (!provider || !window || !["start", "end", "cancel"].includes(body.action)) {
+        return json(res, 400, { error: "invalid_calibration", message: "Invalid provider, window, or action" });
+      }
+      if (body.action === "cancel") {
+        const accountKey = body.accountKey || `${provider}:default`;
+        const calibration = cancelCalibration({ provider, accountKey, usageScope, window });
+        return json(res, 200, { ok: true, calibration });
+      }
+      const { quota, accountKey, collected, peers } = await loadProviderQuota(provider, cliHome, true);
+      if (!quota.available) return json(res, 409, { error: "quota_unavailable", message: quota.reason || "Quota unavailable" });
+      const options = { provider, accountKey, usageScope, window, quota };
+      if (body.action === "start") {
+        const calibration = startCalibration(options);
+        return json(res, 200, { ok: true, calibration, accountKey });
+      }
+      const records = [...(collected || collect()).records, ...peers.flatMap(quotaUsageRecords)];
+      const calibration = finishCalibration({
+        ...options,
+        records,
+        isComplete: (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now()),
+      });
+      const capacity = getCapacityForProvider({
+        provider,
+        accountKey,
+        usageScope,
+        force: true,
+        collected,
+        calculation: { trigger: "manual", calibrationId: calibration.id, startAt: calibration.startAt, endAt: calibration.endAt },
+      });
+      return json(res, 200, { ok: true, calibration, accountKey, capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
+    } catch (error) {
+      return json(res, error.status || 500, { error: error.code || "calibration_failed", message: error.message, ...(error.details || {}) });
+    }
+  }
+
+  if (url.pathname === "/api/quota/capacity/history") {
+    const provider = url.searchParams.get("provider") || "kimi";
+    const cache = url.searchParams.get("cacheHitRate");
+    const page = getCapacityHistory({
+      provider: ["openai", "kimi"].includes(provider) ? provider : "kimi",
+      accountKey: url.searchParams.get("accountKey") || `${provider}:default`,
+      usageScope: url.searchParams.get("scope") || "all-clients",
+      window: url.searchParams.get("window") || undefined,
+      cacheHitRate: cache === null ? undefined : Number(cache),
+      estimateKind: url.searchParams.get("estimateKind") || undefined,
+      limit: url.searchParams.get("limit") || undefined,
+      offset: url.searchParams.get("offset") || undefined,
+    });
+    return json(res, 200, page);
+  }
+
+  if (url.pathname === "/api/quota/samples") {
+    const provider = url.searchParams.get("provider") || "kimi";
+    const page = getQuotaSampleHistory({
+      provider: ["openai", "kimi"].includes(provider) ? provider : "kimi",
+      accountKey: url.searchParams.get("accountKey") || `${provider}:default`,
+      window: url.searchParams.get("window") || undefined,
+      changesOnly: url.searchParams.get("changesOnly") === "1",
+      limit: url.searchParams.get("limit") || undefined,
+      offset: url.searchParams.get("offset") || undefined,
+    });
+    return json(res, 200, page);
+  }
+
   if (url.pathname === "/api/quota") {
     const force = url.searchParams.get("refresh") === "1";
-    // Codex uses the newest local or synced rate_limits snapshot (no network);
-    // default remains the Kimi usages API.
-    if (url.searchParams.get("tool") === "codex") {
-      const { collect } = require("./collect");
-      const collected = collect({ force });
-      const entry = collected.byTool.get("codex");
-      const localQuota = entry && entry.quota ? entry.quota : null;
-      const peers = syncEnabled(loadSettings()) ? loadCachedPeers() : [];
-      const quota = newestCodexQuota(localQuota, peers) || { available: false, reason: "no_data", windows: [] };
-      return json(res, 200, { ...quota, tool: "codex" });
-    }
-    const quota = await fetchQuota(getHome(null, cliHome), { force });
-    return json(res, 200, quota);
+    const provider = url.searchParams.get("tool") === "codex" ? "openai" : "kimi";
+    const { quota, accountKey, collected } = await loadProviderQuota(provider, cliHome, force);
+    const requestedScope = url.searchParams.get("scope");
+    const usageScope = provider === "openai" ? "all-clients" : ["all-clients", "kimi-code-only"].includes(requestedScope)
+      ? requestedScope
+      : loadSettings().quotaEstimation.kimiCodeOnly ? "kimi-code-only" : "all-clients";
+    const capacity = getCapacityForProvider({ provider, accountKey, usageScope, force, collected });
+    return json(res, 200, { ...quota, accountKey, tool: provider === "openai" ? "codex" : "kimi-code", capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
   }
 
   if (url.pathname === "/api/tools") {
@@ -860,6 +954,7 @@ function main() {
   }
   const home = resolveKimiHome(opts.home);
   const server = createServer(opts.home);
+  startQuotaSampler(opts.home);
   server.listen(opts.port, opts.host, () => {
     // Show an address the user can actually click; the wildcard binds are
     // not valid literals in a URL.
