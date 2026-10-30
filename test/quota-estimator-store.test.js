@@ -56,6 +56,18 @@ test("quota samples persist and deduplicate by source timestamp", () => {
   assert.equal(restored[0].usedPercent, 42);
 });
 
+test("sample compaction physically removes expired and duplicate records", () => {
+  const root = tmpRoot();
+  const now = Date.now();
+  const current = { provider: "openai", accountKey: "openai:test", window: "session", usedPercent: 11, sampledAt: new Date(now).toISOString(), source: "test" };
+  appendSamples([{ ...current, usedPercent: 10, sampledAt: new Date(now - 91 * 86400000).toISOString() }], root, now);
+  appendSamples([current], root, now);
+  appendSamples([current], root, now + 86400000);
+  const lines = fs.readFileSync(path.join(root, "samples.jsonl"), "utf8").trim().split(/\r?\n/);
+  assert.equal(lines.length, 1);
+  assert.equal(JSON.parse(lines[0]).usedPercent, 11);
+});
+
 test("quota sample history pages newest first and can hide repeated percentages", () => {
   const root = tmpRoot();
   const samples = [10, 10, 11].map((usedPercent, index) => ({
@@ -135,6 +147,30 @@ test("every real recalculation is appended even when the estimate is unchanged",
   getOrComputeCapacity({ ...options, now, compute: () => capacity(now, 1_000_000) });
   getOrComputeCapacity({ ...options, now: now + 1000, compute: () => capacity(now + 1000, 1_000_000) });
   assert.equal(readHistory({ provider: "openai" }, root).length, 2);
+});
+
+test("an old algorithm version cannot reuse a fresh persisted cache", () => {
+  const { ALGORITHM_VERSION } = require("../src/quota-estimator");
+  const root = tmpRoot();
+  const now = Date.now();
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root };
+  let calls = 0;
+  getOrComputeCapacity({ ...options, now, compute: () => ({ ...capacity(now, 1_000_000), algorithmVersion: ALGORITHM_VERSION - 1 }) });
+  const result = getOrComputeCapacity({ ...options, now: now + 1000, compute: () => { calls += 1; return capacity(now + 1000, 1_100_000); } });
+  assert.equal(calls, 1);
+  assert.equal(result.algorithmVersion, ALGORITHM_VERSION);
+  getOrComputeCapacity({ ...options, now: now + 2000, compute: () => { calls += 1; return capacity(now + 2000, 1_200_000); } });
+  assert.equal(calls, 1);
+});
+
+test("unchanged scheduled targets do not append empty history batches", () => {
+  const root = tmpRoot();
+  const now = Date.now();
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, force: true };
+  const first = capacity(now, 1_000_000);
+  getOrComputeCapacity({ ...options, now, compute: () => first });
+  getOrComputeCapacity({ ...options, now: now + 1000, compute: () => ({ ...first, generatedAt: new Date(now + 1000).toISOString() }) });
+  assert.equal(readHistory({ provider: "openai" }, root).length, 1);
 });
 
 test("history reconstructs missing interval usage and model cache details", () => {

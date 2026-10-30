@@ -97,8 +97,12 @@ function historyBatches(history) {
 }
 
 function observationSummary(targets, calculationStartAt, calculationEndAt) {
-  const start = Date.parse(calculationStartAt || "");
-  const end = Date.parse(calculationEndAt || "");
+  // Observations belong to the estimate's own data window; the calculation
+  // chain start (previous run's end) can sit inside that window, so filtering
+  // by it would wrongly discard every interval. Prefer the target dataRange.
+  const range = targets[0]?.dataRange || {};
+  const start = Date.parse(range.start || calculationStartAt || "");
+  const end = Date.parse(range.end || calculationEndAt || "");
   const observations = (targets[0]?.observations || []).filter((observation) => {
     const observedStart = Date.parse(observation.start || "");
     const observedEnd = Date.parse(observation.end || "");
@@ -169,14 +173,15 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
 
   return (
     <div className="mt-2 border-t border-border/50 pt-2">
-      <button type="button" className="rounded-sm text-[11px] font-medium text-foreground/80 outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={open} onClick={() => {
+      <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs" aria-expanded={open} onClick={() => {
         const next = !open;
         setOpen(next);
         if (next && history === null) load(0);
       }}>
+        {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         {t("capacityHistory")}
-      </button>
-      {open && <div className="mt-1.5 space-y-2 text-[11px] leading-4 text-muted-foreground">
+      </Button>
+      {open && <div className="mt-2 space-y-2.5">
         {loading && history === null && <div>{t("loading")}</div>}
         {failed && <div className="flex items-center gap-2 text-destructive"><span>{t("capacityHistoryFailed")}</span><Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => load(0)}>{t("retry")}</Button></div>}
         {history && !history.length && !loading && <div>{t("capacityNoHistory")}</div>}
@@ -185,32 +190,30 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
           const trigger = batch.trigger === "manual" ? t("calibrationManual") : batch.trigger === "manual-end" ? t("calibrationManualEnd") : batch.trigger === "reanchor" ? t("calibrationReanchor") : t("calibrationScheduled");
           const dominant = observed.models.reduce((best, entry) => (entry[1].totalTokens > (best?.[1].totalTokens || 0) ? entry : best), null);
           return (
-            <article key={`${batch.createdAt}-${batch.trigger}-${batch.calibrationId}`} className="space-y-1.5 border-b border-border/40 pb-2.5 leading-[1.4] last:border-0">
+            <article key={`${batch.createdAt}-${batch.trigger}-${batch.calibrationId}`} className="space-y-1.5 border-b border-border/40 pb-2.5 last:border-0">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                <span className="num text-xs font-medium text-foreground/90">
+                <span className="num t-body font-medium">
                   {formatCny(batch.targets.find((target) => Number.isFinite(target.fullWindowCostCny))?.fullWindowCostCny, locale)}
-                  {dominant && <span className="ml-2 text-[11px] font-normal text-muted-foreground" title={dominant[0]}>{dominant[0]}</span>}
+                  {dominant && <span className="ml-2 t-caption" title={dominant[0]}>{dominant[0]}</span>}
                 </span>
-                <span className="text-[11px] text-muted-foreground">{trigger} · {fill(t("capacityScore"), { score: batch.targets[0]?.confidenceScore ?? 0 })}</span>
+                <span className="t-caption">{trigger} · {fill(t("capacityScore"), { score: batch.targets[0]?.confidenceScore ?? 0 })}</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-4">
                 {[0.85, 0.9, 0.95, 0.98].map((rate) => {
                   const target = batch.targets.find((item) => item.cacheHitRate === rate);
                   return <div key={rate} className="num whitespace-nowrap text-foreground/85"><span className="text-muted-foreground">{Math.round(rate * 100)}% </span><strong>{Number.isFinite(target?.fullWindowTokens) ? fmtTokens(target.fullWindowTokens) : "—"}</strong></div>;
                 })}
               </div>
-              <div className="text-[11px] text-muted-foreground">
-                {t("capacityInterval")}: {formatRange(batch.calculationStartAt || batch.dataRange?.start, batch.calculationEndAt || batch.dataRange?.end, locale)}
-                <span className="mx-1.5">·</span>{t("capacityPreviousEnd")}: {formatDate(batch.previousCalculationEndAt, locale)}
-                <span className="mx-1.5">·</span>{t("capacityRecordedAt")}: {formatDate(batch.createdAt, locale)}
+              <div className="t-caption">
+                {t("capacityInterval")}: {formatRange(batch.dataRange?.start || batch.calculationStartAt, batch.dataRange?.end || batch.calculationEndAt, locale)}
               </div>
               {observed.hasObservations ? (
                 <>
-                  <div className="num text-[11px] text-foreground/85">
+                  <div className="num t-body">
                     {t("capacityObservedUsage")}: {fmtTokens(observed.totalTokens)} · {formatCny(observed.costCny, locale)} · +{observed.percentSpan}%
                     {Number.isFinite(observed.cacheHit) && <span><span className="mx-1.5">·</span>{t("capacityCache")} {Math.round(observed.cacheHit * 1000) / 10}%</span>}
                   </div>
-                  {observed.models.length > 0 && <div className="text-[11px] text-muted-foreground">
+                  {observed.models.length > 0 && <div className="t-caption">
                     {t("capacityModelBreakdown")}: {observed.models.map(([name, model]) => (
                       <span key={name} className="num whitespace-nowrap">
                         <span className="text-foreground/80" title={name}>{name}</span> {fmtTokens(model.totalTokens)} · {model.input > 0 ? Math.round(model.cacheRead / model.input * 1000) / 10 : 0}%
@@ -218,7 +221,7 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
                     )).reduce((nodes, node, index) => index === 0 ? [node] : [...nodes, <span key={`sep-${index}`} className="mx-1.5">|</span>, node], [])}
                   </div>}
                 </>
-              ) : <div className="text-[11px] text-muted-foreground">{t("capacityNoObservations")}</div>}
+              ) : <div className="t-caption">{t("capacityNoObservations")}</div>}
             </article>
           );
         })}
@@ -241,24 +244,35 @@ function RateBasis({ rate, t }) {
   );
 }
 
+function estimateModelLabel(target) {
+  const entries = Object.entries(target?.modelMix || {}).sort((a, b) => b[1].mix - a[1].mix);
+  if (!entries.length) return null;
+  const shown = entries.filter(([, shape]) => shape.mix >= 0.05).slice(0, 2);
+  const list = shown.length ? shown : entries.slice(0, 1);
+  if (list.length === 1) return list[0][0];
+  const total = list.reduce((sum, [, shape]) => sum + shape.mix, 0);
+  return list.map(([name, shape]) => `${name} ${Math.round((shape.mix / total) * 100)}%`).join(" + ");
+}
+
 function CapacityRateLine({ target, locale, t }) {
   const insufficient = !Number.isFinite(target?.fullWindowTokens);
   return (
-    <div className="flex flex-wrap items-baseline gap-x-5 gap-y-0.5 py-1.5 text-xs">
+    <div className="flex flex-wrap items-baseline gap-x-5 gap-y-0.5 py-1.5">
       <RateBasis rate={`${Math.round((target?.cacheHitRate || 0) * 100)}%`} t={t} />
-      <span className="text-[11px] text-muted-foreground">
+      <span className="t-caption">
         {t("capacityFull")}{" "}
-        <strong className={cn("num text-sm", insufficient ? "font-normal text-muted-foreground" : "font-semibold text-foreground")}>
+        <strong className={cn("num", insufficient ? "font-normal" : "t-strong")}>
           {insufficient ? t("capacityInsufficient") : fmtTokens(target.fullWindowTokens)}
         </strong>
+        {!insufficient && estimateModelLabel(target) && <span className="ml-1 whitespace-nowrap">· {estimateModelLabel(target)}</span>}
       </span>
-      <span className="text-[11px] text-muted-foreground">
+      <span className="t-caption">
         {t("capacityCost")}{" "}
-        <span className="num font-medium text-foreground/85">{Number.isFinite(target?.fullWindowCostCny) ? formatCny(target.fullWindowCostCny, locale) : "—"}</span>
+        <span className="num t-body font-medium">{Number.isFinite(target?.fullWindowCostCny) ? formatCny(target.fullWindowCostCny, locale) : "—"}</span>
       </span>
-      <span className="text-[11px] text-muted-foreground">
+      <span className="t-caption">
         {t("capacityQuality")}{" "}
-        <span className="num font-medium text-foreground/85">{Number.isFinite(target?.confidenceScore) ? fill(t("capacityScore"), { score: target.confidenceScore }) : "—"}</span>
+        <span className="num t-body font-medium">{Number.isFinite(target?.confidenceScore) ? fill(t("capacityScore"), { score: target.confidenceScore }) : "—"}</span>
       </span>
     </div>
   );
@@ -355,14 +369,15 @@ function QuotaSampleHistory({ quota, locale, t }) {
   if (!provider || !accountKey) return null;
   return (
     <div className="mt-3 border-t border-border/50 pt-2">
-      <Button variant="ghost" size="sm" className="h-7 px-0 text-[11px] text-muted-foreground" aria-expanded={open} onClick={() => {
+      <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs" aria-expanded={open} onClick={() => {
         const next = !open;
         setOpen(next);
         if (next && samples === null) load(0);
       }}>
+        {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         {t("quotaSamplesTitle")}
       </Button>
-      {open && <div className="mt-1 space-y-2 text-[11px] text-muted-foreground">
+      {open && <div className="mt-2 space-y-2">
         <div>{t("quotaSamplesHint")}</div>
         {loading && samples === null && <div>{t("loading")}</div>}
         {failed && <div className="text-destructive">{t("capacityHistoryFailed")}</div>}
@@ -404,8 +419,8 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
     <section className="mt-3 border-t border-border/60 pt-2">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-medium">{t("capacityTitle")}</h3>
-          <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-muted-foreground">{t("capacityHint")}</p>
+          <h3 className="text-sm font-semibold">{t("capacityTitle")}</h3>
+          <p className="t-caption mt-1 max-w-3xl">{t("capacityHint")}</p>
         </div>
         <Button variant="ghost" size="sm" className="h-7 shrink-0 gap-1 px-2 text-[11px] text-muted-foreground" onClick={toggle} aria-expanded={expanded}>
           {expanded ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
@@ -423,11 +438,12 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
             : null;
           return (
             <div key={window}>
-              <div className="text-sm font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
+              <div className="t-label text-sm">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
               {(costTarget || (best && Number.isFinite(best.confidenceScore))) && (
                 <div className="num mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-sm font-semibold text-foreground">
                   {costTarget && <span>{t("capacityCost")} {formatCny(costTarget.fullWindowCostCny, locale)}</span>}
                   {best && Number.isFinite(best.confidenceScore) && <span>{t("capacityQuality")} {fill(t("capacityScore"), { score: best.confidenceScore })}</span>}
+                  {(costTarget || best) && estimateModelLabel(costTarget || best) && <span className="font-medium">{t("capacityEstimateModel")} {estimateModelLabel(costTarget || best)}</span>}
                 </div>
               )}
               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
@@ -440,8 +456,8 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
                     <button key={key} type="button" disabled={insufficient} aria-expanded={open}
                       className="rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
                       onClick={() => setDetailKey(open ? null : key)}>
-                      <div className="text-[11px] text-muted-foreground"><RateBasis rate={`${rate}%`} t={t} /></div>
-                      <div className={cn("num mt-0.5 text-sm", insufficient ? "text-muted-foreground" : "font-semibold text-foreground")}>
+                      <div className="t-caption"><RateBasis rate={`${rate}%`} t={t} /></div>
+                      <div className={cn("num mt-0.5", insufficient ? "t-caption" : "t-strong")}>
                         {insufficient ? t("capacityInsufficient") : fmtTokens(target.fullWindowTokens)}
                       </div>
                     </button>
@@ -449,7 +465,7 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
                 })}
               </div>
               {detailTarget && (
-                <div className="ml-1 mt-2 space-y-1 border-l border-border/60 pl-3 text-[11px] leading-4 text-muted-foreground">
+                <div className="t-caption ml-1 mt-2 space-y-1 border-l border-border/60 pl-3">
                   <div>{t(methodKey(detailTarget.method))} · {fill(t("capacitySamples"), { n: detailTarget.sampleCount })} · {t(`capacityConfidence${detailTarget.confidence.charAt(0).toUpperCase()}${detailTarget.confidence.slice(1)}`)}</div>
                   {Number.isFinite(detailTarget.low) && Number.isFinite(detailTarget.high) && <div>{t("capacityRange")}: {fmtTokens(detailTarget.low)} – {fmtTokens(detailTarget.high)}</div>}
                   {detailMaximum && <div>{t("capacityMax")}: {fmtTokens(detailMaximum.fullWindowTokens)} · {formatCny(detailMaximum.fullWindowCostCny, locale)} · {formatDate(detailMaximum.createdAt, locale)}</div>}
@@ -473,16 +489,16 @@ function LongTermCapacitySection({ capacity, locale, t }) {
   const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
   return (
     <section className="mt-3 border-t border-border/60 pt-2">
-      <h3 className="text-sm font-medium">{t("longTermTitle")}</h3>
-      <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-muted-foreground">{t("longTermHint")}</p>
+      <h3 className="text-sm font-semibold">{t("longTermTitle")}</h3>
+      <p className="t-caption mt-1 max-w-3xl">{t("longTermHint")}</p>
       {!hasData ? (
         <div className="mt-2 text-[11px] text-muted-foreground">{fill(t("longTermProgress"), { n: targets[0]?.longTermCandidateCount || 0, span: targets[0]?.longTermPercentSpan || 0 })}</div>
       ) : (
         <div className="mt-2 grid gap-x-8 gap-y-3 lg:grid-cols-2">
           {["session", "weekly"].map((window) => (
             <div key={window}>
-              <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</span>
+              <div className="mb-0.5">
+                <span className="t-label">{window === "session" ? t("quota5h") : t("quotaWeekly")}</span>
               </div>
               {targets.filter((target) => target.window === window && [0.9, 0.95].includes(target.cacheHitRate)).map((target) => (
                 <CapacityRateLine key={`long-${target.window}-${target.cacheHitRate}`} target={target} locale={locale} t={t} />
@@ -499,7 +515,7 @@ function LongTermCapacitySection({ capacity, locale, t }) {
 function HomeCapacityGroup({ title, targets, locale, t }) {
   return (
     <div>
-      <div className="mb-0.5 text-xs font-medium">{title}</div>
+      <div className="t-label">{title}</div>
       {[0.95].map((rate) => {
         const target = targets.find((item) => item.cacheHitRate === rate);
         return target ? <CapacityRateLine key={rate} target={target} locale={locale} t={t} /> : null;
@@ -514,7 +530,7 @@ function HomeCapacity({ capacity, locale, t }) {
   return (
     <section className="mt-4 space-y-3 border-t border-border/60 pt-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{t("longTermTitle")}</h3>
+        <h3 className="text-sm font-semibold">{t("longTermTitle")}</h3>
         <a href="/quota" className="rounded-sm text-[11px] text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t("capacityDetails")}</a>
       </div>
       <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">

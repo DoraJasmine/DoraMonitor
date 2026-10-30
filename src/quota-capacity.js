@@ -69,7 +69,7 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
 
 function getCapacityHistory(query, root, { collected, peers } = {}) {
   const page = readHistoryPage(query, root);
-  if (!page.history.some((item) => !Array.isArray(item.observations))) return page;
+  if (!page.history.some((item) => !Array.isArray(item.observations) || !item.observations.length)) return page;
 
   const settings = loadSettings();
   const peerList = peers || (syncEnabled(settings) ? loadCachedPeers() : []);
@@ -87,9 +87,12 @@ function getCapacityHistory(query, root, { collected, peers } = {}) {
 
   const reconstructed = new Map();
   page.history = page.history.map((item) => {
-    if (Array.isArray(item.observations)) return item;
-    const start = Date.parse(item.calculationStartAt || item.dataRange?.start || "");
-    const end = Date.parse(item.calculationEndAt || item.dataRange?.end || "");
+    if (Array.isArray(item.observations) && item.observations.length) return item;
+    // The chained calculationStartAt (previous run's end) sits inside the data
+    // window and would collapse reconstruction to a single instant; rebuild
+    // from the item's own data range instead.
+    const start = Date.parse(item.dataRange?.start || item.calculationStartAt || "");
+    const end = Date.parse(item.dataRange?.end || item.calculationEndAt || "");
     const key = `${start}:${end}`;
     if (!reconstructed.has(key)) {
       const intervalSamples = [...samples.values()].filter((sample) => {

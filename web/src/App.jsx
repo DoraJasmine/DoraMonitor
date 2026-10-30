@@ -1,23 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  FolderOpen,
   Gauge,
   Github,
   Languages,
   LayoutDashboard,
   Loader2,
-  MessagesSquare,
   Monitor,
   Moon,
   RefreshCw,
-  ScanSearch,
-  SlidersHorizontal,
   Sun,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
-import SessionsPage from "@/pages/SessionsPage";
-import ModelsPage from "@/pages/ModelsPage";
 import { PricesPage } from "@/pages/PricesPage";
 import QuotaDetailsPage from "@/pages/QuotaDetailsPage";
 import { Badge } from "@/components/ui/badge";
@@ -188,8 +182,6 @@ export default function App() {
     if (typeof window !== "undefined") {
       const p = window.location.pathname;
       if (p.startsWith("/quota")) return "quota";
-      if (p.startsWith("/sessions")) return "sessions";
-      if (p.startsWith("/models")) return "models";
       if (p.startsWith("/prices")) return "prices";
     }
     return localStorage.getItem("kcd_page") || "usage";
@@ -214,10 +206,6 @@ export default function App() {
       const path =
         next === "quota"
           ? "/quota"
-          : next === "sessions"
-          ? "/sessions"
-          : next === "models"
-          ? "/models"
           : next === "prices"
           ? "/prices"
           : "/";
@@ -484,26 +472,6 @@ export default function App() {
     return items;
   }, [totals, t, locale]);
 
-  const applyHome = () => {
-    const next = homeInput.trim();
-    setHome(next);
-    localStorage.setItem("kcd_home", next);
-    loadSummary({ refresh: true, nextHome: next });
-  };
-
-  const autoDetect = async () => {
-    try {
-      const d = await fetchPaths();
-      const next = d.current || "";
-      setHome(next);
-      setHomeInput(next);
-      localStorage.removeItem("kcd_home");
-      loadSummary({ refresh: true, nextHome: next });
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
   return (
     <div className="mx-auto max-w-[1240px] px-4 py-6 pb-16 sm:px-6">
       {/* Header */}
@@ -549,22 +517,6 @@ export default function App() {
             >
               <Gauge className="h-3.5 w-3.5" />
               {t("navQuota")}
-            </Button>
-            <Button
-              size="sm"
-              variant={page === "sessions" ? "default" : "ghost"}
-              onClick={() => goPage("sessions")}
-            >
-              <MessagesSquare className="h-3.5 w-3.5" />
-              {t("navSessions")}
-            </Button>
-            <Button
-              size="sm"
-              variant={page === "models" ? "default" : "ghost"}
-              onClick={() => goPage("models")}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {t("navModels")}
             </Button>
             <Button
               variant={page === "prices" ? "default" : "ghost"}
@@ -644,47 +596,6 @@ export default function App() {
         </div>
       </motion.header>
 
-      {/* Path bar — kimi 会话/模型管理专用（用量统计不依赖此目录） */}
-      {page !== "usage" ? (
-      <motion.div
-        custom={1}
-        initial={reduceMotion || entered.current ? false : "hidden"}
-        animate="show"
-        variants={fadeUp}
-      >
-        <Card className="mb-5">
-          <CardContent className="space-y-3 p-4 sm:p-5">
-            <label className="text-xs font-medium text-muted-foreground">
-              {t("dataDir")}（{t("dataDirKimiOnly")}）
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative flex-1">
-                <FolderOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  value={homeInput}
-                  placeholder={t("dirPlaceholder")}
-                  onChange={(e) => setHomeInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && applyHome()}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={applyHome}>{t("applyDir")}</Button>
-                <Button variant="secondary" onClick={autoDetect}>
-                  <ScanSearch />
-                  {t("autoDetect")}
-                </Button>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {home || "—"}
-            </p>
-            <p className="text-xs text-muted-foreground/80">{t("privacy")}</p>
-          </CardContent>
-        </Card>
-      </motion.div>
-      ) : null}
-
       {error && page === "usage" ? (
         <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-red-200">
           {error}
@@ -693,11 +604,6 @@ export default function App() {
 
       {page === "quota" ? <QuotaDetailsPage t={t} locale={locale} /> : null}
 
-      {page === "sessions" ? (
-        <SessionsPage home={home} t={t} locale={locale} />
-      ) : null}
-
-      {page === "models" ? <ModelsPage home={home} t={t} onPricingSaved={handlePricingSaved} /> : null}
       {page === "prices" ? <PricesPage t={t} locale={locale} onSaved={handlePricingSaved} /> : null}
 
       {page === "usage" ? (

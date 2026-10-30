@@ -5,6 +5,9 @@ const { costForUsage } = require("./pricing");
 const { loadSettings } = require("./settings");
 
 const CACHE_TARGETS = [0.85, 0.9, 0.95, 0.98];
+// Bump whenever estimation logic changes: cache validation rejects results
+// from every older algorithm version, including persisted results after restart.
+const ALGORITHM_VERSION = 6;
 const TOKEN_TYPES = ["inputOther", "inputCacheRead", "inputCacheCreation", "output"];
 const DAY_MS = 86_400_000;
 
@@ -512,12 +515,14 @@ function estimateCapacity({ samples, records, provider, usageScope = "all-client
 
     const automaticSamples = windowSamples.filter((sample) => sample.source !== "manual-calibration");
     const minimumDuration = window === "session" ? 30 * 60_000 : 6 * 3_600_000;
+    // Long-term targets estimate directly from whatever merged intervals exist;
+    // coverage and sample size are reflected through confidence, not a hard gate.
     const longIntervals = mergeLongIntervals(
       buildIntervals({ samples: automaticSamples, records, provider, window, usageScope, accountKey, isComplete }),
       minimumDuration
-    ).filter((interval) => interval.coverage === "complete");
+    );
     const longSpan = longIntervals.reduce((sum, interval) => sum + interval.dp, 0);
-    const longEstimated = longIntervals.length >= 3 && longSpan >= 5
+    const longEstimated = longIntervals.length
       ? estimateWindow(longIntervals, { now, settings })
       : estimateWindow([], { now, settings });
     for (const target of longEstimated.targets) longTermTargets.push({
@@ -526,8 +531,6 @@ function estimateCapacity({ samples, records, provider, usageScope = "all-client
       estimateKind: "long-term",
       longTermCandidateCount: longIntervals.length,
       longTermPercentSpan: longSpan,
-      longTermMinimumSamples: 3,
-      longTermMinimumPercentSpan: 5,
     });
   }
   return {
@@ -535,10 +538,10 @@ function estimateCapacity({ samples, records, provider, usageScope = "all-client
     usageScope,
     accountKey,
     generatedAt: new Date(now).toISOString(),
-    algorithmVersion: 5,
+    algorithmVersion: ALGORITHM_VERSION,
     targets,
     longTermTargets,
   };
 }
 
-module.exports = { CACHE_TARGETS, TOKEN_TYPES, buildIntervals, estimateWindow, estimateCapacity, fitRates, weightedQuantile };
+module.exports = { ALGORITHM_VERSION, CACHE_TARGETS, TOKEN_TYPES, buildIntervals, estimateWindow, estimateCapacity, fitRates, weightedQuantile };

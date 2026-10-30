@@ -5,6 +5,9 @@ const os = require("os");
 const path = require("path");
 
 const DEFAULT_ROOT = path.join(os.homedir(), ".doramonitor", "quota-estimator");
+// Cache format version: keeps stale results from an older algorithm out of the
+// 6h cache after a logic change (see ALGORITHM_VERSION in quota-estimator.js).
+const { ALGORITHM_VERSION } = require("./quota-estimator");
 const SAMPLE_RETENTION_MS = 90 * 86_400_000;
 const RECALCULATE_MS = 6 * 3_600_000;
 const HISTORY_LIMIT = 30;
@@ -72,11 +75,22 @@ function sampleKey(sample) {
   return [sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0");
 }
 
-function appendSamples(samples, root = DEFAULT_ROOT) {
+const sampleCompactionAt = new Map();
+
+function appendSamples(samples, root = DEFAULT_ROOT, now = Date.now()) {
   const valid = (samples || []).filter((s) => s && s.provider && s.accountKey && s.window && Number.isFinite(Date.parse(s.sampledAt || "")));
   if (!valid.length) return 0;
   fs.mkdirSync(root, { recursive: true });
-  fs.appendFileSync(samplesPath(root), valid.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
+  const file = samplesPath(root);
+  fs.appendFileSync(file, valid.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
+  const previousCompaction = sampleCompactionAt.get(root) || 0;
+  if (now - previousCompaction >= 86_400_000) {
+    sampleCompactionAt.set(root, now);
+    const retained = readSamples(root, now);
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, retained.map((sample) => JSON.stringify(sample)).join("\n") + (retained.length ? "\n" : ""), "utf8");
+    fs.renameSync(tmp, file);
+  }
   return valid.length;
 }
 
@@ -124,7 +138,7 @@ function readSamplePage(query, root = DEFAULT_ROOT) {
 }
 
 function capacityKey(capacity) {
-  return [capacity.provider, capacity.accountKey || "default", capacity.usageScope].join("\0");
+  return [capacity.provider, capacity.accountKey || "default", capacity.usageScope, ALGORITHM_VERSION].join("\0");
 }
 
 function estimateKey(target) {
@@ -206,18 +220,22 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
   const cached = state.cache[key];
   const cacheAge = cached ? now - Date.parse(cached.generatedAt || "") : Infinity;
   const hasSamples = cached && [...(cached.targets || []), ...(cached.longTermTargets || [])].some((target) => Number.isFinite(target.fullWindowTokens));
-  if (!force && cached && cacheAge >= 0 && cacheAge < (hasSamples ? RECALCULATE_MS : 60_000)) {
+  if (!force && cached && cached.algorithmVersion === ALGORITHM_VERSION && cacheAge >= 0 && cacheAge < (hasSamples ? RECALCULATE_MS : 60_000)) {
     return withMaxima(cached, state);
   }
 
-  const capacity = compute();
+  const computed = compute();
+  const capacity = { ...computed, algorithmVersion: computed.algorithmVersion || ALGORITHM_VERSION };
   const next = loadState(root);
-  const existingHistory = readHistory({}, root);
+  const previousByTarget = new Map();
+  for (const item of readHistory({}, root)) previousByTarget.set(estimateKey(item), item);
   const history = [];
   for (const target of [...(capacity.targets || []), ...(capacity.longTermTargets || [])]) {
     if (!Number.isFinite(target.fullWindowTokens)) continue;
     const keyForTarget = estimateKey({ ...target, provider, accountKey, usageScope });
-    const previous = existingHistory.filter((item) => estimateKey(item) === keyForTarget).at(-1);
+    const previous = previousByTarget.get(keyForTarget);
+    const calculationEndAt = target.dataRange?.end || calculation?.endAt || null;
+    if (!calculation && previous && calculationEndAt && previous.calculationEndAt === calculationEndAt) continue;
     const entry = {
       ...target,
       provider,
@@ -225,7 +243,7 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
       usageScope,
       createdAt: capacity.generatedAt,
       calculationStartAt: previous?.calculationEndAt || calculation?.startAt || target.dataRange?.start || null,
-      calculationEndAt: target.dataRange?.end || calculation?.endAt || null,
+      calculationEndAt,
       previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
       trigger: calculation?.trigger || "scheduled",
       calibrationId: calculation?.calibrationId || null,

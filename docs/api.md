@@ -164,16 +164,14 @@
 每个 observation 包含起止时间、额度增量、实际 Token、CNY、缓存命中率及各模型 Token 组成。
 人民币是 API 刊例价等效价值，不是真实账单。稀疏样本可用价格弱先验推算缺失档位，并标记
 `modeled` / `extrapolated` 和低置信度。数据不足时数值字段为 `null` 或缺省，不能当作官方额度或
-精确的零。Kimi 周样本缺失时使用同缓存档 5h 结果的 5 倍降级估算，标记 `sessionDerived`、
-低置信度及 `session_derived` 原因，不覆盖真实周样本。`maxima` 仅记录完整覆盖、非外推且中高
-置信度的结果。`longTermTargets` 是独立长程序列：先合并连续短区间，5h 仅采用合并后 ≥30 分钟、
-weekly 仅采用 ≥6 小时的完整自动区间，至少 3 个区间和 5 个百分点，且排除手动校准样本。
-历史以 `estimateKind=standard|long-term` 隔离。
+精确的零。`maxima` 仅记录完整覆盖、非外推且中高置信度的结果。`longTermTargets` 是独立长程序列：
+先合并连续短区间，5h 采用合并后 ≥30 分钟、weekly 采用 ≥6 小时的自动区间；不设样本数硬门槛，
+样本少时通过低置信度体现，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离。
 
 `GET /api/quota/capacity/history` 查询参数为 `provider`、`accountKey`、`scope`、`window`、
 `cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
-`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`，按最新记录优先分页。每次实际重算
-均追加到 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
+`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`，按最新记录优先分页。有新观测终点的
+测算结果追加到 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
 模型结构、触发方式和算法元数据。界面按一次测算批次并列展示四个缓存档，同一批次不会拆成四套历史。
 
 `GET /api/quota/samples` 查询参数为 `provider`、`accountKey`、`window`、`changesOnly=1`、`limit`
@@ -188,7 +186,8 @@ weekly 仅采用 ≥6 小时的完整自动区间，至少 3 个区间和 5 个�
 5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；没有显式起点时
 从上次测算终点续算并标记 `trigger=manual-end`。`cancel` 放弃进行中的区间。校验失败保留起点。
 
-Web 服务每 60 秒被动采样；额度变化区间和合并用量通常每 6 小时重算一次，数据不足时每分钟重试。
+Web 服务每 60 秒采样并检查定时触发：30 分钟且额度增长 1%，或单次累计增长 10% 时重算；
+失败保留下一次重试锚点。普通读取使用 6 小时缓存，算法版本变化会立即使旧缓存失效。
 
 ## 8. GET /api/tools
 

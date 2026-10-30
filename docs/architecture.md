@@ -152,7 +152,7 @@
   范围 + 热力图；超过 32 条整体清空。
 - 前端**不做 summary 轮询**：挂载、切换范围/工具/设备、手动刷新时各拉一次；
   页脚显示"上次扫描 N 前"。额度卡内部有 60s 的本地倒计时 tick。
-- 首页只保留官方额度和简洁估算（90%/95% Token、窗口级人民币和质量评分、长程摘要）；
+- 首页只保留官方额度和长程摘要（95% Token、人民币、质量评分与估算模型）；
   `/quota` 独立承载额度变化、全部缓存档、立即测算及完整历史，官方价目只在 `/prices`。
 - 静态托管：Vite 内容哈希文件名 → `Cache-Control: immutable` 一年；>1KB 的
   js/css/html/svg/json 自动 gzip；`/quota`、`/sessions`、`/models` 等路径 SPA 回退到
@@ -173,17 +173,15 @@
   百分比下降及待同步区间不参与计算。样本不足时使用 API 刊例价弱先验推算，明确标记外推，
   并输出 0–100 数据质量评分及原因，不能把评分解释为统计概率。
 - 长程稳健估算使用独立的 `longTermTargets`：先合并同一窗口内连续的短区间，避免频繁增长时
-  永远得不到长样本；5h 仅取合并后 ≥30 分钟、weekly 仅取 ≥6 小时的完整自动区间，至少 3 个
-  区间和 5 个百分点；排除手动校准样本，历史以 `estimateKind` 隔离。
-- Kimi 的真实周额度样本不足时，以同缓存档 5h 估算的 5 倍作为低置信度降级结果
-  （`method=sessionDerived`）；它不覆盖真实周样本，也不计入最高有效纪录。Codex 不使用该关系。
+  永远得不到长样本；5h 采用合并后 ≥30 分钟、weekly 采用 ≥6 小时的自动区间，不设样本数硬门槛，
+  少量样本以低置信度体现；排除手动校准样本，历史以 `estimateKind` 隔离。
 - `quota-calibration.js` 支持手动设置测算起点、结束和取消；结束强制校验 5 分钟、10K 有效
   Token、1 个百分点增量、窗口未重置及 peer 覆盖，失败保留起点。没有显式起点时直接结束会
   从上次测算终点续算；重设起点会先结算可用的上一段并以 `reanchor` 记录原因。
 - `quota-estimator-store.js` 在 `~/.doramonitor/quota-estimator/` 保存 90 天样本、6 小时
-  测算缓存和最高有效纪录；每次实际重算追加到 `history.jsonl`，永久保留完整时间链、模型
-  结构和测算元数据，历史接口分页读取。所有结果都是推测值，与官方剩余百分比分开展示；
-  当前仅 Web 服务调度采样，daemon 不另行轮询。
+  测算缓存和最高有效纪录；样本每天原子压缩一次，算法版本变化使旧缓存失效。只有带新观测终点的
+  结果才追加到 `history.jsonl`，永久保留完整时间链、模型结构和测算元数据。所有结果都是推测值，
+  与官方剩余百分比分开展示；当前仅 Web 服务调度采样，daemon 不另行轮询。
 
 ## 5. 关键设计决策
 
@@ -205,21 +203,18 @@
 DoraMonitor/
 ├─ src/                    # Node 后端（见上表）
 │  ├─ data/builtin-catalog.json   # models.dev 离线快照
-│  └─ tools/           # 七个工具的数据采集器
-├─ web/                    # 前端源码（Vite root）
-│  ├─ src/App.jsx          # 用量页（SPA 主壳）
-│  ├─ src/pages/           # ModelsPage（模型/定价设置）、SessionsPage
-│  ├─ src/components/      # DailyBars / Heatmap / PricingTab / QuotaCard + ui/
-│  ├─ src/lib/backend.js   # HTTP ↔ Tauri 双通道数据层
-│  └─ public-assets/       # favicon
-├─ dist/                   # 构建产物（随 npm 包分发）
-├─ test/                   # Node 内置测试（14 个文件）
-├─ scripts/                # Windows 安装器 / 自启注册 / daemon 补丁
-├─ docs/                   # 本文档集
-├─ start-doramonitor.bat   # （生成物）最小化窗口启动
-├─ daemon-hidden.vbs       # （生成物）隐藏启动 daemon
-└─ web-hidden.vbs          # （生成物）隐藏启动 web 服务
+│  └─ tools/                 # 九个工具的数据采集器
+├─ web/                      # 前端源码（Vite root）
+│  ├─ src/App.jsx            # 用量页（SPA 主壳）
+│  ├─ src/pages/             # QuotaDetailsPage / PricesPage
+│  ├─ src/components/        # DailyBars / Heatmap / QuotaCard + ui/
+│  ├─ src/lib/backend.js     # HTTP ↔ Tauri 双通道数据层
+│  └─ public-assets/         # favicon
+├─ dist/                     # 构建产物（随 npm 包分发）
+├─ test/                     # Node 内置测试
+├─ scripts/                  # Windows 安装器 / 静默启动 / 自启注册
+├─ docs/                     # 本文档集
+├─ start-doramonitor.bat     # （生成物）后台启动
+├─ daemon-hidden.vbs         # （生成物）隐藏启动 daemon
+└─ web-hidden.vbs            # （生成物）隐藏启动 web 服务
 ```
-
-> 注意：`web/web/` 与 `test/test/`、`scripts/scripts/` 是历史遗留的旧版拷贝，
-> 不参与构建与测试，详见[开发指南 → 已知遗留问题](./development.md)。

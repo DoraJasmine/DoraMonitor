@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+ * 全局字阶规范（typography scale）—— 所有页面统一使用，不要再手写散落的
+ * text-[11px]/text-xs/text-sm + font-medium/semibold 组合：
+ *   .t-caption  11px 浅色   辅助说明、表头、单位、时间戳
+ *   .t-body     12px 常规   正文行、普通数值
+ *   .t-label    12px 中黑   小节标题、窗口标题
+ *   .t-strong   14px 半黑   重点数值（估算Token总量、估算金额等）
+ * 数字一律加 .num（tabular-nums）保证对齐。
+ * ------------------------------------------------------------------------- */
+@layer components {
+  .t-caption { @apply text-[11px] leading-[1.45] text-muted-foreground; }
+  .t-body    { @apply text-xs leading-[1.45] text-foreground/85; }
+  .t-label   { @apply text-xs font-medium text-foreground; }
+  .t-strong  { @apply text-sm font-semibold text-foreground; }
+}
+
 @layer base {
   :root {
     /* Linear-inspired dark ops shell — teal accent (not indigo) */
