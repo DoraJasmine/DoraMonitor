@@ -143,7 +143,8 @@
 
 ## 7. GET /api/quota 与等效容量历史
 
-参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）。Kimi 支持
+参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）；`accountKey` 可选，必须与当前
+账号匹配，多账号场景缺失时返回 `account_required`，不匹配时返回 `account_unavailable`。Kimi 支持
 `scope=all-clients|kimi-code-only`，Codex 支持 `scope=all-clients|codex-only`；未传时分别读取
 `quotaEstimation.kimiCodeOnly` / `quotaEstimation.codexOnly`。
 

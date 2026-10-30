@@ -586,6 +586,7 @@ async function handleApi(req, res, url, cliHome) {
       cliHome,
       force: url.searchParams.get("refresh") === "1",
       scope: url.searchParams.get("scope"),
+      accountKey: url.searchParams.get("accountKey"),
     });
     return json(res, 200, result);
   }

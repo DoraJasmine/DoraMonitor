@@ -1,6 +1,6 @@
 # DoraMonitor 未来功能计划
 
-> 状态：规划草案。本文记录项目所有者提出的后续需求，不表示当前版本已经实现。
+> 状态：扩展基础已落地，具体功能按阶段实施。集成注册表、多账号解析和 peer codec 已完成；多 profile 账号发现、ZCode 额度客户端和本地目录传输仍属未来工作。
 > 实施必须遵循 [PRD](./product-requirements.md)、[目标架构](./architecture-refactor-plan.md) 和 [数据迁移方案](./data-migration-plan.md)。
 
 ## 1. 规划原则

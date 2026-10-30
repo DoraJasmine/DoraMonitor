@@ -1,18 +1,39 @@
 "use strict";
 
-const TOOL_TO_QUOTA_PROVIDER = { "kimi-code": "kimi", codex: "openai" };
+function createQuotaIntegrationRegistry(initial = []) {
+  const integrations = new Map();
+  const register = (integration) => {
+    if (!integration || !integration.tool || !integration.quotaProvider || !integration.capabilities) {
+      throw new Error("A quota integration requires tool, quotaProvider and capabilities");
+    }
+    if (integrations.has(integration.tool)) throw new Error(`Duplicate quota integration: ${integration.tool}`);
+    integrations.set(integration.tool, integration);
+    return integration;
+  };
+  for (const integration of initial) register(integration);
+  return {
+    register,
+    get: (tool) => integrations.get(tool) || null,
+    list: () => [...integrations.values()],
+  };
+}
+
+const defaultRegistry = createQuotaIntegrationRegistry([
+  { tool: "kimi-code", quotaProvider: "kimi", capabilities: { windows: ["session", "weekly"], estimation: true } },
+  { tool: "codex", quotaProvider: "openai", capabilities: { windows: ["session", "weekly"], estimation: true } },
+]);
 
 function normalizeQuotaTool(value) {
   const tool = String(value || "").trim();
-  return Object.hasOwn(TOOL_TO_QUOTA_PROVIDER, tool) ? tool : null;
+  return defaultRegistry.get(tool) ? tool : null;
 }
 
 function quotaProviderForTool(tool) {
-  return TOOL_TO_QUOTA_PROVIDER[normalizeQuotaTool(tool)] || null;
+  return defaultRegistry.get(normalizeQuotaTool(tool))?.quotaProvider || null;
 }
 
 function toolForQuotaProvider(quotaProvider) {
-  return Object.keys(TOOL_TO_QUOTA_PROVIDER).find((tool) => TOOL_TO_QUOTA_PROVIDER[tool] === quotaProvider) || null;
+  return defaultRegistry.list().find((integration) => integration.quotaProvider === quotaProvider)?.tool || null;
 }
 
 function requestError(code, message) {
@@ -35,4 +56,21 @@ function resolveQuotaTool({ tool, provider, defaultTool = "kimi-code" } = {}) {
   return normalizedTool || legacyTool || defaultTool;
 }
 
-module.exports = { normalizeQuotaTool, quotaProviderForTool, toolForQuotaProvider, resolveQuotaTool };
+function resolveQuotaAccount({ accountKey, accounts = [] } = {}) {
+  const available = [...new Set(accounts.filter(Boolean))];
+  if (accountKey) {
+    if (available.length && !available.includes(accountKey)) throw requestError("account_unavailable", `Quota account is unavailable: ${accountKey}`);
+    return accountKey;
+  }
+  if (available.length > 1) throw requestError("account_required", "accountKey is required when multiple quota accounts are available");
+  return available[0] || null;
+}
+
+module.exports = {
+  createQuotaIntegrationRegistry,
+  normalizeQuotaTool,
+  quotaProviderForTool,
+  toolForQuotaProvider,
+  resolveQuotaTool,
+  resolveQuotaAccount,
+};

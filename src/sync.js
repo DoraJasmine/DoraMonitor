@@ -115,6 +115,19 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [])
   return summary;
 }
 
+function normalizePeerSummary(summary) {
+  if (!summary || !Array.isArray(summary.quotaSamples)) return summary;
+  const quotaSamples = [];
+  for (const sample of summary.quotaSamples) {
+    try {
+      quotaSamples.push(normalizeQuotaRecord(sample, { includeLegacy: true, strict: true }));
+    } catch {
+      // A conflicting sample is isolated without rejecting the whole peer summary.
+    }
+  }
+  return { ...summary, quotaSamples };
+}
+
 function quotaUsageRecords(summary) {
   const device = String(summary && summary.device || "peer");
   return (Array.isArray(summary && summary.quotaUsage) ? summary.quotaUsage : []).map((b) => ({
@@ -330,7 +343,7 @@ function listPeerSummariesViaSsh(cfg) {
       try {
         execFileSync(scp, [...sshBaseArgs(sshCfg), `${host}:${remotePath}`, localPath], { timeout: 60000 });
         const data = JSON.parse(fs.readFileSync(localPath, "utf8"));
-        if (data && typeof data === "object" && data.days) peers.push(data);
+        if (data && typeof data === "object" && data.days) peers.push(normalizePeerSummary(data));
       } catch {
         // one broken peer file must not break the rest
       }
@@ -396,7 +409,7 @@ async function listPeerSummariesViaWebdav(cfg) {
     if (get.status !== 200) continue;
     try {
       const data = JSON.parse(get.text);
-      if (data && data.days) peers.push(data);
+      if (data && data.days) peers.push(normalizePeerSummary(data));
     } catch {
       // skip broken peer file
     }
@@ -432,7 +445,7 @@ function loadCachedPeers() {
       if (!name.endsWith(".json")) continue;
       try {
         const data = JSON.parse(fs.readFileSync(path.join(cacheDir(), name), "utf8"));
-        if (data && data.days) peers.push(data);
+        if (data && data.days) peers.push(normalizePeerSummary(data));
       } catch {
         // skip broken cache file
       }
@@ -535,6 +548,7 @@ function syncEnabled(settings) {
 
 module.exports = {
   buildSummary,
+  normalizePeerSummary,
   summaryToRecords,
   quotaUsageRecords,
   quotaSamplesForSync,

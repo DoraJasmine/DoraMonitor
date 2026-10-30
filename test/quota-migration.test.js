@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 const { migrateQuotaStorage, restoreQuotaBackup } = require("../src/quota-migration");
 const { readSamples, appendSamples } = require("../src/quota-estimator-store");
-const { buildSummary, quotaSamplesForSync } = require("../src/sync");
+const { buildSummary, quotaSamplesForSync, normalizePeerSummary } = require("../src/sync");
 
 function tmpRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "dora-quota-migration-"));
@@ -137,4 +137,15 @@ test("a tampered backup is rejected before restoring any files", () => {
   fs.appendFileSync(path.join(result.backup, "samples.jsonl"), "tampered");
   assert.throws(() => restoreQuotaBackup(result.backup, root), (error) => error.code === "backup_invalid");
   assert.equal(fs.readFileSync(path.join(root, "state.json"), "utf8"), current);
+});
+
+test("peer codec isolates conflicting samples without dropping valid accounts", () => {
+  const valid = { version: 2, quotaProvider: "kimi", accountKey: "kimi:work", window: "session", sampledAt: "2026-10-30T00:00:00Z", usedPercent: 20 };
+  const conflict = { provider: "kimi", quotaProvider: "openai", accountKey: "kimi:default", window: "session", sampledAt: "2026-10-30T00:00:00Z", usedPercent: 30 };
+  const summary = normalizePeerSummary({ version: 2, days: {}, quotaSamples: [valid, conflict] });
+  assert.equal(summary.quotaSamples.length, 1);
+  assert.equal(summary.quotaSamples[0].accountKey, "kimi:work");
+  assert.equal(summary.quotaSamples[0].provider, "kimi");
+  const legacy = { version: 1, days: {} };
+  assert.equal(normalizePeerSummary(legacy), legacy);
 });

@@ -8,7 +8,7 @@ const { getCapacityForProvider, getCapacityHistory, getQuotaSampleHistory, peerC
 const { startCalibration, finishCalibration, cancelCalibration, listCalibrations } = require("./quota-calibration");
 const { loadSettings } = require("./settings");
 const { syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
-const { quotaProviderForTool } = require("./quota-tool");
+const { quotaProviderForTool, resolveQuotaAccount } = require("./quota-tool");
 const { resolveKimiHome } = require("./paths");
 
 function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) {
@@ -41,9 +41,10 @@ async function loadToolQuota(tool, cliHome, force = false) {
   return { quota, accountKey: quota.accountKey || "kimi:default", collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
 }
 
-async function getToolQuota({ tool, cliHome, force = false, scope, root }) {
+async function getToolQuota({ tool, cliHome, force = false, scope, root, accountKey: requestedAccountKey }) {
   const quotaProvider = quotaProviderForTool(tool);
-  const { quota, accountKey, collected } = await loadToolQuota(tool, cliHome, force);
+  const { quota, accountKey: loadedAccountKey, collected } = await loadToolQuota(tool, cliHome, force);
+  const accountKey = resolveQuotaAccount({ accountKey: requestedAccountKey, accounts: [loadedAccountKey] });
   const settings = loadSettings();
   const usageScope = quotaProvider === "openai"
     ? ["all-clients", "codex-only"].includes(scope)
@@ -97,13 +98,14 @@ async function runToolCalibration({ tool, body, cliHome, root }) {
     const calibration = cancelCalibration({ provider: quotaProvider, accountKey, usageScope, window, root });
     return { ok: true, tool, calibration };
   }
-  const { quota, accountKey, collected, peers } = await loadToolQuota(tool, cliHome, true);
+  const { quota, accountKey: loadedAccountKey, collected, peers } = await loadToolQuota(tool, cliHome, true);
   if (!quota.available) {
     const error = new Error(quota.reason || "Quota unavailable");
     error.code = "quota_unavailable";
     error.status = 409;
     throw error;
   }
+  const accountKey = resolveQuotaAccount({ accountKey: body.accountKey, accounts: [loadedAccountKey] });
   const options = { provider: quotaProvider, accountKey, usageScope, window, quota, root };
   const records = [...(collected || collect()).records, ...peers.flatMap(quotaUsageRecords)];
   const isComplete = (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now());

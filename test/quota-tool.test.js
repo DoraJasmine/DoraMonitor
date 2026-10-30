@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeQuotaTool, quotaProviderForTool, toolForQuotaProvider, resolveQuotaTool } = require("../src/quota-tool");
+const { createQuotaIntegrationRegistry, normalizeQuotaTool, quotaProviderForTool, toolForQuotaProvider, resolveQuotaTool, resolveQuotaAccount } = require("../src/quota-tool");
 
 test("quota tool mapping is explicit in both directions", () => {
   assert.equal(normalizeQuotaTool("kimi-code"), "kimi-code");
@@ -61,4 +61,21 @@ test("HTTP quota routes reject unknown and conflicting identities before reading
   });
   assert.equal(calibration.status, 400);
   assert.equal((await calibration.json()).error, "conflicting_tool_provider");
+});
+
+test("a future quota integration registers without changing existing tools", () => {
+  const registry = createQuotaIntegrationRegistry();
+  registry.register({ tool: "zcode", quotaProvider: "zcode", capabilities: { windows: ["daily"], estimation: false } });
+  assert.equal(registry.get("zcode").quotaProvider, "zcode");
+  assert.deepEqual(registry.get("zcode").capabilities.windows, ["daily"]);
+  assert.equal(registry.get("kimi-code"), null);
+  assert.throws(() => registry.register({ tool: "zcode", quotaProvider: "other", capabilities: {} }), /Duplicate/);
+});
+
+test("account resolution isolates multiple accounts and never guesses", () => {
+  const accounts = ["kimi:default", "kimi:work"];
+  assert.equal(resolveQuotaAccount({ accountKey: "kimi:work", accounts }), "kimi:work");
+  assert.throws(() => resolveQuotaAccount({ accounts }), (error) => error.code === "account_required");
+  assert.throws(() => resolveQuotaAccount({ accountKey: "kimi:other", accounts }), (error) => error.code === "account_unavailable");
+  assert.equal(resolveQuotaAccount({ accounts: ["kimi:default"] }), "kimi:default");
 });
