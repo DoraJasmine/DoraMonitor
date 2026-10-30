@@ -19,7 +19,7 @@ DoraMonitor is a local, privacy-first dashboard for AI coding tools. It combines
 | Claude Code | `~/.claude/projects/**/*.jsonl` | Tokens and cost |
 | Oh My Pi (omp) | `~/.omp/agent/sessions/**` (legacy `~/.pi/agent`) | Tokens and cost |
 | Gemini CLI | Gemini settings and OpenTelemetry export | Tokens and tool events |
-| ZCode | `~/.zcode/cli/db/db.sqlite` | Tokens |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | Tokens, GLM Coding Plan 5h/weekly quota |
 | QoderCN IDE | QoderCN `local.db` | Tokens |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
 | dsh | `~/.dsh/sessions/**` | Tokens and cost |

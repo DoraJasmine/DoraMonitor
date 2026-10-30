@@ -12,7 +12,8 @@ test("quota tool mapping is explicit in both directions", () => {
   assert.equal(quotaProviderForTool("codex"), "openai");
   assert.equal(toolForQuotaProvider("kimi"), "kimi-code");
   assert.equal(toolForQuotaProvider("openai"), "codex");
-  assert.equal(quotaProviderForTool("zcode"), null);
+  assert.equal(quotaProviderForTool("zcode"), "zcode");
+  assert.equal(quotaProviderForTool("unknown"), null);
 });
 
 test("new tool and legacy provider requests resolve to the same tool", () => {
@@ -31,8 +32,8 @@ test("conflicting tool and legacy provider is rejected", () => {
 });
 
 test("unknown tools never fall back to Kimi", () => {
-  assert.throws(() => resolveQuotaTool({ tool: "zcode" }), /Unsupported quota tool/);
-  assert.throws(() => resolveQuotaTool({ provider: "zcode" }), /Unsupported quota provider/);
+  assert.throws(() => resolveQuotaTool({ tool: "unknown" }), /Unsupported quota tool/);
+  assert.throws(() => resolveQuotaTool({ provider: "unknown" }), /Unsupported quota provider/);
 });
 
 test("HTTP quota routes reject unknown and conflicting identities before reading data", async (context) => {
@@ -45,9 +46,9 @@ test("HTTP quota routes reject unknown and conflicting identities before reading
   context.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const cases = [
-    ["/api/quota?tool=zcode", "unsupported_tool"],
+    ["/api/quota?tool=unknown", "unsupported_tool"],
     ["/api/quota/capacity/history?tool=codex&provider=kimi", "conflicting_tool_provider"],
-    ["/api/quota/samples?tool=zcode", "unsupported_tool"],
+    ["/api/quota/samples?tool=unknown", "unsupported_tool"],
   ];
   for (const [path, code] of cases) {
     const response = await fetch(`${base}${path}`);

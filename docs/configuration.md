@@ -4,6 +4,10 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
 以及它**代为管理**的 Kimi Code `config.toml`。本文逐一说明全部字段、默认值与
 校验规则。
 
+ZCode 官方额度不从私有 OAuth 读取。需要时显式设置 `BIGMODEL_API_KEY`（国内端点，优先）或
+`Z_AI_API_KEY`（国际端点）；Key 只用于官方额度请求，账号 ID 仅保存不可逆哈希。未设置时 ZCode
+额度卡片显示无凭据，不影响 Token 用量统计。
+
 ## 1. 自身设置：`~/.doramonitor/config.json`
 
 - 读写失败一律静默回退默认值（坏配置绝不弄崩看板）。

@@ -829,6 +829,19 @@ export default function App() {
         </motion.div>
       ) : null}
 
+      {(tool === "all" || tool === "zcode") &&
+      availableTools.some((x) => x.id === "zcode") ? (
+        <motion.div
+          className="mb-5"
+          custom={3}
+          initial={reduceMotion || entered.current ? false : "hidden"}
+          animate="show"
+          variants={fadeUp}
+        >
+          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} tool="zcode" />
+        </motion.div>
+      ) : null}
+
       {/* Heatmap */}
       <motion.div
         custom={3}

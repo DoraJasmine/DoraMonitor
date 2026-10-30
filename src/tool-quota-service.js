@@ -8,7 +8,8 @@ const { getCapacityForProvider, getCapacityHistory, getQuotaSampleHistory, peerC
 const { startCalibration, finishCalibration, cancelCalibration, listCalibrations } = require("./quota-calibration");
 const { loadSettings } = require("./settings");
 const { syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
-const { quotaProviderForTool, resolveQuotaAccount } = require("./quota-tool");
+const { quotaProviderForTool, resolveQuotaAccount, getQuotaIntegration } = require("./quota-tool");
+const { fetchZcodeQuota } = require("./zcode-quota");
 const { resolveKimiHome } = require("./paths");
 
 function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) {
@@ -22,6 +23,11 @@ function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool,
 
 async function loadToolQuota(tool, cliHome, force = false) {
   const quotaProvider = quotaProviderForTool(tool);
+  if (tool === "zcode") {
+    const quota = await fetchZcodeQuota({ force });
+    persistQuota(quota, quotaProvider, "zcode-api");
+    return { quota, accountKey: quota.accountKey, collected: null, peers: [] };
+  }
   if (quotaProvider === "openai") {
     const { getCodexQuota } = require("./codex-quota");
     const collected = collect({ force });
@@ -45,6 +51,7 @@ async function getToolQuota({ tool, cliHome, force = false, scope, root, account
   const quotaProvider = quotaProviderForTool(tool);
   const { quota, accountKey: loadedAccountKey, collected } = await loadToolQuota(tool, cliHome, force);
   const accountKey = resolveQuotaAccount({ accountKey: requestedAccountKey, accounts: [loadedAccountKey] });
+  if (!getQuotaIntegration(tool)?.capabilities.estimation) return { ...quota, accountKey, tool, capacity: null };
   const settings = loadSettings();
   const usageScope = quotaProvider === "openai"
     ? ["all-clients", "codex-only"].includes(scope)
@@ -85,6 +92,12 @@ function getToolSampleHistory({ tool, accountKey, window, changesOnly, limit, of
 
 async function runToolCalibration({ tool, body, cliHome, root }) {
   const quotaProvider = quotaProviderForTool(tool);
+  if (!getQuotaIntegration(tool)?.capabilities.estimation) {
+    const error = new Error(`Quota estimation is not supported for ${tool}`);
+    error.code = "calibration_unsupported";
+    error.status = 409;
+    throw error;
+  }
   const window = ["session", "weekly"].includes(body.window) ? body.window : null;
   const usageScope = ["all-clients", "kimi-code-only", "codex-only"].includes(body.scope) ? body.scope : "all-clients";
   if (!window || !["start", "end", "cancel"].includes(body.action)) {

@@ -10,6 +10,7 @@ export default function QuotaDetailsPage({ t, locale }) {
       </div>
       <QuotaCard t={t} locale={locale} detail />
       <QuotaCard t={t} locale={locale} tool="codex" detail />
+      <QuotaCard t={t} locale={locale} tool="zcode" detail />
     </div>
   );
 }

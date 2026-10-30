@@ -18,7 +18,7 @@
 | Claude Code | `~/.claude/projects/**/*.jsonl` | Token、费用 |
 | Oh My Pi（omp） | `~/.omp/agent/sessions/**`（兼容旧 `~/.pi/agent`） | Token、费用 |
 | Gemini CLI | Gemini 设置与 OpenTelemetry 导出 | Token、工具事件 |
-| ZCode | `~/.zcode/cli/db/db.sqlite` | Token |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | Token、GLM Coding Plan 5h/周额度 |
 | QoderCN IDE | QoderCN `local.db` | Token |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
 | dsh | `~/.dsh/sessions/**` | Token、费用 |

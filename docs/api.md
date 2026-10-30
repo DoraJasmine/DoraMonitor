@@ -143,7 +143,7 @@
 
 ## 7. GET /api/quota 与等效容量历史
 
-参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）；`accountKey` 可选，必须与当前
+参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex` / `zcode`）；`accountKey` 可选，必须与当前
 账号匹配，多账号场景缺失时返回 `account_required`，不匹配时返回 `account_unavailable`。Kimi 支持
 `scope=all-clients|kimi-code-only`，Codex 支持 `scope=all-clients|codex-only`；未传时分别读取
 `quotaEstimation.kimiCodeOnly` / `quotaEstimation.codexOnly`。
@@ -152,6 +152,8 @@
   凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。60s 内存缓存。
 - `tool=codex`：读取本地 rollout、同步缓存及主动轮询的 `rate_limits` 快照，采用
   `fetchedAt` 最新的一份。主动轮询使用本机 Codex 登录态请求 `wham/usage`，60s 节流。
+- `tool=zcode`：使用显式 `BIGMODEL_API_KEY`（国内端点优先）或 `Z_AI_API_KEY` 读取 GLM Coding Plan
+  官方 5h/周额度，账号 ID 为 Key 的不可逆哈希；`capacity=null`，不启用估算和手动校准。
 - 无数据：`200 { "available": false, "reason": "no_data", "windows": [], "tool": "codex" }`
 - 正常：`{ "fetchedAt": 0, "tool": "kimi-code", "available": true,
   "windows": [ { "kind": "session|weekly", "label": "5-hour", "usedPercent": 42.0,
