@@ -127,3 +127,26 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 - SSH 走你的既有凭据体系（免密公钥）；WebDAV 密码存于本机 `config.json`
   （明文，受文件系统权限保护——与 kimi-code 自身存储凭据的方式同级）。
 - 上传前 `deviceName` 做清洗（非法字符 → `_`），防止路径拼接类问题。
+
+## 9. 通信拓扑与 Windows/WSL
+
+### 9.1 是否需要中转服务器
+
+当前版本**需要中转存储，但不是设备直连，也不需要部署 DoraMonitor 中心计算服务**：
+
+- SSH 模式：使用你可访问的 SSH 服务器上的目录，上传/下载通过 SCP；
+- WebDAV 模式：使用支持 WebDAV 的网盘或服务器目录；
+- 每台设备上传自己的 `<deviceName>.json`，再下载其他设备摘要到本地 `remote-cache/`；
+- 看板合并和额度估算都在本机执行，中转载体不计算用量；
+- 普通看板请求不访问中转，只读本地缓存，因此中转暂时不可用不会清空已有页面。
+
+设备之间不直接通信，不需要互相开放端口，也不是 P2P。
+
+### 9.2 不同机器与同一机器 Windows/WSL
+
+- 不同 Windows/Linux/macOS 机器：双方都能访问同一 SSH 或 WebDAV 中转目录即可；
+- 同一机器 Windows 与 WSL：同样可以使用上述中转，但两端是独立设备身份；
+- 必须为 Windows 和 WSL 配置不同的 `sync.deviceName`，例如 `desktop-win` 与 `desktop-wsl`；若都使用相同 hostname，会争用并覆盖同一个远端 `<deviceName>.json`；
+- 两端还应使用各自实际产生的数据与独立 local/peer 视角，不能把同一设备文件重复上传成两个来源。
+
+未来计划的本地目录传输和账号隔离增强见[未来功能计划](./future-roadmap.md)。

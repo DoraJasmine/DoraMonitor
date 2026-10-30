@@ -107,7 +107,9 @@ doramonitor --help                查看全部参数
 ## 文档
 
 - [文档中心](./docs/README.md)
-- [架构](./docs/architecture.md)
+- [项目需求（PRD）](./docs/product-requirements.md)
+- [架构重构方案](./docs/architecture-refactor-plan.md)与[数据迁移方案](./docs/data-migration-plan.md)
+- [当前架构](./docs/architecture.md)
 - [工具数据源](./docs/tools.md)
 - [配置](./docs/configuration.md)
 - [计价](./docs/pricing.md)
