@@ -3,7 +3,7 @@
 const { collect } = require("./collect");
 const { loadSettings } = require("./settings");
 const { loadCachedPeers, quotaUsageRecords, syncEnabled } = require("./sync");
-const { estimateCapacity, buildIntervals } = require("./quota-estimator");
+const { estimateCapacity, buildIntervals, ALGORITHM_VERSION } = require("./quota-estimator");
 const { readSamples, readSamplePage, getOrComputeCapacity, readHistoryPage } = require("./quota-estimator-store");
 const { normalizeQuotaRecord } = require("./quota-schema");
 
@@ -50,6 +50,7 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
   const resolvedAccount = accountKey || `${provider}:default`;
   return getOrComputeCapacity({
     provider,
+    algorithmVersion: ALGORITHM_VERSION,
     accountKey: resolvedAccount,
     usageScope,
     force,

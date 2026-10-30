@@ -2,7 +2,6 @@
 
 const { classifyQuotaModel, belongsToQuota } = require("./quota-models");
 const { costForUsage } = require("./pricing");
-const { loadSettings } = require("./settings");
 
 const CACHE_TARGETS = [0.85, 0.9, 0.95, 0.98];
 // Bump whenever estimation logic changes: cache validation rejects results
@@ -419,7 +418,7 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
   const confidence = confidenceFor(sampleCount, percentSpan, coverage, residual);
   const dataRange = { start: new Date(Math.min(...complete.map((i) => i.start))).toISOString(), end: new Date(Math.max(...complete.map((i) => i.end))).toISOString() };
   const monetary = costCapacity(complete, now);
-  const resolvedSettings = settings || loadSettings();
+  const resolvedSettings = settings;
 
   const targets = CACHE_TARGETS.map((cacheHitRate) => {
     const common = {

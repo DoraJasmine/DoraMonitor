@@ -164,7 +164,7 @@ test("an old algorithm version cannot reuse a fresh persisted cache", () => {
   const { ALGORITHM_VERSION } = require("../src/quota-estimator");
   const root = tmpRoot();
   const now = Date.now();
-  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" } };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" }, algorithmVersion: ALGORITHM_VERSION };
   let calls = 0;
   getOrComputeCapacity({ ...options, now, compute: () => ({ ...capacity(now, 1_000_000), algorithmVersion: ALGORITHM_VERSION - 1 }) });
   const result = getOrComputeCapacity({ ...options, now: now + 1000, compute: () => { calls += 1; return capacity(now + 1000, 1_100_000); } });

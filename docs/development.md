@@ -36,8 +36,10 @@ src/tools/          工具采集器与注册表
 src/collect.js     增量采集与快照缓存
 src/aggregate.js   时间范围、模型、趋势与热力图
 src/pricing.js     官方价、自定义价与 CNY 账本
-src/quota-*.js     额度采样、估算、校准、历史与同步覆盖
-src/server.js      HTTP API 与静态托管
+src/quota-*.js     额度采样、估算、校准、存储 schema 与迁移
+src/quota-tool.js  公开 tool 与内部额度账户族的集中映射
+src/tool-quota-service.js 额度读取、历史、校准的应用编排
+src/server.js      HTTP 参数、DTO、错误映射与静态托管
 web/src/           React SPA
 test/              Node 测试
 scripts/           Windows 安装、静默启动与自启

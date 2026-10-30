@@ -7,9 +7,6 @@ const { quotaProviderOf, normalizeQuotaRecord, normalizeQuotaState } = require("
 const { ensureQuotaStorageMigrated } = require("./quota-migration");
 
 const DEFAULT_ROOT = path.join(os.homedir(), ".doramonitor", "quota-estimator");
-// Cache format version: keeps stale results from an older algorithm out of the
-// 6h cache after a logic change (see ALGORITHM_VERSION in quota-estimator.js).
-const { ALGORITHM_VERSION } = require("./quota-estimator");
 const SAMPLE_RETENTION_MS = 90 * 86_400_000;
 const RECALCULATE_MS = 6 * 3_600_000;
 const HISTORY_LIMIT = 30;
@@ -146,8 +143,8 @@ function readSamplePage(query, root = DEFAULT_ROOT) {
   return { samples: rows.slice(offset, offset + limit), total: rows.length, limit, offset };
 }
 
-function capacityKey(capacity) {
-  return [quotaProviderOf(capacity), capacity.accountKey || "default", capacity.usageScope, ALGORITHM_VERSION].join("\0");
+function capacityKey(capacity, algorithmVersion) {
+  return [quotaProviderOf(capacity), capacity.accountKey || "default", capacity.usageScope, algorithmVersion].join("\0");
 }
 
 function estimateKey(target) {
@@ -225,18 +222,18 @@ function appendHistory(entries, root = DEFAULT_ROOT) {
   fs.appendFileSync(historyPath(root), entries.map((entry) => JSON.stringify(normalizeQuotaRecord(entry, { strict: true }))).join("\n") + "\n", "utf8");
 }
 
-function getOrComputeCapacity({ provider, accountKey, usageScope, force = false, compute, root = DEFAULT_ROOT, now = Date.now(), calculation = null }) {
+function getOrComputeCapacity({ provider, accountKey, usageScope, force = false, compute, root = DEFAULT_ROOT, now = Date.now(), calculation = null, algorithmVersion = 1 }) {
   const state = loadState(root);
-  const key = capacityKey({ provider, accountKey, usageScope });
+  const key = capacityKey({ provider, accountKey, usageScope }, algorithmVersion);
   const cached = state.cache[key];
   const cacheAge = cached ? now - Date.parse(cached.generatedAt || "") : Infinity;
   const hasSamples = cached && [...(cached.targets || []), ...(cached.longTermTargets || [])].some((target) => Number.isFinite(target.fullWindowTokens));
-  if (!force && cached && cached.algorithmVersion === ALGORITHM_VERSION && cacheAge >= 0 && cacheAge < (hasSamples ? RECALCULATE_MS : 60_000)) {
+  if (!force && cached && cached.algorithmVersion === algorithmVersion && cacheAge >= 0 && cacheAge < (hasSamples ? RECALCULATE_MS : 60_000)) {
     return withMaxima(cached, state);
   }
 
   const computed = compute();
-  const capacity = { ...computed, algorithmVersion: computed.algorithmVersion || ALGORITHM_VERSION };
+  const capacity = { ...computed, algorithmVersion: computed.algorithmVersion || algorithmVersion };
   const next = loadState(root);
   const previousByTarget = new Map();
   if (calculation) {
