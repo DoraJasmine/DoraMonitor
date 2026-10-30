@@ -5,6 +5,7 @@ const { loadSettings } = require("./settings");
 const { loadCachedPeers, quotaUsageRecords, syncEnabled } = require("./sync");
 const { estimateCapacity, buildIntervals } = require("./quota-estimator");
 const { readSamples, readSamplePage, getOrComputeCapacity, readHistoryPage } = require("./quota-estimator-store");
+const { normalizeQuotaRecord } = require("./quota-schema");
 
 function peerCoverage(peers, start, end, enabled, now) {
   if (!enabled || !peers.length) return "complete";
@@ -41,7 +42,8 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
   for (const sample of readSamples(root, now)) samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
   for (const peer of peerList) {
     records.push(...quotaUsageRecords(peer));
-    for (const sample of peer.quotaSamples || []) {
+    for (const rawSample of peer.quotaSamples || []) {
+      const sample = normalizeQuotaRecord(rawSample, { includeLegacy: true });
       samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
     }
   }
@@ -80,7 +82,8 @@ function getCapacityHistory(query, root, { collected, peers } = {}) {
     samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
   }
   for (const peer of peerList) {
-    for (const sample of peer.quotaSamples || []) {
+    for (const rawSample of peer.quotaSamples || []) {
+      const sample = normalizeQuotaRecord(rawSample, { includeLegacy: true });
       samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
     }
   }

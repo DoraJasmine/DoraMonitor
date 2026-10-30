@@ -27,7 +27,7 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "device": "windows-pc",
   "generatedAt": 1761000000000,
   "updatedRange": { "start": "2026-10-01", "end": "2026-10-24" },
@@ -53,7 +53,7 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 
 要点：
 
-- `SUMMARY_VERSION = 1`；`buildSummary(device, records, codexQuota)` 生成。
+- `SUMMARY_VERSION = 2`；`buildSummary(device, records, codexQuota)` 生成。旧 v1 摘要仍可读取。
 - `kind === "event"` 的记录（tool.call 事件）**不进摘要**。
 - 桶内累加四类 token（i/o/cr/cc）、请求数、credits。
 - `codexQuota` 是可选的最新 Codex 额度快照；旧版本对端会忽略该字段。
@@ -61,7 +61,8 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 - `quotaUsage` 是按 `device + 分钟 + 工具 + 模型` 聚合的四类 Token 桶，另带 `c` 字段保存
   刊例价等效人民币，保证跨设备价值口径一致；`usageWaterMark` 表示本端用量覆盖到哪个时间，
   `quotaSamples` 携带近 35 天双窗口百分比变化点和手动锚点，避免每次同步重复上传全部
-  90 天原始样本；本机原始采样频率与历史保留不受影响。
+  90 天原始样本；v2 同时携带 `quotaProvider` 与兼容 `provider`，读取时统一规范化；
+  本机原始采样频率与历史保留不受影响。
   三者只用于等效额度测算，不改变原有日汇总口径；旧对端没有这些字段时测算会降级。
 
 ## 3. 对端记录还原（summaryToRecords）

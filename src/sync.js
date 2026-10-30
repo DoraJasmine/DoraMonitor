@@ -4,6 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { normalizeQuotaRecord } = require("./quota-schema");
 
 /**
  * Cross-device usage sync.
@@ -23,7 +24,7 @@ const { execFileSync } = require("child_process");
  * working offline; a failed sync degrades to cached data with a status note.
  */
 
-const SUMMARY_VERSION = 1;
+const SUMMARY_VERSION = 2;
 const REMOTE_DIR = "ai-usage-monitor"; // keep: remote sync dir shared with other devices
 const CACHE_DIR = path.join(".doramonitor", "remote-cache");
 
@@ -66,7 +67,7 @@ function buildQuotaUsage(records) {
 function quotaSamplesForSync(samples, now = Date.now()) {
   const cutoff = now - 35 * 86_400_000;
   const previous = new Map();
-  return (samples || []).filter((sample) => {
+  return (samples || []).map((sample) => normalizeQuotaRecord(sample, { includeLegacy: true })).filter((sample) => {
     const time = Date.parse(sample.sampledAt || "");
     if (!Number.isFinite(time) || time < cutoff) return false;
     if (sample.source === "manual-calibration") return true;

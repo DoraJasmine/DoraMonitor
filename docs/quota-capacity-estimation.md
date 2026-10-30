@@ -10,14 +10,13 @@
 | 概念 | 取值 | 用在哪 | 代码/存储里的字段名 |
 | --- | --- | --- | --- |
 | **工具** (tool) | `kimi-code`、`codex`、`claude-code`、`omp`、`gemini`、`zcode`、`qoder-cn`、`qoder-cn-cli`、`dsh` | 页面页签、用量采集、`/api/tools`、`/api/summary` 的 `tool` 参数 | `tool` |
-| **配额账户族** (quota provider) | `kimi`、`openai` | 额度窗口归属、测算、样本/历史存储 | **`provider`** ⚠️ |
+| **配额账户族** (quota provider) | `kimi`、`openai` | 额度窗口归属、测算、样本/历史存储 | `quotaProvider`（v2）；`provider`（v1/兼容） |
 | **模型供应商** (model vendor) | `kimi`、`openai`、`qodercn`、`alibaba` 等 | 定价表、模型识别 | `modelProvider` |
 
-⚠️ **已知不足**：样本（`samples.jsonl`）、历史（`history.jsonl`）、测算状态里都把配额账户族叫
-`provider`，与页面按工具分类的说法不一致。这是历史命名；字段值永远是 `kimi`/`openai`
-（账户族），不是工具 id。改名会破坏已存数据的去重键，因此保留旧名，靠
-[src/quota-models.js](../src/quota-models.js) 头部的术语映射注释约束。
-三者的桥接关系：`openai` 账户族 ⇔ `codex` 工具；`kimi` 账户族 ⇔ `kimi-code` 工具
+公开 API 和前端统一使用 `tool`，映射集中在 [quota-tool.js](../src/quota-tool.js)。
+样本、历史和状态由 [quota-schema.js](../src/quota-schema.js) 双读规范化，[quota-migration.js](../src/quota-migration.js)
+自动备份并原子迁移为 v2；键字符串、历史数值和调度锚点保持不变。三者的桥接关系：
+`openai` 账户族 ⇔ `codex` 工具；`kimi` 账户族 ⇔ `kimi-code` 工具
 （但"全部客户端"范围下其他客户端的 Kimi/GPT 模型用量也计入）。
 
 ## 1. 数据来源

@@ -3,6 +3,8 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { quotaProviderOf, normalizeQuotaRecord, normalizeQuotaState } = require("./quota-schema");
+const { ensureQuotaStorageMigrated } = require("./quota-migration");
 
 const DEFAULT_ROOT = path.join(os.homedir(), ".doramonitor", "quota-estimator");
 // Cache format version: keeps stale results from an older algorithm out of the
@@ -25,31 +27,34 @@ function historyPath(root = DEFAULT_ROOT) {
 }
 
 function emptyState() {
-  return { version: 1, cache: {}, estimates: [], maxima: {}, checkpoints: {}, calibrations: {} };
+  return { version: 2, cache: {}, estimates: [], maxima: {}, checkpoints: {}, calibrations: {} };
 }
 
 function loadState(root = DEFAULT_ROOT) {
+  ensureQuotaStorageMigrated(root);
+  let state;
   try {
-    const state = JSON.parse(fs.readFileSync(statePath(root), "utf8"));
-    return {
-      ...emptyState(),
-      ...state,
-      cache: state.cache || {},
-      estimates: Array.isArray(state.estimates) ? state.estimates : [],
-      maxima: state.maxima || {},
-      checkpoints: state.checkpoints || {},
-      calibrations: state.calibrations || {},
-    };
+    state = JSON.parse(fs.readFileSync(statePath(root), "utf8"));
   } catch {
     return emptyState();
   }
+  return normalizeQuotaState({
+    ...emptyState(),
+    ...state,
+    cache: state.cache || {},
+    estimates: Array.isArray(state.estimates) ? state.estimates : [],
+    maxima: state.maxima || {},
+    checkpoints: state.checkpoints || {},
+    calibrations: state.calibrations || {},
+  }, { includeLegacy: true, strict: true });
 }
 
 function saveState(state, root = DEFAULT_ROOT) {
+  ensureQuotaStorageMigrated(root, { write: true });
   fs.mkdirSync(root, { recursive: true });
   const file = statePath(root);
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 1), "utf8");
+  fs.writeFileSync(tmp, JSON.stringify(normalizeQuotaState(state, { strict: true }), null, 1), "utf8");
   fs.renameSync(tmp, file);
 }
 
@@ -60,8 +65,8 @@ function samplesFromQuota(quota, provider, source, sampledAt = Date.now()) {
   return quota.windows
     .filter((w) => w && Number.isFinite(Number(w.usedPercent)) && ["session", "weekly"].includes(w.kind))
     .map((w) => ({
-      version: 1,
-      provider,
+      version: 2,
+      quotaProvider: provider,
       accountKey,
       window: w.kind,
       sampledAt: time,
@@ -72,13 +77,16 @@ function samplesFromQuota(quota, provider, source, sampledAt = Date.now()) {
 }
 
 function sampleKey(sample) {
-  return [sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0");
+  return [quotaProviderOf(sample), sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0");
 }
 
 const sampleCompactionAt = new Map();
 
 function appendSamples(samples, root = DEFAULT_ROOT, now = Date.now()) {
-  const valid = (samples || []).filter((s) => s && s.provider && s.accountKey && s.window && Number.isFinite(Date.parse(s.sampledAt || "")));
+  ensureQuotaStorageMigrated(root, { write: true });
+  const valid = (samples || [])
+    .map((sample) => normalizeQuotaRecord(sample, { strict: true }))
+    .filter((s) => s && quotaProviderOf(s) && s.accountKey && s.window && Number.isFinite(Date.parse(s.sampledAt || "")));
   if (!valid.length) return 0;
   fs.mkdirSync(root, { recursive: true });
   const file = samplesPath(root);
@@ -86,7 +94,7 @@ function appendSamples(samples, root = DEFAULT_ROOT, now = Date.now()) {
   const previousCompaction = sampleCompactionAt.get(root) || 0;
   if (now - previousCompaction >= 86_400_000) {
     sampleCompactionAt.set(root, now);
-    const retained = readSamples(root, now);
+    const retained = readSamples(root, now).map((sample) => normalizeQuotaRecord(sample));
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, retained.map((sample) => JSON.stringify(sample)).join("\n") + (retained.length ? "\n" : ""), "utf8");
     fs.renameSync(tmp, file);
@@ -95,6 +103,7 @@ function appendSamples(samples, root = DEFAULT_ROOT, now = Date.now()) {
 }
 
 function readSamples(root = DEFAULT_ROOT, now = Date.now()) {
+  ensureQuotaStorageMigrated(root);
   const samples = new Map();
   let text;
   try {
@@ -105,7 +114,7 @@ function readSamples(root = DEFAULT_ROOT, now = Date.now()) {
   for (const line of text.split(/\r?\n/)) {
     if (!line) continue;
     try {
-      const sample = JSON.parse(line);
+      const sample = normalizeQuotaRecord(JSON.parse(line), { includeLegacy: true });
       const time = Date.parse(sample.sampledAt || "");
       if (!Number.isFinite(time) || now - time > SAMPLE_RETENTION_MS) continue;
       samples.set(sampleKey(sample), sample);
@@ -138,11 +147,11 @@ function readSamplePage(query, root = DEFAULT_ROOT) {
 }
 
 function capacityKey(capacity) {
-  return [capacity.provider, capacity.accountKey || "default", capacity.usageScope, ALGORITHM_VERSION].join("\0");
+  return [quotaProviderOf(capacity), capacity.accountKey || "default", capacity.usageScope, ALGORITHM_VERSION].join("\0");
 }
 
 function estimateKey(target) {
-  return [target.provider, target.accountKey || "default", target.usageScope, target.estimateKind || "standard", target.window, target.cacheHitRate].join("\0");
+  return [quotaProviderOf(target), target.accountKey || "default", target.usageScope, target.estimateKind || "standard", target.window, target.cacheHitRate].join("\0");
 }
 
 function targetSignature(target) {
@@ -159,7 +168,7 @@ function withMaxima(capacity, state) {
 }
 
 function historyMatches(item, { provider, accountKey, usageScope, window, cacheHitRate, estimateKind }) {
-  return (!provider || item.provider === provider) &&
+  return (!provider || quotaProviderOf(item) === provider) &&
     (!accountKey || item.accountKey === accountKey) &&
     (!usageScope || item.usageScope === usageScope) &&
     (!window || item.window === window) &&
@@ -171,7 +180,8 @@ function readHistory(query = {}, root = DEFAULT_ROOT) {
   const rows = new Map();
   const add = (item) => {
     if (!item || !item.createdAt) return;
-    rows.set([estimateKey(item), item.createdAt, item.signature || ""].join("\0"), item);
+    const normalized = normalizeQuotaRecord(item, { includeLegacy: true });
+    rows.set([estimateKey(normalized), normalized.createdAt, normalized.signature || ""].join("\0"), normalized);
   };
   for (const item of loadState(root).estimates) add(item);
   let text;
@@ -210,8 +220,9 @@ function readHistoryPage(query, root = DEFAULT_ROOT) {
 
 function appendHistory(entries, root = DEFAULT_ROOT) {
   if (!entries.length) return;
+  ensureQuotaStorageMigrated(root, { write: true });
   fs.mkdirSync(root, { recursive: true });
-  fs.appendFileSync(historyPath(root), entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n", "utf8");
+  fs.appendFileSync(historyPath(root), entries.map((entry) => JSON.stringify(normalizeQuotaRecord(entry, { strict: true }))).join("\n") + "\n", "utf8");
 }
 
 function getOrComputeCapacity({ provider, accountKey, usageScope, force = false, compute, root = DEFAULT_ROOT, now = Date.now(), calculation = null }) {

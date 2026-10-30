@@ -1,6 +1,7 @@
 # DoraMonitor 数据兼容迁移方案
 
-> 状态：v1.0 设计草案，依据 [项目需求文档](./product-requirements.md) 与 [架构重构方案](./architecture-refactor-plan.md)。
+> 状态：核心迁移已实现，依据 [项目需求文档](./product-requirements.md) 与 [架构重构方案](./architecture-refactor-plan.md)。
+> 实现位于 `src/quota-schema.js`、`src/quota-migration.js` 和 `src/quota-estimator-store.js`；恢复入口为 `restoreQuotaBackup`。
 > 目标：把额度存储中的裸 `provider` 规范化为 `quotaProvider`，公开 API 统一为 `tool`，同时保证旧数据不丢失、历史不重复、调度连续、迁移可回滚。
 
 ## 1. 迁移原则与不变量
