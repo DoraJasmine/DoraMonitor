@@ -28,6 +28,7 @@ const { codexAccountKey } = require("./codex-quota");
 const { persistQuota, persistCodexEntry, ensureCodexBackfill, startQuotaSampler } = require("./quota-sampler");
 const { getCapacityForProvider, getCapacityHistory, getQuotaSampleHistory, peerCoverage } = require("./quota-capacity");
 const { startCalibration, finishCalibration, cancelCalibration, listCalibrations } = require("./quota-calibration");
+const { quotaProviderForTool, resolveQuotaTool } = require("./quota-tool");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
 const { runSync, peerRecordsCached, syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
 const { toolMeta } = require("./tools/base");
@@ -119,15 +120,16 @@ function getHome(queryHome, cliHome) {
   return resolveKimiHome(null);
 }
 
-async function loadProviderQuota(provider, cliHome, force = false) {
-  if (provider === "openai") {
+async function loadToolQuota(tool, cliHome, force = false) {
+  const quotaProvider = quotaProviderForTool(tool);
+  if (quotaProvider === "openai") {
     const { getCodexQuota } = require("./codex-quota");
     const collected = collect({ force });
     const entry = collected.byTool.get("codex");
     persistCodexEntry(entry);
     const localQuota = entry && entry.quota ? entry.quota : null;
     const apiQuota = entry && entry.home ? await getCodexQuota(entry.home, { force }) : null;
-    persistQuota(apiQuota, "openai", "wham");
+    persistQuota(apiQuota, quotaProvider, "wham");
     if (entry && entry.home) ensureCodexBackfill(entry.home);
     const peers = syncEnabled(loadSettings()) ? loadCachedPeers() : [];
     const quota = newestCodexQuota(localQuota, peers, apiQuota) || { available: false, reason: "no_data", windows: [] };
@@ -135,12 +137,12 @@ async function loadProviderQuota(provider, cliHome, force = false) {
     return { quota, accountKey, collected, peers };
   }
   const quota = await fetchQuota(getHome(null, cliHome), { force });
-  persistQuota(quota, "kimi", "kimi-api");
+  persistQuota(quota, quotaProvider, "kimi-api");
   return { quota, accountKey: quota.accountKey || "kimi:default", collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
 }
 
-function withCalibrations(capacity, provider, accountKey, usageScope) {
-  return { ...capacity, calibrations: listCalibrations({ provider, accountKey, usageScope }) };
+function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool) {
+  return { ...capacity, tool, calibrations: listCalibrations({ provider: quotaProvider, accountKey, usageScope }) };
 }
 
 /**
@@ -553,28 +555,29 @@ async function handleApi(req, res, url, cliHome) {
   if (url.pathname === "/api/quota/capacity/calibration" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      const provider = ["openai", "kimi"].includes(body.provider) ? body.provider : null;
+      const tool = resolveQuotaTool({ tool: body.tool, provider: body.provider });
+      const quotaProvider = quotaProviderForTool(tool);
       const window = ["session", "weekly"].includes(body.window) ? body.window : null;
       const usageScope = ["all-clients", "kimi-code-only", "codex-only"].includes(body.scope) ? body.scope : "all-clients";
-      if (!provider || !window || !["start", "end", "cancel"].includes(body.action)) {
-        return json(res, 400, { error: "invalid_calibration", message: "Invalid provider, window, or action" });
+      if (!window || !["start", "end", "cancel"].includes(body.action)) {
+        return json(res, 400, { error: "invalid_calibration", message: "Invalid tool, window, or action" });
       }
       if (body.action === "cancel") {
-        const accountKey = body.accountKey || `${provider}:default`;
-        const calibration = cancelCalibration({ provider, accountKey, usageScope, window });
-        return json(res, 200, { ok: true, calibration });
+        const accountKey = body.accountKey || `${quotaProvider}:default`;
+        const calibration = cancelCalibration({ provider: quotaProvider, accountKey, usageScope, window });
+        return json(res, 200, { ok: true, tool, calibration });
       }
-      const { quota, accountKey, collected, peers } = await loadProviderQuota(provider, cliHome, true);
+      const { quota, accountKey, collected, peers } = await loadToolQuota(tool, cliHome, true);
       if (!quota.available) return json(res, 409, { error: "quota_unavailable", message: quota.reason || "Quota unavailable" });
-      const options = { provider, accountKey, usageScope, window, quota };
+      const options = { provider: quotaProvider, accountKey, usageScope, window, quota };
       const records = [...(collected || collect()).records, ...peers.flatMap(quotaUsageRecords)];
       const isComplete = (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now());
       if (body.action === "start") {
         let previousCalibration = null;
-        if (listCalibrations({ provider, accountKey, usageScope }).some((item) => item.window === window)) {
+        if (listCalibrations({ provider: quotaProvider, accountKey, usageScope }).some((item) => item.window === window)) {
           previousCalibration = finishCalibration({ ...options, records, isComplete });
           getCapacityForProvider({
-            provider,
+            provider: quotaProvider,
             accountKey,
             usageScope,
             force: true,
@@ -583,29 +586,35 @@ async function handleApi(req, res, url, cliHome) {
           });
         }
         const calibration = startCalibration(options);
-        return json(res, 200, { ok: true, calibration, previousCalibration, accountKey });
+        return json(res, 200, { ok: true, tool, calibration, previousCalibration, accountKey });
       }
       const calibration = finishCalibration({ ...options, records, isComplete, allowImplicitStart: true });
       const capacity = getCapacityForProvider({
-        provider,
+        provider: quotaProvider,
         accountKey,
         usageScope,
         force: true,
         collected,
         calculation: { trigger: "manual-end", calibrationId: calibration.id, startAt: calibration.startAt, endAt: calibration.endAt },
       });
-      return json(res, 200, { ok: true, calibration, accountKey, capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
+      return json(res, 200, { ok: true, tool, calibration, accountKey, capacity: withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool) });
     } catch (error) {
       return json(res, error.status || 500, { error: error.code || "calibration_failed", message: error.message, ...(error.details || {}) });
     }
   }
 
   if (url.pathname === "/api/quota/capacity/history") {
-    const provider = url.searchParams.get("provider") || "kimi";
+    let tool;
+    try {
+      tool = resolveQuotaTool({ tool: url.searchParams.get("tool"), provider: url.searchParams.get("provider") });
+    } catch (error) {
+      return json(res, error.status, { error: error.code, message: error.message });
+    }
+    const quotaProvider = quotaProviderForTool(tool);
     const cache = url.searchParams.get("cacheHitRate");
     const page = getCapacityHistory({
-      provider: ["openai", "kimi"].includes(provider) ? provider : "kimi",
-      accountKey: url.searchParams.get("accountKey") || `${provider}:default`,
+      provider: quotaProvider,
+      accountKey: url.searchParams.get("accountKey") || `${quotaProvider}:default`,
       usageScope: url.searchParams.get("scope") || "all-clients",
       window: url.searchParams.get("window") || undefined,
       cacheHitRate: cache === null ? undefined : Number(cache),
@@ -613,37 +622,49 @@ async function handleApi(req, res, url, cliHome) {
       limit: url.searchParams.get("limit") || undefined,
       offset: url.searchParams.get("offset") || undefined,
     });
-    return json(res, 200, page);
+    return json(res, 200, { ...page, tool });
   }
 
   if (url.pathname === "/api/quota/samples") {
-    const provider = url.searchParams.get("provider") || "kimi";
+    let tool;
+    try {
+      tool = resolveQuotaTool({ tool: url.searchParams.get("tool"), provider: url.searchParams.get("provider") });
+    } catch (error) {
+      return json(res, error.status, { error: error.code, message: error.message });
+    }
+    const quotaProvider = quotaProviderForTool(tool);
     const page = getQuotaSampleHistory({
-      provider: ["openai", "kimi"].includes(provider) ? provider : "kimi",
-      accountKey: url.searchParams.get("accountKey") || `${provider}:default`,
+      provider: quotaProvider,
+      accountKey: url.searchParams.get("accountKey") || `${quotaProvider}:default`,
       window: url.searchParams.get("window") || undefined,
       changesOnly: url.searchParams.get("changesOnly") === "1",
       limit: url.searchParams.get("limit") || undefined,
       offset: url.searchParams.get("offset") || undefined,
     });
-    return json(res, 200, page);
+    return json(res, 200, { ...page, tool });
   }
 
   if (url.pathname === "/api/quota") {
+    let tool;
+    try {
+      tool = resolveQuotaTool({ tool: url.searchParams.get("tool"), provider: url.searchParams.get("provider") });
+    } catch (error) {
+      return json(res, error.status, { error: error.code, message: error.message });
+    }
     const force = url.searchParams.get("refresh") === "1";
-    const provider = url.searchParams.get("tool") === "codex" ? "openai" : "kimi";
-    const { quota, accountKey, collected } = await loadProviderQuota(provider, cliHome, force);
+    const quotaProvider = quotaProviderForTool(tool);
+    const { quota, accountKey, collected } = await loadToolQuota(tool, cliHome, force);
     const requestedScope = url.searchParams.get("scope");
     const settings = loadSettings();
-    const usageScope = provider === "openai"
+    const usageScope = quotaProvider === "openai"
       ? ["all-clients", "codex-only"].includes(requestedScope)
         ? requestedScope
         : settings.quotaEstimation.codexOnly ? "codex-only" : "all-clients"
       : ["all-clients", "kimi-code-only"].includes(requestedScope)
         ? requestedScope
         : settings.quotaEstimation.kimiCodeOnly ? "kimi-code-only" : "all-clients";
-    const capacity = getCapacityForProvider({ provider, accountKey, usageScope, force, collected });
-    return json(res, 200, { ...quota, accountKey, tool: provider === "openai" ? "codex" : "kimi-code", capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
+    const capacity = getCapacityForProvider({ provider: quotaProvider, accountKey, usageScope, force, collected });
+    return json(res, 200, { ...quota, accountKey, tool, capacity: withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool) });
   }
 
   if (url.pathname === "/api/tools") {

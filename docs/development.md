@@ -24,7 +24,8 @@ npm pack --dry-run
 ## 3. 术语与目录
 
 - **tool**：Kimi Code、Codex、omp 等 AI 编码工具。采集器位于 `src/tools/`，注册表导出 `TOOLS`、`listTools`、`getTool`。
-- **provider**：模型厂商或 Kimi `config.toml` 中的服务提供方，例如 OpenAI、Kimi、DeepSeek。`modelProvider`、`/api/config/providers` 等字段属于这一概念，不能改成 tool。
+- **quotaProvider**：额度账户族，仅用于额度领域、存量额度数据及同步适配；公开额度 API 与前端统一传 tool，映射集中在 `src/quota-tool.js`。
+- **modelProvider / 配置 provider**：模型厂商或 Kimi `config.toml` 中的服务提供方，例如 OpenAI、Kimi、DeepSeek。`/api/config/providers` 等字段属于这一概念，不能改成 tool。
 - 统一用量记录：`{ tool, time, model, inputOther, output, inputCacheRead, inputCacheCreation, costCny, credits, project, session }`。
 - 内部费用统一为 CNY；展示货币只在响应边界转换。
 

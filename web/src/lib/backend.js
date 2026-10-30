@@ -105,14 +105,14 @@ export async function fetchQuota(refresh = false, tool = null, scope = null) {
   return httpJson(`/api/quota${q ? `?${q}` : ""}`);
 }
 
-export async function fetchQuotaCapacityHistory({ provider, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {
-  const qs = new URLSearchParams({ provider, accountKey, scope, window, estimateKind, limit: String(limit), offset: String(offset) });
+export async function fetchQuotaCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {
+  const qs = new URLSearchParams({ tool, accountKey, scope, window, estimateKind, limit: String(limit), offset: String(offset) });
   if (cacheHitRate !== undefined) qs.set("cacheHitRate", String(cacheHitRate));
   return httpJson(`/api/quota/capacity/history?${qs}`);
 }
 
-export async function fetchQuotaSampleHistory({ provider, accountKey, window, limit = 20, offset = 0 }) {
-  const qs = new URLSearchParams({ provider, accountKey, changesOnly: "1", limit: String(limit), offset: String(offset) });
+export async function fetchQuotaSampleHistory({ tool, accountKey, window, limit = 20, offset = 0 }) {
+  const qs = new URLSearchParams({ tool, accountKey, changesOnly: "1", limit: String(limit), offset: String(offset) });
   if (window) qs.set("window", window);
   return httpJson(`/api/quota/samples?${qs}`);
 }

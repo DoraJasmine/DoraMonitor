@@ -140,7 +140,7 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const query = {
-    provider: capacity.provider,
+    tool: capacity.tool,
     accountKey: capacity.accountKey,
     scope: capacity.usageScope,
     window,
@@ -289,7 +289,7 @@ function CalibrationControls({ window, capacity, locale, t, onChanged }) {
     try {
       await runQuotaCalibration({
         action,
-        provider: capacity.provider,
+        tool: capacity.tool,
         accountKey: capacity.accountKey,
         scope: capacity.usageScope,
         window,
@@ -340,9 +340,9 @@ function QuotaSampleHistory({ quota, locale, t }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
-  const provider = quota.capacity?.provider;
+  const tool = quota.tool;
   const accountKey = quota.accountKey || quota.capacity?.accountKey;
-  const queryKey = `${provider}:${accountKey}`;
+  const queryKey = `${tool}:${accountKey}`;
 
   useEffect(() => {
     setSamples(null);
@@ -351,11 +351,11 @@ function QuotaSampleHistory({ quota, locale, t }) {
   }, [queryKey]);
 
   const load = async (offset = 0) => {
-    if (loading || !provider || !accountKey) return;
+    if (loading || !tool || !accountKey) return;
     setLoading(true);
     setFailed(false);
     try {
-      const data = await fetchQuotaSampleHistory({ provider, accountKey, limit: 20, offset });
+      const data = await fetchQuotaSampleHistory({ tool, accountKey, limit: 20, offset });
       const rows = data.samples || [];
       setSamples((current) => offset === 0 || !current ? rows : [...current, ...rows]);
       setTotal(Number(data.total) || rows.length);
@@ -366,7 +366,7 @@ function QuotaSampleHistory({ quota, locale, t }) {
     }
   };
 
-  if (!provider || !accountKey) return null;
+  if (!tool || !accountKey) return null;
   return (
     <div className="mt-3 border-t border-border/50 pt-2">
       <Button variant="outline" size="sm" className="h-8 gap-1.5 px-3 text-xs" aria-expanded={open} onClick={() => {
@@ -395,7 +395,7 @@ function QuotaSampleHistory({ quota, locale, t }) {
 }
 
 function CapacitySection({ capacity, locale, t, onChanged }) {
-  const storageKey = `dora-capacity-expanded:${capacity?.provider || "default"}`;
+  const storageKey = `dora-capacity-expanded:${capacity?.tool || "default"}`;
   const [expanded, setExpanded] = useState(() => {
     try {
       return localStorage.getItem(storageKey) === "1";
@@ -534,24 +534,24 @@ function HomeCapacityGroup({ title, targets, locale, t }) {
 }
 
 function HomeCapacity({ capacity, locale, t }) {
-  const longTargets = capacity?.longTermTargets || [];
-  if (!longTargets.length) return null;
+  const standardTargets = capacity?.targets || [];
+  if (!standardTargets.length) return null;
   return (
     <section className="mt-4 space-y-3 border-t border-border/60 pt-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{t("longTermTitle")}</h3>
+        <h3 className="text-sm font-semibold">{t("capacityTitle")}</h3>
         <a href="/quota" className="rounded-sm text-[11px] text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t("capacityDetails")}</a>
       </div>
       <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
         {["session", "weekly"].map((window) => {
-          const targets = longTargets.filter((target) => target.window === window);
+          const targets = standardTargets.filter((target) => target.window === window);
           const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
           return hasData ? (
             <HomeCapacityGroup key={window} title={window === "session" ? t("quota5h") : t("quotaWeekly")} targets={targets} locale={locale} t={t} />
           ) : (
             <div key={window} className="text-[11px] text-muted-foreground">
               <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
-              {fill(t("longTermProgress"), { n: targets[0]?.longTermCandidateCount || 0, span: targets[0]?.longTermPercentSpan || 0 })}
+              {t("capacityInsufficient")}
             </div>
           );
         })}
@@ -577,7 +577,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const d = await fetchQuota(refresh, tool === "kimi-code" ? null : tool, scope);
+      const d = await fetchQuota(refresh, tool, scope);
       setQuota(d);
     } catch {
       setQuota(null);

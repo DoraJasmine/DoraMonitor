@@ -157,10 +157,11 @@
   "resetsAt": "ISO 时间" } ], "capacity": { ... } }`
 - 凭据失效：`reason: "token_expired" | "no_credentials" | "http_<status>"`。
 
-`capacity` 包含 `provider`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
-`maxima` 和 `calibrations`。`targets` 固定覆盖 `session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98`
-的组合；每项包含 `fullWindowTokens`、`fullWindowCostCny`、`confidence`、`confidenceScore`、
-`confidenceReasons`、`method`、`sampleCount`、`outlierCount`、`dataRange`、`modelMix` 和 `observations`。
+`capacity` 包含 `tool`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
+`maxima` 和 `calibrations`；`provider` 暂时保留为旧客户端兼容字段，新前端不得依赖。`targets` 固定覆盖
+`session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98` 的组合；每项包含 `fullWindowTokens`、
+`fullWindowCostCny`、`confidence`、`confidenceScore`、`confidenceReasons`、`method`、`sampleCount`、
+`outlierCount`、`dataRange`、`modelMix` 和 `observations`。
 每个 observation 包含起止时间、额度增量、实际 Token、CNY、缓存命中率及各模型 Token 组成。
 费用密度显著偏离中位数的区间会被剔除，不计入 `observations`；此时 `outlierCount` 大于 0，
 且 `confidenceReasons` 包含 `outliers_excluded`。`fullWindowCostCny` 主值按加权总费用 ÷ 加权总额度
@@ -172,20 +173,23 @@
 样本少时通过低置信度体现，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离；
 界面优先采用高置信度普通测算，长程结果默认收起为交叉校验。
 
-`GET /api/quota/capacity/history` 查询参数为 `provider`、`accountKey`、`scope`、`window`、
+`GET /api/quota/capacity/history` 查询参数为 `tool`、`accountKey`、`scope`、`window`、
 `cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
-`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`，按最新记录优先分页。有新观测终点的
-测算结果追加到 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
+`{ "history": [...], "total": 0, "limit": 30, "offset": 0, "tool": "codex" }`，按最新记录优先分页。
+旧 `provider=openai|kimi` 在兼容期仍可使用；同时传 tool/provider 但语义冲突时返回
+`400 conflicting_tool_provider`，未知工具返回 `400 unsupported_tool`。有新观测终点的测算结果追加到
+`history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
 模型结构、触发方式和算法元数据。界面按一次测算批次并列展示四个缓存档，同一批次不会拆成四套历史。
 
-`GET /api/quota/samples` 查询参数为 `provider`、`accountKey`、`window`、`changesOnly=1`、`limit`
-（默认 50，最大 200）和 `offset`，返回 `{ "samples": [...], "total", "limit", "offset" }`。
-原始额度样本每 60 秒记录并保留 90 天；`changesOnly` 仅在界面查询时过滤重复百分比和重复
-重置时间，不减少原始采样。
+`GET /api/quota/samples` 查询参数为 `tool`、`accountKey`、`window`、`changesOnly=1`、`limit`
+（默认 50，最大 200）和 `offset`，返回 `{ "samples": [...], "total", "limit", "offset", "tool" }`。
+旧 `provider` 的兼容与冲突规则同历史接口。原始额度样本每 60 秒记录并保留 90 天；
+`changesOnly` 仅在界面查询时过滤重复百分比和重复重置时间，不减少原始采样。
 
 `POST /api/quota/capacity/calibration` body：
-`{ "action": "start|end|cancel", "provider": "openai|kimi", "accountKey": "...",
-"scope": "all-clients", "window": "session|weekly" }`。`start` 刷新额度并记录精确起点；若已有
+`{ "action": "start|end|cancel", "tool": "kimi-code|codex", "accountKey": "...",
+"scope": "all-clients", "window": "session|weekly" }`。旧 body.provider 仍兼容，冲突时同样返回 400。
+`start` 刷新额度并记录精确起点；若已有
 进行中的起点，先结算可用的上一段并以 `trigger=reanchor` 写入历史，再开始新段。`end` 要求至少
 5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；没有显式起点时
 从上次测算终点续算并标记 `trigger=manual-end`。`cancel` 放弃进行中的区间。校验失败保留起点。
