@@ -12,7 +12,10 @@
     "dist",
     "scripts",
     "assets",
-    "README.md"
+    "docs",
+    "README.md",
+    "README.zh-CN.md",
+    "NOTICE"
   ],
   "scripts": {
     "start": "node src/server.js",
@@ -21,7 +24,7 @@
     "dev:api": "node src/server.js --port 3847 --no-open",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "status": "node src/cli.js",
     "daemon": "node src/cli.js daemon",
     "prepack": "npm test && npm run build"
@@ -29,6 +32,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/DoraJasmine/DoraMonitor.git"
+  },
+  "homepage": "https://github.com/DoraJasmine/DoraMonitor#readme",
+  "bugs": "https://github.com/DoraJasmine/DoraMonitor/issues",
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "doramonitor",

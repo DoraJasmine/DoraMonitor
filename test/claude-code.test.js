@@ -6,7 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const claudeCode = require("../src/providers/claude-code");
+const claudeCode = require("../src/tools/claude-code");
 const { matchPrice } = require("../src/pricing");
 const matchPriceFx = (name) => matchPrice(name, { fxRate: 7.2 });
 
@@ -243,6 +243,7 @@ test("anthropic price table: known families and USD->CNY conversion", () => {
   assert.equal(matchPriceFx("claude-sonnet-5-20260609").cacheWrite, 2.5 * 7.2);
   assert.equal(matchPriceFx("claude-fable-5-20260301").id, "claude-fable-5");
   assert.equal(matchPriceFx("claude-fable-5-20260301").input, 10.0 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-20260301").cacheHit, 0.25 * 7.2);
   // Mythos 5 shares Fable 5 pricing
   assert.equal(matchPriceFx("claude-mythos-5-20260301").id, "claude-fable-5");
   assert.equal(matchPriceFx("claude-opus-4-1-20250805").id, "claude-opus");

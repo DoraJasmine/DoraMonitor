@@ -61,9 +61,9 @@ DoraMonitor 已能展示 Codex、Kimi 的 5 小时和 7 天剩余额度，也能
 
 ### 3.1 已有数据
 
-- Codex 记录包含时间、模型、未缓存输入、缓存读取、缓存写入和输出 Token：`src/providers/codex.js`。
-- OMP 同样提供上述字段，并额外保留 `modelProvider`，可支持跨客户端模型归属：`src/providers/omp.js`。
-- Kimi Code 的 turn 级记录包含相同的四类 Token：`src/providers/kimi-code.js`。
+- Codex 记录包含时间、模型、未缓存输入、缓存读取、缓存写入和输出 Token：`src/tools/codex.js`。
+- OMP 同样提供上述字段，并额外保留 `modelProvider`，可支持跨客户端模型归属：`src/tools/omp.js`。
+- Kimi Code 的 turn 级记录包含相同的四类 Token：`src/tools/kimi-code.js`。
 - Codex 可从 rollout `rate_limits` 和 `wham/usage` 获取双窗口额度。
 - Kimi 可从 `api.kimi.com/coding/v1/usages` 获取双窗口额度。
 - 现有同步已能合并 Windows/WSL 的日粒度 Token 总量。
@@ -207,7 +207,7 @@ OpenAI 不提供对应开关，始终使用所有已采集客户端中的 GPT �
 
 ### 7.2 Codex
 
-- `src/providers/codex.js` 解析时提取全部 `rate_limits` 快照，最新快照仍走现有额度卡片逻辑。
+- `src/tools/codex.js` 解析时提取全部 `rate_limits` 快照，最新快照仍走现有额度卡片逻辑。
 - 新增一次性历史回补流程，直接扫描原始 rollout 并写入测算样本库；保存回补检查点，避免每次启动全量重读。
 - 不为测算历史强制重建现有日聚合桶。
 - `src/codex-quota.js` 每次成功获取 `wham/usage` 后，同时写入样本库。
@@ -609,7 +609,7 @@ Codex 快照可能比 Token 记录晚一个响应。实现时允许比较 0/1/2 
 | `src/quota-sampler.js` | 新增后台采样、单写者调度、样本入库 |
 | `src/quota-estimator.js` | 有效区间、基础估算、稳健拟合、缓存目标换算、置信度 |
 | `src/quota-estimator-store.js` | 样本、用量桶、最近 30 次、最高值、检查点持久化 |
-| `src/providers/codex.js` | 提取全部额度快照，支持一次性历史回补 |
+| `src/tools/codex.js` | 提取全部额度快照，支持一次性历史回补 |
 | `src/codex-quota.js` | 在线快照写入样本库 |
 | `src/quota.js` | Kimi 在线快照写入样本库 |
 | `src/sync.js` | 增加一分钟测算桶、同步水位、peer 合并，不改变现有日摘要 |

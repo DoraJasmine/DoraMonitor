@@ -17,10 +17,10 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 
-const dsh = require("../src/providers/dsh");
-const codex = require("../src/providers/codex");
-const claudeCode = require("../src/providers/claude-code");
-const kimiCode = require("../src/providers/kimi-code");
+const dsh = require("../src/tools/dsh");
+const codex = require("../src/tools/codex");
+const claudeCode = require("../src/tools/claude-code");
+const kimiCode = require("../src/tools/kimi-code");
 const { resolveModelIdentity } = require("../src/model-identity");
 const { matchPrice } = require("../src/pricing");
 

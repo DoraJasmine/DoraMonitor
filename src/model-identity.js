@@ -8,7 +8,7 @@
  *   QoderCN / QoderCN CLI  →  "dfmodel", "qfmodel", "qmodel_latest", ...
  *   dsh (via its plugins)  →  the same codes, because the plugin forwards the
  *                             provider's own id unchanged.
- * Before this module existed the mapping lived in two provider files, so dsh
+ * Before this module existed the mapping lived in two tool scan files, so dsh
  * records (which had no mapping at all) rendered as the raw code while the
  * identical QoderCN traffic rendered as "DeepSeek-V4.1-Flash".
  *

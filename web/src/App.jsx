@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion, useReducedMotion } from "framer-motion";
 import {
   FolderOpen,
+  Gauge,
   Github,
   Languages,
   LayoutDashboard,
@@ -18,6 +19,7 @@ import AppLogo from "@/components/AppLogo";
 import SessionsPage from "@/pages/SessionsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import { PricesPage } from "@/pages/PricesPage";
+import QuotaDetailsPage from "@/pages/QuotaDetailsPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,7 +51,7 @@ import { Heatmap } from "@/components/Heatmap";
 import { QuotaCard } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchPrices, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
+import { fetchPaths, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
 const GITHUB_URL = "https://github.com/DoraJasmine/DoraMonitor";
@@ -178,7 +180,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [refreshFlash, setRefreshFlash] = useState(false);
   const [data, setData] = useState(null);
-  const [prices, setPrices] = useState([]);
   const [error, setError] = useState(null);
   const [recentPage, setRecentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -186,6 +187,7 @@ export default function App() {
   const [page, setPage] = useState(() => {
     if (typeof window !== "undefined") {
       const p = window.location.pathname;
+      if (p.startsWith("/quota")) return "quota";
       if (p.startsWith("/sessions")) return "sessions";
       if (p.startsWith("/models")) return "models";
       if (p.startsWith("/prices")) return "prices";
@@ -210,7 +212,9 @@ export default function App() {
     localStorage.setItem("kcd_page", next);
     if (typeof window !== "undefined") {
       const path =
-        next === "sessions"
+        next === "quota"
+          ? "/quota"
+          : next === "sessions"
           ? "/sessions"
           : next === "models"
           ? "/models"
@@ -272,9 +276,6 @@ export default function App() {
   );
 
   useEffect(() => {
-    fetchPrices()
-      .then((d) => setPrices(d.prices || []))
-      .catch(() => setPrices([]));
     fetchSettings()
       .then((s) =>
         setSettings({
@@ -334,11 +335,7 @@ export default function App() {
   };
 
   const handlePricingSaved = useCallback(async () => {
-    const [priceData, savedSettings] = await Promise.all([
-      fetchPrices(),
-      fetchSettings(),
-    ]);
-    setPrices(priceData.prices || []);
+    const savedSettings = await fetchSettings();
     setSettings({
       currency: savedSettings.currency || "CNY",
       currencySymbol: savedSettings.currencySymbol || "¥",
@@ -547,6 +544,14 @@ export default function App() {
             </Button>
             <Button
               size="sm"
+              variant={page === "quota" ? "default" : "ghost"}
+              onClick={() => goPage("quota")}
+            >
+              <Gauge className="h-3.5 w-3.5" />
+              {t("navQuota")}
+            </Button>
+            <Button
+              size="sm"
               variant={page === "sessions" ? "default" : "ghost"}
               onClick={() => goPage("sessions")}
             >
@@ -635,7 +640,7 @@ export default function App() {
                     : t("refresh")}
               </span>
             </Button>
-          ) : null}
+          ) : <span className="inline-block h-9 w-[84px]" aria-hidden />}
         </div>
       </motion.header>
 
@@ -685,6 +690,8 @@ export default function App() {
           {error}
         </div>
       ) : null}
+
+      {page === "quota" ? <QuotaDetailsPage t={t} locale={locale} /> : null}
 
       {page === "sessions" ? (
         <SessionsPage home={home} t={t} locale={locale} />
@@ -1345,63 +1352,10 @@ export default function App() {
         </CardContent>
       </Card>
 
-      {/* Prices */}
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle>{t("priceTable")}</CardTitle>
-          <CardDescription>{t("pricingNote")}</CardDescription>
-        </CardHeader>
-        <CardContent className="px-0 pb-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("model")}</TableHead>
-                <TableHead>{t("nativeCurrency")}</TableHead>
-                <TableHead>{t("pricePeriod")}</TableHead>
-                <TableHead className="text-right">{t("cacheHit")}</TableHead>
-                <TableHead className="text-right">{t("cacheWrite")}</TableHead>
-                <TableHead className="text-right">{t("inputPrice")}</TableHead>
-                <TableHead className="text-right">{t("outputPrice")}</TableHead>
-                <TableHead className="text-right">{t("context")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {prices.map((p) => (
-                <TableRow key={`${p.id}-${p.period || "standard"}`}>
-                  <TableCell className="font-medium">
-                    <span className="inline-flex items-center gap-1.5">
-                      {p.id}
-                      {p.estimated ? <Badge variant="warn">{t("estimated")}</Badge> : null}
-                    </span>
-                  </TableCell>
-                  <TableCell>{p.nativeCurrency || "—"}</TableCell>
-                  <TableCell>{p.period ? t(`price${p.period[0].toUpperCase()}${p.period.slice(1)}`) : "—"}</TableCell>
-                  <TableCell className="text-right num">
-                    {fmtMoney(p.display?.cacheHit ?? p.cacheHit, moneyCfg)}
-                  </TableCell>
-                  <TableCell className="text-right num">
-                    {fmtMoney(p.display?.cacheWrite ?? p.cacheWrite, moneyCfg)}
-                  </TableCell>
-                  <TableCell className="text-right num">
-                    {fmtMoney(p.display?.input ?? p.input, moneyCfg)}
-                  </TableCell>
-                  <TableCell className="text-right num">
-                    {fmtMoney(p.display?.output ?? p.output, moneyCfg)}
-                  </TableCell>
-                  <TableCell className="text-right num">
-                    {fmtInt(p.context, locale)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
       <footer className="text-xs text-muted-foreground">
         {[
           (() => {
-            // Aggregate scan metadata across providers
+            // Aggregate scan metadata across tools
             const metas = Object.values(meta || {});
             const files = metas.reduce((s, m) => s + (m.filesScanned || 0), 0);
             const lines = metas.reduce((s, m) => s + (m.linesSeen || 0), 0);

@@ -18,7 +18,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { collect } = require("./collect");
-const { toolMeta } = require("./providers/base");
+const { toolMeta } = require("./tools/base");
 const { loadSettings, toDisplay } = require("./settings");
 
 const DEFAULT_STATUS_FILE = path.join(".doramonitor", "status.cache");

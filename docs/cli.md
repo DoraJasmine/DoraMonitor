@@ -24,7 +24,7 @@ doramonitor -v       # 版本
 
 ### tools
 
-逐行打印每个 provider：`<label> <ok|未检测到> <id> [（仅 credits 计费）]`，
+逐行打印每个工具：`<label> <ok|未检测到> <id> [（仅 credits 计费）]`，
 以及对应数据目录。示例：
 
 ```

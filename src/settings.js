@@ -27,6 +27,7 @@ const DEFAULTS = {
   customPrices: [], // see module doc
   quotaEstimation: {
     kimiCodeOnly: false,
+    codexOnly: false,
   },
   sync: {
     enabled: false,
@@ -76,7 +77,10 @@ function sanitizeSettings(raw) {
     out.fxRate = fx;
   }
   if (raw.quotaEstimation && typeof raw.quotaEstimation === "object") {
-    out.quotaEstimation = { kimiCodeOnly: raw.quotaEstimation.kimiCodeOnly === true };
+    out.quotaEstimation = {
+      kimiCodeOnly: raw.quotaEstimation.kimiCodeOnly === true,
+      codexOnly: raw.quotaEstimation.codexOnly === true,
+    };
   }
   if (raw.sync && typeof raw.sync === "object") {
     const s = raw.sync;

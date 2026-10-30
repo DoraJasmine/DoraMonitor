@@ -1,201 +1,131 @@
 # DoraMonitor
 
-[![License](https://img.shields.io/badge/LICENSE-MIT-22C55E?style=flat-square&labelColor=1F2937)](./LICENSE)
-[![Platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-6B7280?style=flat-square&labelColor=1F2937)](#桌面端-tauri)
-[![Node](https://img.shields.io/badge/NODE-18%2B-339933?style=flat-square&labelColor=1F2937&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/REACT-19-61DAFB?style=flat-square&labelColor=1F2937&logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/VITE-6-646CFF?style=flat-square&labelColor=1F2937&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Tailwind](https://img.shields.io/badge/TAILWIND-3-38BDF8?style=flat-square&labelColor=1F2937&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Rust](https://img.shields.io/badge/RUST-stable-DEA584?style=flat-square&labelColor=1F2937&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Tauri](https://img.shields.io/badge/TAURI-2-FFC131?style=flat-square&labelColor=1F2937&logo=tauri&logoColor=black)](#桌面端-tauri)
+[![许可证：MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
 [English](./README.md) · **简体中文**
 
-> **📖 完整文档**：[docs/README.md](./docs/README.md) — 架构、数据源、计价体系、
-> API 参考、配置、会话管理、多设备同步、CLI、部署与开发指南。
+本地、隐私优先的 AI 编码工具用量看板。统一展示 Token、API 刊例价等效费用、缓存命中率、额度窗口、会话与多设备用量，同时提供 Web UI 和命令行。
 
-本地隐私安全的 [Kimi Code](https://www.kimi.com/) CLI 用量看板
-（`~/.kimi-code` · Windows `%USERPROFILE%\.kimi-code`）。
+![DoraMonitor 看板](./assets/screenshot.png)
 
-只读取 `usage.record` 中的**模型名、时间与 Token 数量**，以及 `config.toml` 内受限的模型别名。
-**不**展示或记录提示词、回复、代码、API Key、Provider 凭据。
+## 支持的工具
 
-![Kimi Code 用量看板截图](./assets/screenshot.png)
+| 工具 | 本地数据源 | 统计内容 |
+| --- | --- | --- |
+| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` | Token、费用、5h/周额度 |
+| Codex | `~/.codex/sessions/**` 与归档 rollout | Token、费用、额度快照 |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | Token、费用 |
+| Oh My Pi（omp） | `~/.omp/agent/sessions/**`（兼容旧 `~/.pi/agent`） | Token、费用 |
+| Gemini CLI | Gemini 设置与 OpenTelemetry 导出 | Token、工具事件 |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | Token |
+| QoderCN IDE | QoderCN `local.db` | Token |
+| QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
+| dsh | `~/.dsh/sessions/**` | Token、费用 |
 
-## 功能
-
-- **Token 分项** — 普通输入（`inputOther`）、输出、缓存读取、缓存创建
-- **时间范围** — 今天 / 近 7 天 / 近 30 天 / 全部
-- **图表与表格** — 每日趋势（多模型 SVG 曲线）、模型统计、缓存命中率、最近请求、近一年热力图
-- **多语言** — 简体中文与英文；自动识别系统语言，可在应用内切换
-- **费用估算** — 多厂商官方价（Kimi / DeepSeek / 智谱人民币价，OpenAI / Anthropic / Qwen 等美元价按汇率换算），内部统一人民币账本；详见 [docs/pricing.md](./docs/pricing.md)
-- **模型映射** — `config.toml` 别名、`KIMI_MODEL_NAME` / `KIMI_MODEL_PROVIDER` / `KIMI_MODEL_ID`、`__kimi_env_model__`
-- **数据目录** — 自动识别 `KIMI_CODE_HOME`、`~/.kimi-code`、Windows 用户目录；也可在界面手动选择
-- **会话管理** — 按工作区列会话，归档 / 恢复、永久删除（单条或批量）、安全文本预览（不含工具详情与凭据）、删除空工作区
-- **桌面端（可选）** — Tauri 2（Windows / macOS / Linux），界面与 Web 一致；完整 Rust 数据管道实现；GitHub Actions 可多系统构建
-
-## 默认扫描目录
-
-| 平台 | 路径 |
-| --- | --- |
-| macOS / Linux | `~/.kimi-code` |
-| Windows | `%USERPROFILE%\.kimi-code` |
-
-可通过环境变量 `KIMI_CODE_HOME`、命令行 `--home` / `--dir` 或界面路径控件覆盖。
+某个工具不存在或数据损坏时，不影响其他工具。SQLite 均以只读方式打开。
 
 ## 环境要求
 
-- **Web / Node 服务：** Node.js **18+**
-- **桌面端（可选）：** Rust stable、[Tauri CLI 2](https://v2.tauri.app/)、系统 WebView（Windows 需 WebView2）
+- Node.js **18+**，推荐 **22.5+** 以获得内置 SQLite 和 zstd 支持。
+- 旧版 Node 读取 ZCode/QoderCN 时需要 `sqlite3` CLI；压缩会话使用包内 `fzstd` 回退。
+- 不需要数据库服务、Rust 工具链或管理员权限。
 
-## 快速开始（Web）
+## 安装与启动
 
 ```bash
+npm install -g doramonitor
+doramonitor
+```
+
+访问 <http://127.0.0.1:3847>。npm 包已包含构建好的 Web UI，无需手动构建。
+
+源码运行：
+
+```bash
+git clone https://github.com/DoraJasmine/DoraMonitor.git
 cd DoraMonitor
-npm install
-npm run build    # 构建前端到 dist/
-npm start        # 本机 API + 静态页，127.0.0.1:3847
+npm ci
+npm run build
+npm start
 ```
 
-浏览器打开 **http://127.0.0.1:3847/**
+前端开发使用 `npm run dev`，会同时启动 API 和 Vite 热更新。
 
-### 开发模式（一条命令起 API + Vite）
+## 静默启动与 Windows 自启
 
 ```bash
-npm run dev
-# API  : http://127.0.0.1:3847/
-# Web  : http://127.0.0.1:5173/  （/api 自动代理到后端）
+doramonitor web --background --no-open
 ```
 
-如需拆分进程：`npm run dev:api` / `npm run dev:web`。
+Windows 也可双击 `scripts/start-windows.bat`。脚本使用相对路径，移动安装目录后仍可使用；重复执行会检测已有端口，不会重复启动。
 
-```bash
-# 指定数据目录与端口
-node src/server.js --home "C:\Users\you\.kimi-code" --port 3847 --no-open
+注册登录自启、隐藏窗口和崩溃自动重启：
 
-# 查看全部选项
-node src/server.js --help
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 ```
 
-### CLI 选项
+Windows 一键安装器仅从 nodejs.org 与 npm 官方源下载，不包含私人同步配置：
 
-| 选项 | 说明 |
-| --- | --- |
-| `--home`, `--dir <path>` | Kimi Code 数据目录（默认自动检测） |
-| `--port`, `-p <n>` | 服务端口（默认 3847） |
-| `--host <host>` | 绑定地址（默认 127.0.0.1） |
-| `--no-open` | 启动时不自动打开浏览器 |
-| `-h`, `--help` | 打印帮助信息 |
-
-## 桌面端（Tauri，预留）
-
-前端已保留 Tauri 兼容（`web/src/lib/backend.js` 可透明切换 HTTP / `invoke`，
-`base: "./"` 支持自定义协议加载），但当前仓库**暂不包含** Tauri 壳源码；
-数据管道以 Node 后端为准。
-
-## 界面技术栈
-
-- React + Vite + Tailwind
-- shadcn 风格组件（Radix Dialog、Select、Tabs、Tooltip、ScrollArea + CVA）
-- Linear 风格暗色主题、青绿强调色、细滚动条
-- Framer Motion 入场动效（尊重 `prefers-reduced-motion`）
-- 用量页与会话页同壳 SPA 切换（`/` 和 `/sessions` 路由）
-
-### Vite 配置
-
-- 根目录：`web/`，静态资源目录：`web/public-assets/`
-- `@` 别名指向 `web/src/`
-- `base: "./"` 保证相对路径资源加载（兼容 Tauri 自定义协议）
-- 开发服务器将 `/api` 代理到 `http://127.0.0.1:3847`
-- 构建输出：`dist/`
-
-### 会话管理
-
-- 顶栏进入 **会话**
-- 工作区目录：`sessions/wd_*`
-- 归档路径：`sessions/.kcd-archive/<workspace>/`
-- 会话预览对话框：仅展示截断的用户/助手文本 — 不展示工具 dump、不展示密钥；从 `context.append_message`、`turn.steer`/`turn.prompt` 和 `content.part` 事件重建
-- 批量操作：多选、批量归档 / 取消归档 / 删除
-- 删除会移出磁盘，并尽量清理 `session_index.jsonl` 对应行
-- 空工作区删除：移除工作区目录并更新 `workspaces.json`（仅当无会话时可操作）
-
-### 每日趋势图
-
-- SVG 多系列折线图（640×200 viewBox，响应式）
-- Top 6 模型显示为独立彩色曲线，其余归为"其他模型"
-- 可通过药丸按钮切换显示/隐藏系列；悬停十字准线显示详情
-- ~3 个月范围内填充连续日历日，更长时间范围仅显示有活动日期
-
-### 热力图
-
-- GitHub 风格贡献热力图，覆盖最近 53 周
-- 单元格按 Token 使用量分为 5 个强度等级，悬停显示日期、Token、费用、缓存命中率
-- 顶部月份标签
-
-## 数据来源
-
-扫描 `<home>/sessions/**/wire.jsonl`（跳过 `blobs/` 和 `tasks/` 目录），仅汇总类似：
-
-```json
-{
-  "type": "usage.record",
-  "model": "provider/model",
-  "usage": {
-    "inputOther": 0,
-    "output": 0,
-    "inputCacheRead": 0,
-    "inputCacheCreation": 0
-  },
-  "usageScope": "turn",
-  "time": 0
-}
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
 ```
 
-仅累计 `usageScope === "turn"`，避免与 session 级汇总重复计数。
+默认仅监听本机回环地址。修改监听地址前请阅读[部署与故障排查](./docs/deployment.md)。
 
-模型映射读取 `config.toml` 的 `default_model` 与 `[models."…"]` 的 `provider` / `model` / `display_name`，以及环境变量 `KIMI_MODEL_NAME`、`KIMI_MODEL_PROVIDER`、`KIMI_MODEL_ID`（对应 `__kimi_env_model__`）。疑似密钥字段会在使用前剥离。
+## 命令行
 
-## 费用参考表
+```text
+doramonitor [web]                 启动 Web 看板
+doramonitor web -d --no-open     后台启动且不打开浏览器
+doramonitor status                输出单行用量摘要
+doramonitor daemon                状态缓存与周期同步守护进程
+doramonitor sync                  立即同步
+doramonitor tools                 列出检测到的工具和数据目录
+doramonitor stop                  停止 daemon
+doramonitor --help                查看全部参数
+```
 
-内部以人民币记账，各厂商按官方价计（单位：**元 / 百万 Token**）。摘录
-（完整价目表与计价规则见 [docs/pricing.md](./docs/pricing.md)）：
+## 主要功能
 
-| 模型 | 缓存命中 | 输入 | 输出 | 上下文 |
-| --- | ---: | ---: | ---: | ---: |
-| kimi-k3.1-pro | 1.30 | 13.00 | 68.00 | 1,048,576 |
-| kimi-k3 | 2.00 | 20.00 | 100.00 | 1,048,576 |
-| kimi-k2.7-code | 1.30 | 6.50 | 27.00 | 262,144 |
-| kimi-k2.6 | 1.10 | 6.50 | 27.00 | 262,144 |
-| deepseek-flash | 0.04 | 2.00 | 8.00 | 1,000,000（峰谷分时，谷半价） |
-| glm-5.3-flash | 0.23 | 0.80 | 2.80 | 1,000,000 |
-| gpt-6.1-sol（USD） | $0.10 | $2.00 | $10.00 | 1,050,000 |
+- 今天、近 7 天、近 30 天和全部用量，模型统计、趋势图与年度热力图。
+- 普通输入、输出、缓存读取、缓存写入 Token 及各模型缓存命中率。
+- 官方定价链接、自定义价格、USD/CNY 展示与内部统一人民币账本。
+- Kimi/Codex 官方额度窗口，以及明确标注为推测值的等效额度估算。
+- 跨客户端模型归属：omp 中的 GPT/Kimi 用量可参与对应额度估算，其他模型不会混入。
+- `/quota` 页提供客户端限定开关、手动测算、长程估算、区间实际用量和完整历史。
+- Kimi 会话与工作区管理，安全预览会脱敏疑似凭据。
+- 可选 SSH/WebDAV 多设备同步，包含用于额度估算的一分钟 Token 桶。
 
-- `kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按 kimi-k2.7-code 价计。
-- 非 Kimi 模型回退到 K2.6 标价，并在界面标记为「估算」。
-- K2 系列 2026-10-31 起对新用户关闭、12 月底下线（老用户不受影响）。
-
-## 脚本
-
-| 脚本 | 说明 |
-| --- | --- |
-| `npm start` | 提供 API + 构建后的 UI（`127.0.0.1:3847`） |
-| `npm run dev` | 同时启动 API 与 Vite 热更新（通过 `concurrently`） |
-| `npm run dev:api` | 仅启动 API 服务（`--port 3847 --no-open`） |
-| `npm run dev:web` | 仅启动 Vite 开发服务器 |
-| `npm run build` | 生产前端 → `dist/` |
-| `npm run preview` | Vite 预览构建产物 |
-| `npm test` | Node 测试套件（`node --test test/*.test.js`） |
-| `npm run status` | 单行用量状态摘要 |
-| `npm run daemon` | 常驻守护进程（写状态缓存 + 周期同步） |
+等效额度与 API 刊例价金额都不是厂商账单，也不代表官方承诺的套餐上限。
 
 ## 隐私
 
-- 不上传任何数据 — 默认只绑定 **`127.0.0.1`**
-- 用量链路不解析消息正文、工具参数全文、日志全文
-- 界面不读取或不展示 API Key / Provider 凭据
-- 会话预览会对疑似密钥模式（API Key、SSH 私钥）做脱敏
-- `config.toml` 中匹配 `api_key`、`token`、`secret`、`password`、`authorization` 的行在模型别名解析前即被剥离
+只读取模型、时间、Token 等用量元数据，不读取提示词、回复、代码或 Provider 凭据。服务默认绑定 `127.0.0.1`，不开放 CORS。多设备上传必须显式配置才会启用。详见[隐私与安全](./docs/privacy.md)。
 
-## 协议
+## 文档
 
-本项目采用 [MIT 协议](./LICENSE) 开源，点击可查看完整许可文本。
+- [文档中心](./docs/README.md)
+- [架构](./docs/architecture.md)
+- [工具数据源](./docs/tools.md)
+- [配置](./docs/configuration.md)
+- [计价](./docs/pricing.md)
+- [额度估算](./docs/quota-capacity-estimation.md)
+- [部署](./docs/deployment.md)
+- [npm 发布检查](./docs/release.md)
+- [开发指南](./docs/development.md)
+
+## 验证与贡献
+
+```bash
+npm test
+npm run build
+npm pack --dry-run
+```
+
+CI 在 Ubuntu、Windows 和 Node 18/22 组合上执行相同检查。新增工具采集器的约定见[开发指南](./docs/development.md)。
+
+## 许可证与来源
+
+MIT。本项目由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 二次开发并进行了大量重构。保留 Jochen 原版权与 MIT 许可；DoraMonitor 版权及来源说明见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。

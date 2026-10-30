@@ -20,7 +20,8 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
   "fxRate": 6.67,               // USD→CNY 汇率（默认取 2026-10 市场中间价），合法 (0, 100000)
   "customPrices": [],           // 自定义价格，见下
   "quotaEstimation": {
-    "kimiCodeOnly": false        // true 时仅用 Kimi Code 中的 Kimi 模型估算额度
+    "kimiCodeOnly": false,       // true 时仅用 Kimi Code 中的 Kimi 模型估算额度
+    "codexOnly": false           // true 时仅用 Codex 中的 GPT 模型估算额度
   },
   "sync": {                     // 多设备同步，详见 docs/sync.md
     "enabled": false,

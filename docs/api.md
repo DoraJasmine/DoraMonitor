@@ -130,6 +130,7 @@
     "id": "kimi-k3.1-pro", "cacheHit": 1.3, "cacheWrite": 13.0, "input": 13.0, "output": 68.0,
     "context": 1048576, "estimated": false, "period": null,
     "nativeCurrency": "CNY", "unit": "CNY / 1M tokens",
+    "sourceUrl": "https://platform.kimi.com/docs/pricing/chat",
     "display": { "currency": "CNY", "symbol": "¥", "cacheHit": 1.3, "cacheWrite": 13.0, "input": 13.0, "output": 68.0 }
   } ],
   "currency": "CNY", "currencySymbol": "¥", "fxRate": 6.67, "customPrices": []
@@ -142,8 +143,9 @@
 
 ## 7. GET /api/quota 与等效容量历史
 
-参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）。Kimi 另支持
-`scope=all-clients|kimi-code-only`，未传时读取设置中的 `quotaEstimation.kimiCodeOnly`。
+参数：`refresh=1` 强制；`tool`（`kimi-code` 默认 / `codex`）。Kimi 支持
+`scope=all-clients|kimi-code-only`，Codex 支持 `scope=all-clients|codex-only`；未传时分别读取
+`quotaEstimation.kimiCodeOnly` / `quotaEstimation.codexOnly`。
 
 - `tool=kimi-code`：调用 Kimi 在线 usages API（`https://api.kimi.com/coding/v1/usages`，
   凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。60s 内存缓存。
@@ -158,18 +160,21 @@
 `capacity` 包含 `provider`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
 `maxima` 和 `calibrations`。`targets` 固定覆盖 `session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98`
 的组合；每项包含 `fullWindowTokens`、`fullWindowCostCny`、`confidence`、`confidenceScore`、
-`confidenceReasons`、`method`、`sampleCount`、`dataRange` 和 `modelMix`，数据足够时还包含
-Token/CNY 估算范围。人民币是 API 刊例价等效价值，不是真实账单。稀疏样本可用价格弱先验
-推算缺失档位，并标记 `modeled` / `extrapolated` 和低置信度。数据不足时数值字段为 `null`
-或缺省，不能当作官方额度或精确的零。`maxima` 仅记录完整覆盖、非外推且中高置信度的结果。
-`longTermTargets` 是独立长程序列：5h 仅采用 ≥30 分钟、weekly 仅采用 ≥6 小时的完整自动区间，
-至少 3 个区间和 5 个百分点，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离。
+`confidenceReasons`、`method`、`sampleCount`、`dataRange`、`modelMix` 和 `observations`。
+每个 observation 包含起止时间、额度增量、实际 Token、CNY、缓存命中率及各模型 Token 组成。
+人民币是 API 刊例价等效价值，不是真实账单。稀疏样本可用价格弱先验推算缺失档位，并标记
+`modeled` / `extrapolated` 和低置信度。数据不足时数值字段为 `null` 或缺省，不能当作官方额度或
+精确的零。Kimi 周样本缺失时使用同缓存档 5h 结果的 5 倍降级估算，标记 `sessionDerived`、
+低置信度及 `session_derived` 原因，不覆盖真实周样本。`maxima` 仅记录完整覆盖、非外推且中高
+置信度的结果。`longTermTargets` 是独立长程序列：先合并连续短区间，5h 仅采用合并后 ≥30 分钟、
+weekly 仅采用 ≥6 小时的完整自动区间，至少 3 个区间和 5 个百分点，且排除手动校准样本。
+历史以 `estimateKind=standard|long-term` 隔离。
 
 `GET /api/quota/capacity/history` 查询参数为 `provider`、`accountKey`、`scope`、`window`、
 `cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
-`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`。每次实际重算均追加到
-`history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、模型结构、
-触发方式和算法元数据。
+`{ "history": [...], "total": 0, "limit": 30, "offset": 0 }`，按最新记录优先分页。每次实际重算
+均追加到 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
+模型结构、触发方式和算法元数据。界面按一次测算批次并列展示四个缓存档，同一批次不会拆成四套历史。
 
 `GET /api/quota/samples` 查询参数为 `provider`、`accountKey`、`window`、`changesOnly=1`、`limit`
 （默认 50，最大 200）和 `offset`，返回 `{ "samples": [...], "total", "limit", "offset" }`。
@@ -178,9 +183,10 @@ Token/CNY 估算范围。人民币是 API 刊例价等效价值，不是真实�
 
 `POST /api/quota/capacity/calibration` body：
 `{ "action": "start|end|cancel", "provider": "openai|kimi", "accountKey": "...",
-"scope": "all-clients", "window": "session|weekly" }`。`start` 刷新额度并记录精确起点；
-`end` 要求至少 5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；
-`cancel` 放弃进行中的区间。校验失败返回对应错误码且保留起点，可稍后继续结束。
+"scope": "all-clients", "window": "session|weekly" }`。`start` 刷新额度并记录精确起点；若已有
+进行中的起点，先结算可用的上一段并以 `trigger=reanchor` 写入历史，再开始新段。`end` 要求至少
+5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；没有显式起点时
+从上次测算终点续算并标记 `trigger=manual-end`。`cancel` 放弃进行中的区间。校验失败保留起点。
 
 Web 服务每 60 秒被动采样；额度变化区间和合并用量通常每 6 小时重算一次，数据不足时每分钟重试。
 
@@ -298,4 +304,4 @@ body：`{ "providerId", "apiKey", "baseUrl", "defaultModel }`。
 | 未知 API 路径 | `404 { "error": "not_found" }` |
 | 未捕获异常 | `500 { "error": "internal_error", "message": "..." }` |
 | 静态文件越界 | `403 Forbidden` |
-| SPA 回退 | `/sessions`、`/models` 及其子路径（不含 `.`）→ `index.html` |
+| SPA 回退 | `/quota`、`/sessions`、`/models` 及其子路径（不含 `.`）→ `index.html` |

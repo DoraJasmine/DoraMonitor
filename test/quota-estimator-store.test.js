@@ -106,10 +106,13 @@ test("capacity cache retains complete history, time links and accepted maxima", 
   const history = readHistory(query, root);
   assert.equal(history.length, 36);
   assert.equal(history[1].previousCalculationEndAt, history[0].calculationEndAt);
+  assert.equal(history[1].calculationStartAt, history[0].calculationEndAt);
   const { readHistoryPage } = require("../src/quota-estimator-store");
   const page = readHistoryPage({ ...query, limit: 10, offset: 30 }, root);
   assert.equal(page.total, 36);
   assert.equal(page.history.length, 6);
+  assert.equal(page.history.at(-1).createdAt, history[0].createdAt);
+  assert.equal(readHistoryPage({ ...query, limit: 1 }, root).history[0].createdAt, history.at(-1).createdAt);
   const result = getOrComputeCapacity({ ...options, compute, now });
   assert.ok(result.maxima[0].fullWindowTokens > 1_000_000);
   assert.ok(result.maxima[0].fullWindowCostCny > 0);
@@ -132,6 +135,33 @@ test("every real recalculation is appended even when the estimate is unchanged",
   getOrComputeCapacity({ ...options, now, compute: () => capacity(now, 1_000_000) });
   getOrComputeCapacity({ ...options, now: now + 1000, compute: () => capacity(now + 1000, 1_000_000) });
   assert.equal(readHistory({ provider: "openai" }, root).length, 2);
+});
+
+test("history reconstructs missing interval usage and model cache details", () => {
+  const { getCapacityHistory } = require("../src/quota-capacity");
+  const root = tmpRoot();
+  const now = Date.now();
+  const start = now - 3600000;
+  appendSamples([
+    { provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(start).toISOString(), usedPercent: 10, resetsAt: "r", source: "test" },
+    { provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(now).toISOString(), usedPercent: 12, resetsAt: "r", source: "test" },
+  ], root);
+  getOrComputeCapacity({
+    provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, now, force: true,
+    compute: () => capacity(now, 1_000_000),
+  });
+  const records = [{
+    tool: "codex", model: "gpt-6", modelResolved: "gpt-6", time: start + 1800000,
+    inputOther: 100, inputCacheRead: 900, inputCacheCreation: 0, output: 100, costCny: 2,
+  }];
+  const page = getCapacityHistory({ provider: "openai", accountKey: "openai:test", usageScope: "all-clients", window: "session" }, root, { collected: { records }, peers: [] });
+  const [observation] = page.history[0].observations;
+  assert.equal(observation.totalTokens, 1100);
+  assert.equal(observation.costCny, 2);
+  assert.equal(observation.dp, 2);
+  assert.equal(observation.cacheHitRate, 0.9);
+  assert.equal(observation.models["gpt-6"].totalTokens, 1100);
+  assert.equal(observation.models["gpt-6"].inputCacheRead, 900);
 });
 
 test("sync minute bins preserve model identity without changing daily totals", () => {
@@ -157,6 +187,8 @@ test("Kimi estimation scope setting accepts booleans only", () => {
   assert.equal(sanitizeSettings({}).quotaEstimation.kimiCodeOnly, false);
   assert.equal(sanitizeSettings({ quotaEstimation: { kimiCodeOnly: true } }).quotaEstimation.kimiCodeOnly, true);
   assert.equal(sanitizeSettings({ quotaEstimation: { kimiCodeOnly: "true" } }).quotaEstimation.kimiCodeOnly, false);
+  assert.equal(sanitizeSettings({ quotaEstimation: { codexOnly: true } }).quotaEstimation.codexOnly, true);
+  assert.equal(sanitizeSettings({ quotaEstimation: { codexOnly: "true" } }).quotaEstimation.codexOnly, false);
 });
 
 test("peer coverage distinguishes complete, pending and stale provisional data", () => {
@@ -168,6 +200,9 @@ test("peer coverage distinguishes complete, pending and stale provisional data",
   assert.equal(peerCoverage([fresh], start, end, true, now), "complete");
   assert.equal(peerCoverage([{ ...fresh, usageWaterMark: new Date(end - 1).toISOString() }], start, end, true, now), "pending");
   assert.equal(peerCoverage([{ ...fresh, generatedAt: new Date(now - 25 * 3600000).toISOString() }], start, end, true, now), "provisional");
-  assert.equal(peerCoverage([{ generatedAt: new Date(now - 1000).toISOString(), days: {} }], start, end, true, now), "provisional");
+  // Legacy peer summaries without quota fields contribute no quota data and are skipped.
+  assert.equal(peerCoverage([{ generatedAt: new Date(now - 1000).toISOString(), days: {} }], start, end, true, now), "complete");
+  // Partial snapshots that carry quota usage but a broken watermark stay provisional.
+  assert.equal(peerCoverage([{ generatedAt: new Date(now - 1000).toISOString(), days: {}, quotaUsage: [] }], start, end, true, now), "provisional");
   assert.equal(peerCoverage([], start, end, false, now), "complete");
 });

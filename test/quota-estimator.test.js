@@ -51,6 +51,8 @@ test("quota model classification spans clients and rejects unrelated models", ()
   assert.equal(classifyQuotaModel(record("custom-unknown")).reason, "unknown_model");
   assert.equal(belongsToQuota(record("kimi-k3", { tool: "omp" }), "kimi", "kimi-code-only"), false);
   assert.equal(belongsToQuota(record("kimi-k3", { tool: "kimi-code" }), "kimi", "kimi-code-only"), true);
+  assert.equal(belongsToQuota(record("gpt-6", { tool: "omp" }), "openai", "codex-only"), false);
+  assert.equal(belongsToQuota(record("gpt-6", { tool: "codex" }), "openai", "codex-only"), true);
 });
 
 test("intervals use increasing milestones and exclude irrelevant models", () => {
@@ -161,4 +163,63 @@ test("long-term estimates use durable automatic intervals and ignore manual anch
   assert.ok(longTargets.every((target) => Number.isFinite(target.fullWindowTokens)));
   assert.ok(longTargets.every((target) => target.estimateKind === "long-term" && target.sampleCount === 3));
   assert.deepEqual(withManual.longTermTargets, base.longTermTargets);
+});
+
+test("long-term estimates merge consecutive short intervals instead of discarding active usage", () => {
+  const t0 = Date.parse("2026-10-30T10:00:00Z");
+  const samples = Array.from({ length: 13 }, (_, index) => ({
+    provider: "openai", accountKey: "openai:test", window: "session", usedPercent: 10 + index * 2,
+    sampledAt: new Date(t0 + index * 10 * 60000).toISOString(), resetsAt: "r", source: "wham",
+  }));
+  const records = Array.from({ length: 12 }, (_, index) => record("gpt-6", {
+    time: t0 + index * 10 * 60000 + 300000,
+    costCny: 1,
+  }));
+  const result = estimateCapacity({ provider: "openai", accountKey: "openai:test", samples, records, now: t0 + 130 * 60000 });
+  const targets = result.longTermTargets.filter((target) => target.window === "session");
+  assert.ok(targets.every((target) => target.sampleCount === 4));
+  assert.ok(targets.every((target) => target.longTermPercentSpan === 24));
+  assert.ok(targets[0].observations.every((interval) => Date.parse(interval.end) - Date.parse(interval.start) >= 30 * 60000));
+});
+
+test("Kimi weekly capacity is estimated directly from weekly samples without session derivation", () => {
+  const t0 = Date.parse("2026-10-30T10:00:00Z");
+  const samples = [10, 12, 14, 16].map((usedPercent, index) => ({
+    provider: "kimi", accountKey: "kimi:test", window: "session", usedPercent,
+    sampledAt: new Date(t0 + index * 3600000).toISOString(), resetsAt: "r", source: "api",
+  }));
+  const records = [1, 2, 3].map((index) => record("kimi-k3", {
+    tool: "kimi-code",
+    time: t0 + index * 3600000 - 1800000,
+    costCny: 1,
+  }));
+  const result = estimateCapacity({ provider: "kimi", accountKey: "kimi:test", samples, records, now: t0 + 4 * 3600000 });
+  for (const kind of ["targets", "longTermTargets"]) {
+    for (const rate of [0.85, 0.9, 0.95, 0.98]) {
+      const weekly = result[kind].find((target) => target.window === "weekly" && target.cacheHitRate === rate);
+      assert.ok(!Number.isFinite(weekly.fullWindowTokens));
+      assert.equal(weekly.method, "insufficient");
+      assert.ok(!weekly.confidenceReasons?.includes("session_derived"));
+    }
+  }
+
+  const withWeeklySamples = estimateCapacity({
+    provider: "kimi",
+    accountKey: "kimi:test",
+    samples: [...samples, ...samples.map((sample) => ({ ...sample, window: "weekly" }))],
+    records,
+    now: t0 + 4 * 3600000,
+  });
+  const weekly = withWeeklySamples.targets.find((target) => target.window === "weekly" && target.cacheHitRate === 0.95);
+  assert.ok(Number.isFinite(weekly.fullWindowTokens));
+  assert.notEqual(weekly.method, "insufficient");
+
+  const openai = estimateCapacity({
+    provider: "openai",
+    accountKey: "openai:test",
+    samples: samples.map((sample) => ({ ...sample, provider: "openai", accountKey: "openai:test" })),
+    records: records.map((item) => ({ ...item, tool: "codex", model: "gpt-6", modelResolved: "gpt-6" })),
+    now: t0 + 4 * 3600000,
+  });
+  assert.ok(openai.longTermTargets.filter((target) => target.window === "weekly").every((target) => !Number.isFinite(target.fullWindowTokens)));
 });

@@ -1,6 +1,6 @@
 "use strict";
 
-const { appendSamples, loadState, saveState } = require("./quota-estimator-store");
+const { appendSamples, loadState, saveState, readSamples, readHistory } = require("./quota-estimator-store");
 const { buildIntervals } = require("./quota-estimator");
 
 const MIN_DURATION_MS = 5 * 60_000;
@@ -57,10 +57,30 @@ function startCalibration({ provider, accountKey, usageScope = "all-clients", wi
   return calibration;
 }
 
-function finishCalibration({ provider, accountKey, usageScope = "all-clients", window, quota, records, isComplete, root, now = Date.now() }) {
+function implicitCalibration({ provider, accountKey, usageScope, window, root, now }) {
+  const history = readHistory({ provider, accountKey, usageScope, window, estimateKind: "standard" }, root);
+  const previousEnd = history.at(-1)?.calculationEndAt;
+  const samples = readSamples(root, now).filter((sample) =>
+    sample.provider === provider && sample.accountKey === accountKey && sample.window === window
+  );
+  const sample = (previousEnd && samples.find((item) => item.sampledAt === previousEnd)) || samples.at(-1);
+  if (!sample) throw calibrationError("calibration_not_found", "No previous calibration endpoint or quota sample is available", 404);
+  return {
+    id: `cal-implicit-${now.toString(36)}-${process.pid.toString(36)}`,
+    provider,
+    accountKey,
+    usageScope,
+    window,
+    startAt: sample.sampledAt,
+    startUsedPercent: sample.usedPercent,
+    resetsAt: sample.resetsAt,
+  };
+}
+
+function finishCalibration({ provider, accountKey, usageScope = "all-clients", window, quota, records, isComplete, root, now = Date.now(), allowImplicitStart = false }) {
   const key = calibrationKey({ provider, accountKey, usageScope, window });
   const state = loadState(root);
-  const calibration = state.calibrations[key];
+  const calibration = state.calibrations[key] || (allowImplicitStart ? implicitCalibration({ provider, accountKey, usageScope, window, root, now }) : null);
   if (!calibration) throw calibrationError("calibration_not_found", "No active calibration for this window", 404);
   const endAt = new Date(now).toISOString();
   const sample = windowSample(quota, window, accountKey, "manual-calibration", now);

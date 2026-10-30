@@ -85,8 +85,8 @@ DoraMonitor 自身**没有**遥测、上报、自动更新检查。
 
 想自行验证以上声明，推荐阅读顺序：
 
-1. `src/providers/base.js` — 记录形状（读什么字段的最终清单）；
-2. `src/providers/*.js` — 每个 provider 实际 parse 的行；
+1. `src/tools/base.js` — 记录形状（读什么字段的最终清单）；
+2. `src/tools/*.js` — 每个工具采集器实际 parse 的行；
 3. `src/model-map.js:40-51` — 密钥行剥离；
 4. `src/config-store.js:246-307` — 掩码视图；
 5. `src/sessions.js:437-509` — 预览脱敏与净化；

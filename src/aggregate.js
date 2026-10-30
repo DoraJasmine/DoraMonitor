@@ -3,7 +3,7 @@
 /**
  * Build dashboard stats for a period.
  * ranges: today | 7d | 30d | all
- * tool: "all" or a provider id ("kimi-code", "zcode", ...).
+ * tool: "all" or a tool id ("kimi-code", "zcode", ...).
  */
 function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
   const scoped = tool !== "all" ? records.filter((r) => r.tool === tool) : records;
@@ -20,8 +20,8 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
     if (!byDay.has(day)) byDay.set(day, emptyTotals());
     addTo(byDay.get(day), r);
 
-    // A model id can exist under more than one tool/provider.  Keeping the
-    // provider in the grouping key prevents their requests and costs from
+    // A model id can exist under more than one tool.  Keeping the model's
+    // vendor in the grouping key prevents their requests and costs from
     // being merged while the UI shows only whichever tool appeared first.
     const mk = modelKey(r);
     if (!byModel.has(mk)) {
@@ -388,7 +388,7 @@ function buildHeatmap(records, nowMs = Date.now(), weeks = 53, tool = "all") {
 
 /**
  * Tool-call event counts (WebSearch / FetchURL / ...) for a range.
- * events: [{time, eventName, tool}] emitted by providers.
+ * events: [{time, eventName, tool}] emitted by tool adapters.
  * Returns { byName: {WebSearch: n, ...}, total }.
  */
 function aggregateToolEvents(events, range, nowMs = Date.now(), tool = "all") {

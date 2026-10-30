@@ -70,11 +70,66 @@ function formatCny(value, locale) {
   return locale === "zh" ? `¥${formatted}` : `CNY ${formatted}`;
 }
 
+function formatRange(startIso, endIso, locale) {
+  const start = Date.parse(startIso || "");
+  const end = Date.parse(endIso || "");
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return `${formatDate(startIso, locale)} → ${formatDate(endIso, locale)}`;
+  const tag = locale === "zh" ? "zh-CN" : "en-US";
+  const dayTime = new Date(start).toLocaleString(tag, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  if (new Date(start).toDateString() === new Date(end).toDateString()) {
+    return `${dayTime} → ${new Date(end).toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}`;
+  }
+  return `${dayTime} → ${new Date(end).toLocaleString(tag, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}`;
+}
+
 function methodKey(method) {
   return `capacityMethod${method.charAt(0).toUpperCase()}${method.slice(1)}`;
 }
 
-function HistoryList({ target, capacity, locale, t }) {
+function historyBatches(history) {
+  const batches = new Map();
+  for (const item of history) {
+    const key = `${item.createdAt}-${item.trigger || "scheduled"}-${item.calibrationId || ""}`;
+    if (!batches.has(key)) batches.set(key, { ...item, targets: [] });
+    batches.get(key).targets.push(item);
+  }
+  return [...batches.values()];
+}
+
+function observationSummary(targets, calculationStartAt, calculationEndAt) {
+  const start = Date.parse(calculationStartAt || "");
+  const end = Date.parse(calculationEndAt || "");
+  const observations = (targets[0]?.observations || []).filter((observation) => {
+    const observedStart = Date.parse(observation.start || "");
+    const observedEnd = Date.parse(observation.end || "");
+    return (!Number.isFinite(start) || observedStart >= start) && (!Number.isFinite(end) || observedEnd <= end);
+  });
+  const models = new Map();
+  let totalTokens = 0;
+  let costCny = 0;
+  let percentSpan = 0;
+  let inputTotal = 0;
+  let cacheReadTotal = 0;
+  for (const observation of observations) {
+    totalTokens += observation.totalTokens || 0;
+    costCny += observation.costCny || 0;
+    percentSpan += observation.dp || 0;
+    for (const [name, usage] of Object.entries(observation.models || {})) {
+      if (!models.has(name)) models.set(name, { totalTokens: 0, input: 0, cacheRead: 0 });
+      const model = models.get(name);
+      model.totalTokens += usage.totalTokens || 0;
+      const input = (usage.inputOther || 0) + (usage.inputCacheRead || 0) + (usage.inputCacheCreation || 0);
+      model.input += input;
+      model.cacheRead += usage.inputCacheRead || 0;
+      inputTotal += input;
+      cacheReadTotal += usage.inputCacheRead || 0;
+    }
+  }
+  const cacheHit = inputTotal > 0 ? cacheReadTotal / inputTotal : null;
+  return { totalTokens, costCny, percentSpan, cacheHit, models: [...models.entries()], hasObservations: observations.length > 0 };
+}
+
+function HistoryList({ window, estimateKind = "standard", capacity, locale, t }) {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState(null);
   const [total, setTotal] = useState(0);
@@ -84,9 +139,8 @@ function HistoryList({ target, capacity, locale, t }) {
     provider: capacity.provider,
     accountKey: capacity.accountKey,
     scope: capacity.usageScope,
-    window: target.window,
-    cacheHitRate: target.cacheHitRate,
-    estimateKind: target.estimateKind || "standard",
+    window,
+    estimateKind,
   };
   const queryKey = JSON.stringify(query);
 
@@ -101,7 +155,7 @@ function HistoryList({ target, capacity, locale, t }) {
     setLoading(true);
     setFailed(false);
     try {
-      const data = await fetchQuotaCapacityHistory({ ...query, limit: 30, offset });
+      const data = await fetchQuotaCapacityHistory({ ...query, limit: 40, offset });
       const rows = data.history || [];
       setHistory((current) => offset === 0 || !current ? rows : [...current, ...rows]);
       setTotal(Number(data.total) || rows.length);
@@ -122,21 +176,52 @@ function HistoryList({ target, capacity, locale, t }) {
       }}>
         {t("capacityHistory")}
       </button>
-      {open && <div className="mt-2 space-y-2">
+      {open && <div className="mt-1.5 space-y-2 text-[11px] leading-4 text-muted-foreground">
         {loading && history === null && <div>{t("loading")}</div>}
         {failed && <div className="flex items-center gap-2 text-destructive"><span>{t("capacityHistoryFailed")}</span><Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => load(0)}>{t("retry")}</Button></div>}
         {history && !history.length && !loading && <div>{t("capacityNoHistory")}</div>}
-        {history && [...history].reverse().map((item) => (
-          <article key={`${item.createdAt}-${item.cacheHitRate}`} className="space-y-1 border-b border-border/40 pb-2 last:border-0">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-foreground/85">
-              <span className="num font-medium">{fmtTokens(item.fullWindowTokens)} · {formatCny(item.fullWindowCostCny, locale)}</span>
-              <span>{fill(t("capacityScore"), { score: item.confidenceScore ?? 0 })} · {item.trigger === "manual" ? t("calibrationManual") : t("calibrationScheduled")}</span>
-            </div>
-            <div>{t("capacityInterval")}: {formatDate(item.calculationStartAt || item.dataRange?.start, locale)} → {formatDate(item.calculationEndAt || item.dataRange?.end, locale)}</div>
-            <div>{t("capacityPreviousEnd")}: {formatDate(item.previousCalculationEndAt, locale)}</div>
-            <div>{t("capacityRecordedAt")}: {formatDate(item.createdAt, locale)}</div>
-          </article>
-        ))}
+        {history && historyBatches(history).map((batch) => {
+          const observed = observationSummary(batch.targets, batch.calculationStartAt, batch.calculationEndAt);
+          const trigger = batch.trigger === "manual" ? t("calibrationManual") : batch.trigger === "manual-end" ? t("calibrationManualEnd") : batch.trigger === "reanchor" ? t("calibrationReanchor") : t("calibrationScheduled");
+          const dominant = observed.models.reduce((best, entry) => (entry[1].totalTokens > (best?.[1].totalTokens || 0) ? entry : best), null);
+          return (
+            <article key={`${batch.createdAt}-${batch.trigger}-${batch.calibrationId}`} className="space-y-1.5 border-b border-border/40 pb-2.5 leading-[1.4] last:border-0">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <span className="num text-xs font-medium text-foreground/90">
+                  {formatCny(batch.targets.find((target) => Number.isFinite(target.fullWindowCostCny))?.fullWindowCostCny, locale)}
+                  {dominant && <span className="ml-2 text-[11px] font-normal text-muted-foreground" title={dominant[0]}>{dominant[0]}</span>}
+                </span>
+                <span className="text-[11px] text-muted-foreground">{trigger} · {fill(t("capacityScore"), { score: batch.targets[0]?.confidenceScore ?? 0 })}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] sm:grid-cols-4">
+                {[0.85, 0.9, 0.95, 0.98].map((rate) => {
+                  const target = batch.targets.find((item) => item.cacheHitRate === rate);
+                  return <div key={rate} className="num whitespace-nowrap text-foreground/85"><span className="text-muted-foreground">{Math.round(rate * 100)}% </span><strong>{Number.isFinite(target?.fullWindowTokens) ? fmtTokens(target.fullWindowTokens) : "—"}</strong></div>;
+                })}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {t("capacityInterval")}: {formatRange(batch.calculationStartAt || batch.dataRange?.start, batch.calculationEndAt || batch.dataRange?.end, locale)}
+                <span className="mx-1.5">·</span>{t("capacityPreviousEnd")}: {formatDate(batch.previousCalculationEndAt, locale)}
+                <span className="mx-1.5">·</span>{t("capacityRecordedAt")}: {formatDate(batch.createdAt, locale)}
+              </div>
+              {observed.hasObservations ? (
+                <>
+                  <div className="num text-[11px] text-foreground/85">
+                    {t("capacityObservedUsage")}: {fmtTokens(observed.totalTokens)} · {formatCny(observed.costCny, locale)} · +{observed.percentSpan}%
+                    {Number.isFinite(observed.cacheHit) && <span><span className="mx-1.5">·</span>{t("capacityCache")} {Math.round(observed.cacheHit * 1000) / 10}%</span>}
+                  </div>
+                  {observed.models.length > 0 && <div className="text-[11px] text-muted-foreground">
+                    {t("capacityModelBreakdown")}: {observed.models.map(([name, model]) => (
+                      <span key={name} className="num whitespace-nowrap">
+                        <span className="text-foreground/80" title={name}>{name}</span> {fmtTokens(model.totalTokens)} · {model.input > 0 ? Math.round(model.cacheRead / model.input * 1000) / 10 : 0}%
+                      </span>
+                    )).reduce((nodes, node, index) => index === 0 ? [node] : [...nodes, <span key={`sep-${index}`} className="mx-1.5">|</span>, node], [])}
+                  </div>}
+                </>
+              ) : <div className="text-[11px] text-muted-foreground">{t("capacityNoObservations")}</div>}
+            </article>
+          );
+        })}
         {history && history.length < total && (
           <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={loading} onClick={() => load(history.length)}>
             {loading ? t("loading") : fill(t("capacityLoadMore"), { remaining: total - history.length })}
@@ -147,35 +232,34 @@ function HistoryList({ target, capacity, locale, t }) {
   );
 }
 
-function CapacityTarget({ target, maximum, capacity, locale, t, expanded }) {
-  const [open, setOpen] = useState(false);
-  const insufficient = !Number.isFinite(target.fullWindowTokens);
-  const row = (
-    <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 text-xs">
-      <span className="font-medium">{Math.round(target.cacheHitRate * 100)}%</span>
-      <span className={cn("num", insufficient ? "text-muted-foreground" : "font-semibold")}>{insufficient ? t("capacityInsufficient") : fmtTokens(target.fullWindowTokens)}</span>
-      <span className="num text-muted-foreground">{insufficient ? "—" : formatCny(target.fullWindowCostCny, locale)}</span>
-      <span className="text-[10px] text-muted-foreground">{insufficient ? "—" : fill(t("capacityScore"), { score: target.confidenceScore ?? 0 })}</span>
-    </div>
-  );
-  if (!expanded) return <div className="py-1.5">{row}</div>;
+function RateBasis({ rate, t }) {
+  const parts = t("capacityBasis").split("{rate}");
   return (
-    <div className="border-b border-border/40 py-1.5 last:border-0">
-      <button type="button" className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default" disabled={insufficient} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-        <div className="flex items-center gap-1">
-          {open ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />}
-          <div className="min-w-0 flex-1">{row}</div>
-        </div>
-      </button>
-      {open && !insufficient && (
-        <div className="ml-4 mt-2 space-y-1.5 text-[11px] text-muted-foreground">
-          <div>{t(methodKey(target.method))} · {fill(t("capacitySamples"), { n: target.sampleCount })} · {t(`capacityConfidence${target.confidence.charAt(0).toUpperCase()}${target.confidence.slice(1)}`)}</div>
-          {Number.isFinite(target.low) && Number.isFinite(target.high) && <div>{t("capacityRange")}: {fmtTokens(target.low)}–{fmtTokens(target.high)}</div>}
-          {maximum && <div>{t("capacityMax")}: {fmtTokens(maximum.fullWindowTokens)} · {formatCny(maximum.fullWindowCostCny, locale)} · {formatDate(maximum.createdAt, locale)}</div>}
-          <div>{t("capacityInterval")}: {formatDate(target.dataRange?.start, locale)} → {formatDate(target.dataRange?.end, locale)}</div>
-          <HistoryList target={target} capacity={capacity} locale={locale} t={t} />
-        </div>
-      )}
+    <span className="whitespace-nowrap">
+      {parts[0]}<strong className="font-bold text-foreground">{rate}</strong>{parts[1] ?? ""}
+    </span>
+  );
+}
+
+function CapacityRateLine({ target, locale, t }) {
+  const insufficient = !Number.isFinite(target?.fullWindowTokens);
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-5 gap-y-0.5 py-1.5 text-xs">
+      <RateBasis rate={`${Math.round((target?.cacheHitRate || 0) * 100)}%`} t={t} />
+      <span className="text-[11px] text-muted-foreground">
+        {t("capacityFull")}{" "}
+        <strong className={cn("num text-sm", insufficient ? "font-normal text-muted-foreground" : "font-semibold text-foreground")}>
+          {insufficient ? t("capacityInsufficient") : fmtTokens(target.fullWindowTokens)}
+        </strong>
+      </span>
+      <span className="text-[11px] text-muted-foreground">
+        {t("capacityCost")}{" "}
+        <span className="num font-medium text-foreground/85">{Number.isFinite(target?.fullWindowCostCny) ? formatCny(target.fullWindowCostCny, locale) : "—"}</span>
+      </span>
+      <span className="text-[11px] text-muted-foreground">
+        {t("capacityQuality")}{" "}
+        <span className="num font-medium text-foreground/85">{Number.isFinite(target?.confidenceScore) ? fill(t("capacityScore"), { score: target.confidenceScore }) : "—"}</span>
+      </span>
     </div>
   );
 }
@@ -223,6 +307,9 @@ function CalibrationControls({ window, capacity, locale, t, onChanged }) {
           <>
             <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2.5 text-[11px]" disabled={busy} onClick={() => run("start")}>
               <Play className="h-3 w-3" aria-hidden />{t("calibrationStart")}
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2.5 text-[11px]" disabled={busy} onClick={() => run("end")}>
+              <Square className="h-3 w-3" aria-hidden />{t("calibrationEnd")}
             </Button>
             <span className="text-muted-foreground">{t("calibrationRequirement")}</span>
           </>
@@ -301,6 +388,7 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
       return false;
     }
   });
+  const [detailKey, setDetailKey] = useState(null);
   if (!capacity || !Array.isArray(capacity.targets)) return null;
   const visibleRates = expanded ? [0.85, 0.9, 0.95, 0.98] : [0.9, 0.95];
 
@@ -313,7 +401,7 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
   };
 
   return (
-    <section className="mt-4 border-t border-border/60 pt-3">
+    <section className="mt-3 border-t border-border/60 pt-2">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium">{t("capacityTitle")}</h3>
@@ -324,29 +412,51 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
           {expanded ? t("capacityCollapse") : t("capacityExpand")}
         </Button>
       </div>
-      <div className="mt-3 grid gap-x-8 gap-y-5 lg:grid-cols-2">
+      <div className="mt-2 grid gap-x-8 gap-y-3 lg:grid-cols-2">
         {["session", "weekly"].map((window) => {
           const targets = capacity.targets.filter((target) => target.window === window && visibleRates.includes(target.cacheHitRate));
+          const costTarget = targets.find((target) => Number.isFinite(target.fullWindowCostCny));
+          const best = targets.reduce((current, target) => (target.confidenceScore || 0) > (current?.confidenceScore || 0) ? target : current, null);
+          const detailTarget = targets.find((target) => `${window}:${target.cacheHitRate}` === detailKey);
+          const detailMaximum = detailTarget
+            ? (capacity.maxima || []).find((item) => item.window === detailTarget.window && item.cacheHitRate === detailTarget.cacheHitRate && (item.estimateKind || "standard") === "standard")
+            : null;
           return (
             <div key={window}>
-              <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
-              <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-border/60 pb-1.5 text-[10px] text-muted-foreground">
-                <span>{t("capacityCache")}</span>
-                <span>{t("capacityFull")}</span>
-                <span>{t("capacityCost")}</span>
-                <span>{t("capacityQuality")}</span>
+              <div className="text-sm font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
+              {(costTarget || (best && Number.isFinite(best.confidenceScore))) && (
+                <div className="num mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-sm font-semibold text-foreground">
+                  {costTarget && <span>{t("capacityCost")} {formatCny(costTarget.fullWindowCostCny, locale)}</span>}
+                  {best && Number.isFinite(best.confidenceScore) && <span>{t("capacityQuality")} {fill(t("capacityScore"), { score: best.confidenceScore })}</span>}
+                </div>
+              )}
+              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+                {targets.map((target) => {
+                  const rate = Math.round(target.cacheHitRate * 100);
+                  const key = `${window}:${target.cacheHitRate}`;
+                  const insufficient = !Number.isFinite(target.fullWindowTokens);
+                  const open = detailKey === key;
+                  return (
+                    <button key={key} type="button" disabled={insufficient} aria-expanded={open}
+                      className="rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                      onClick={() => setDetailKey(open ? null : key)}>
+                      <div className="text-[11px] text-muted-foreground"><RateBasis rate={`${rate}%`} t={t} /></div>
+                      <div className={cn("num mt-0.5 text-sm", insufficient ? "text-muted-foreground" : "font-semibold text-foreground")}>
+                        {insufficient ? t("capacityInsufficient") : fmtTokens(target.fullWindowTokens)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              {targets.map((target) => (
-                <CapacityTarget
-                  key={`${target.window}-${target.cacheHitRate}`}
-                  target={target}
-                  maximum={(capacity.maxima || []).find((item) => item.window === target.window && item.cacheHitRate === target.cacheHitRate && (item.estimateKind || "standard") === "standard")}
-                  capacity={capacity}
-                  locale={locale}
-                  t={t}
-                  expanded={expanded}
-                />
-              ))}
+              {detailTarget && (
+                <div className="ml-1 mt-2 space-y-1 border-l border-border/60 pl-3 text-[11px] leading-4 text-muted-foreground">
+                  <div>{t(methodKey(detailTarget.method))} · {fill(t("capacitySamples"), { n: detailTarget.sampleCount })} · {t(`capacityConfidence${detailTarget.confidence.charAt(0).toUpperCase()}${detailTarget.confidence.slice(1)}`)}</div>
+                  {Number.isFinite(detailTarget.low) && Number.isFinite(detailTarget.high) && <div>{t("capacityRange")}: {fmtTokens(detailTarget.low)} – {fmtTokens(detailTarget.high)}</div>}
+                  {detailMaximum && <div>{t("capacityMax")}: {fmtTokens(detailMaximum.fullWindowTokens)} · {formatCny(detailMaximum.fullWindowCostCny, locale)} · {formatDate(detailMaximum.createdAt, locale)}</div>}
+                  <div>{t("capacityInterval")}: {formatDate(detailTarget.dataRange?.start, locale)} → {formatDate(detailTarget.dataRange?.end, locale)}</div>
+                </div>
+              )}
+              {expanded && <HistoryList window={window} estimateKind="standard" capacity={capacity} locale={locale} t={t} />}
               {expanded && <CalibrationControls window={window} capacity={capacity} locale={locale} t={t} onChanged={onChanged} />}
             </div>
           );
@@ -362,30 +472,22 @@ function LongTermCapacitySection({ capacity, locale, t }) {
   if (!targets.length) return null;
   const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
   return (
-    <section className="mt-4 border-t border-border/60 pt-3">
+    <section className="mt-3 border-t border-border/60 pt-2">
       <h3 className="text-sm font-medium">{t("longTermTitle")}</h3>
       <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-muted-foreground">{t("longTermHint")}</p>
       {!hasData ? (
-        <div className="mt-2 text-[11px] text-muted-foreground">{t("longTermInsufficient")}</div>
+        <div className="mt-2 text-[11px] text-muted-foreground">{fill(t("longTermProgress"), { n: targets[0]?.longTermCandidateCount || 0, span: targets[0]?.longTermPercentSpan || 0 })}</div>
       ) : (
-        <div className="mt-3 grid gap-x-8 gap-y-5 lg:grid-cols-2">
+        <div className="mt-2 grid gap-x-8 gap-y-3 lg:grid-cols-2">
           {["session", "weekly"].map((window) => (
             <div key={window}>
-              <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
-              <div className="grid grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-border/60 pb-1.5 text-[10px] text-muted-foreground">
-                <span>{t("capacityCache")}</span><span>{t("capacityFull")}</span><span>{t("capacityCost")}</span><span>{t("capacityQuality")}</span>
+              <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</span>
               </div>
               {targets.filter((target) => target.window === window && [0.9, 0.95].includes(target.cacheHitRate)).map((target) => (
-                <CapacityTarget
-                  key={`long-${target.window}-${target.cacheHitRate}`}
-                  target={target}
-                  maximum={(capacity.maxima || []).find((item) => item.window === target.window && item.cacheHitRate === target.cacheHitRate && item.estimateKind === "long-term")}
-                  capacity={capacity}
-                  locale={locale}
-                  t={t}
-                  expanded
-                />
+                <CapacityRateLine key={`long-${target.window}-${target.cacheHitRate}`} target={target} locale={locale} t={t} />
               ))}
+              <HistoryList window={window} estimateKind="long-term" capacity={capacity} locale={locale} t={t} />
             </div>
           ))}
         </div>
@@ -394,23 +496,63 @@ function LongTermCapacitySection({ capacity, locale, t }) {
   );
 }
 
-export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
+function HomeCapacityGroup({ title, targets, locale, t }) {
+  return (
+    <div>
+      <div className="mb-0.5 text-xs font-medium">{title}</div>
+      {[0.95].map((rate) => {
+        const target = targets.find((item) => item.cacheHitRate === rate);
+        return target ? <CapacityRateLine key={rate} target={target} locale={locale} t={t} /> : null;
+      })}
+    </div>
+  );
+}
+
+function HomeCapacity({ capacity, locale, t }) {
+  const longTargets = capacity?.longTermTargets || [];
+  if (!longTargets.length) return null;
+  return (
+    <section className="mt-4 space-y-3 border-t border-border/60 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">{t("longTermTitle")}</h3>
+        <a href="/quota" className="rounded-sm text-[11px] text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t("capacityDetails")}</a>
+      </div>
+      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        {["session", "weekly"].map((window) => {
+          const targets = longTargets.filter((target) => target.window === window);
+          const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
+          return hasData ? (
+            <HomeCapacityGroup key={window} title={window === "session" ? t("quota5h") : t("quotaWeekly")} targets={targets} locale={locale} t={t} />
+          ) : (
+            <div key={window} className="text-[11px] text-muted-foreground">
+              <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
+              {fill(t("longTermProgress"), { n: targets[0]?.longTermCandidateCount || 0, span: targets[0]?.longTermPercentSpan || 0 })}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false }) {
   const [quota, setQuota] = useState(null);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState("all-clients");
   const [, forceTick] = useState(0);
 
   useEffect(() => {
-    if (tool !== "kimi-code") return;
     fetchSettings().then((settings) => {
-      setScope(settings.quotaEstimation?.kimiCodeOnly ? "kimi-code-only" : "all-clients");
+      setScope(tool === "codex"
+        ? settings.quotaEstimation?.codexOnly ? "codex-only" : "all-clients"
+        : settings.quotaEstimation?.kimiCodeOnly ? "kimi-code-only" : "all-clients");
     }).catch(() => {});
   }, [tool]);
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const d = await fetchQuota(refresh, tool === "kimi-code" ? null : tool, tool === "kimi-code" ? scope : null);
+      const d = await fetchQuota(refresh, tool === "kimi-code" ? null : tool, scope);
       setQuota(d);
     } catch {
       setQuota(null);
@@ -431,7 +573,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
     const previous = scope;
     setScope(next);
     try {
-      await saveSettings({ quotaEstimation: { kimiCodeOnly: next === "kimi-code-only" } });
+      await saveSettings({ quotaEstimation: tool === "codex" ? { codexOnly: next === "codex-only" } : { kimiCodeOnly: next === "kimi-code-only" } });
     } catch {
       setScope(previous);
     }
@@ -455,7 +597,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
             <CardTitle>{t(i18n.title)}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {tool === "kimi-code" && (
+            {detail && (tool === "kimi-code" || tool === "codex") && (
               <select
                 className="h-7 rounded-md border border-input bg-background px-2 text-[11px]"
                 value={scope}
@@ -463,7 +605,9 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
                 aria-label={t("capacityScope")}
               >
                 <option value="all-clients">{t("capacityScopeAll")}</option>
-                <option value="kimi-code-only">{t("capacityScopeKimiCode")}</option>
+                {tool === "codex"
+                  ? <option value="codex-only">{t("capacityScopeCodex")}</option>
+                  : <option value="kimi-code-only">{t("capacityScopeKimiCode")}</option>}
               </select>
             )}
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" disabled={loading} onClick={() => load(true)} aria-label={t("refresh")}>
@@ -499,9 +643,10 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code" }) {
             })}
           </div>
         )}
-        {quota?.available && <QuotaSampleHistory quota={quota} locale={locale} t={t} />}
-        {quota && <CapacitySection capacity={quota.capacity} locale={locale} t={t} onChanged={() => load(false)} />}
-        {quota && <LongTermCapacitySection capacity={quota.capacity} locale={locale} t={t} />}
+        {!detail && quota && <HomeCapacity capacity={quota.capacity} locale={locale} t={t} />}
+        {detail && quota?.available && <QuotaSampleHistory quota={quota} locale={locale} t={t} />}
+        {detail && quota && <CapacitySection capacity={quota.capacity} locale={locale} t={t} onChanged={() => load(false)} />}
+        {detail && quota && <LongTermCapacitySection capacity={quota.capacity} locale={locale} t={t} />}
       </CardContent>
     </Card>
   );

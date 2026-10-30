@@ -106,7 +106,8 @@ export async function fetchQuota(refresh = false, tool = null, scope = null) {
 }
 
 export async function fetchQuotaCapacityHistory({ provider, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {
-  const qs = new URLSearchParams({ provider, accountKey, scope, window, cacheHitRate: String(cacheHitRate), estimateKind, limit: String(limit), offset: String(offset) });
+  const qs = new URLSearchParams({ provider, accountKey, scope, window, estimateKind, limit: String(limit), offset: String(offset) });
+  if (cacheHitRate !== undefined) qs.set("cacheHitRate", String(cacheHitRate));
   return httpJson(`/api/quota/capacity/history?${qs}`);
 }
 
@@ -138,7 +139,7 @@ export async function saveSettings(body) {
   });
 }
 
-/** GET /api/tools — provider availability list */
+/** GET /api/tools — AI tool availability list */
 export async function fetchTools() {
   return httpJson("/api/tools");
 }

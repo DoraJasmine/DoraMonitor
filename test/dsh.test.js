@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 
-const dsh = require("../src/providers/dsh");
+const dsh = require("../src/tools/dsh");
 const { matchPrice } = require("../src/pricing");
 
 // Node's zlib zstd bindings (22.15+) are only needed to BUILD fixtures —

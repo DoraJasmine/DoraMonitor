@@ -68,6 +68,7 @@ describe("pricing", () => {
       assert.equal(p.id, "gpt-6.1-sol", name);
       assert.equal(p.input, 2.0 * 7.2, name);
       assert.equal(p.cacheHit, 0.1 * 7.2, name);
+      assert.equal(p.cacheWrite, 2.5 * 7.2, name);
       assert.equal(p.output, 10.0 * 7.2, name);
       assert.equal(p.estimated, false, name);
     }
@@ -177,6 +178,16 @@ describe("pricing", () => {
     assert.equal(peakFlash.nativeCurrency, "CNY");
     assert.equal(peakFlash.input, 2);
     assert.equal(offPeakFlash.output, 4);
+    assert.equal(prices.find((p) => p.id === "qwen3.6-flash").input, 0.25 * 7.2);
+    assert.equal(prices.find((p) => p.id === "qwen3.6-flash").output, 1.5 * 7.2);
+    assert.equal(prices.find((p) => p.id === "qwen3.5-plus").input, 0.4 * 7.2);
+    assert.equal(prices.find((p) => p.id === "qwen3.5-plus").output, 2.4 * 7.2);
+    const minimaxM3 = prices.find((p) => p.id === "minimax-m3");
+    assert.equal(minimaxM3.nativeCurrency, "CNY");
+    assert.equal(minimaxM3.input, 2.1);
+    assert.equal(minimaxM3.output, 8.4);
+    assert.ok(prices.every((p) => /^https:\/\//.test(p.sourceUrl)));
+    assert.equal(prices.find((p) => p.id === "gpt-6-sol").sourceUrl, "https://developers.openai.com/api/docs/models/gpt-6-sol");
   });
 
   it("uses BigModel China's CNY prices without applying fxRate", () => {

@@ -58,6 +58,26 @@ test("manual calibration persists exact endpoints and completes once", () => {
   assert.throws(() => finishCalibration({ ...base, quota: quota(12), records: [], root: store, now: T0 + 7 * 60_000 }), (error) => error.code === "calibration_not_found");
 });
 
+test("immediate finish uses the previous calculation endpoint without an explicit start", () => {
+  const store = root();
+  const { appendSamples, getOrComputeCapacity } = require("../src/quota-estimator-store");
+  appendSamples([{ provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(T0).toISOString(), usedPercent: 10, resetsAt: "2026-10-30T15:00:00Z", source: "test" }], store);
+  getOrComputeCapacity({
+    ...base,
+    root: store,
+    now: T0,
+    compute: () => ({
+      generatedAt: new Date(T0).toISOString(),
+      targets: [{ window: "session", cacheHitRate: 0.95, fullWindowTokens: 1000000, dataRange: { start: new Date(T0 - 3600000).toISOString(), end: new Date(T0).toISOString() } }],
+    }),
+  });
+  appendSamples([{ provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(T0 + 5 * 60000).toISOString(), usedPercent: 11, resetsAt: "2026-10-30T15:00:00Z", source: "test" }], store);
+  const completed = finishCalibration({ ...base, quota: quota(12), records: usage(T0 + 30_000), root: store, now: T0 + 6 * 60_000, allowImplicitStart: true });
+  assert.equal(completed.startAt, new Date(T0).toISOString());
+  assert.equal(completed.percentSpan, 2);
+  assert.equal(completed.totalTokens, 20_000);
+});
+
 test("manual calibration can cancel a reset or abandoned interval", () => {
   const store = root();
   startCalibration({ ...base, quota: quota(10), root: store, now: T0 });

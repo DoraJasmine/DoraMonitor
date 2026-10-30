@@ -3,7 +3,7 @@
 const { collect } = require("./collect");
 const { loadSettings } = require("./settings");
 const { loadCachedPeers, quotaUsageRecords, syncEnabled } = require("./sync");
-const { estimateCapacity } = require("./quota-estimator");
+const { estimateCapacity, buildIntervals } = require("./quota-estimator");
 const { readSamples, readSamplePage, getOrComputeCapacity, readHistoryPage } = require("./quota-estimator-store");
 
 function peerCoverage(peers, start, end, enabled, now) {
@@ -18,7 +18,12 @@ function peerCoverage(peers, start, end, enabled, now) {
       continue;
     }
     if (!Array.isArray(peer.quotaUsage) || !Number.isFinite(waterMark)) {
-      if (result === "complete") result = "provisional";
+      // Legacy peer summaries (before quotaUsage/usageWaterMark existed) carry no
+      // quota samples or usage records, so they cannot contribute coverage data;
+      // skip them instead of permanently downgrading every interval.
+      if (Array.isArray(peer.quotaUsage) || peer.quotaSamples || Number.isFinite(waterMark)) {
+        if (result === "complete") result = "provisional";
+      }
       continue;
     }
     if (waterMark < end) return "pending";
@@ -62,8 +67,56 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
   });
 }
 
-function getCapacityHistory(query, root) {
-  return readHistoryPage(query, root);
+function getCapacityHistory(query, root, { collected, peers } = {}) {
+  const page = readHistoryPage(query, root);
+  if (!page.history.some((item) => !Array.isArray(item.observations))) return page;
+
+  const settings = loadSettings();
+  const peerList = peers || (syncEnabled(settings) ? loadCachedPeers() : []);
+  const snapshot = collected || collect();
+  const records = [...snapshot.records, ...peerList.flatMap(quotaUsageRecords)];
+  const samples = new Map();
+  for (const sample of readSamples(root)) {
+    samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
+  }
+  for (const peer of peerList) {
+    for (const sample of peer.quotaSamples || []) {
+      samples.set([sample.provider, sample.accountKey, sample.window, sample.sampledAt, sample.source].join("\0"), sample);
+    }
+  }
+
+  const reconstructed = new Map();
+  page.history = page.history.map((item) => {
+    if (Array.isArray(item.observations)) return item;
+    const start = Date.parse(item.calculationStartAt || item.dataRange?.start || "");
+    const end = Date.parse(item.calculationEndAt || item.dataRange?.end || "");
+    const key = `${start}:${end}`;
+    if (!reconstructed.has(key)) {
+      const intervalSamples = [...samples.values()].filter((sample) => {
+        const time = Date.parse(sample.sampledAt || "");
+        return sample.provider === item.provider && sample.accountKey === item.accountKey && sample.window === item.window && time >= start && time <= end;
+      });
+      const observations = buildIntervals({
+        samples: intervalSamples,
+        records,
+        provider: item.provider,
+        window: item.window,
+        usageScope: item.usageScope,
+        accountKey: item.accountKey,
+      }).filter((interval) => interval.totalTokens > 0).map((interval) => ({
+        start: new Date(interval.start).toISOString(),
+        end: new Date(interval.end).toISOString(),
+        dp: interval.dp,
+        totalTokens: interval.totalTokens,
+        costCny: interval.costCny,
+        cacheHitRate: interval.cacheHitRate,
+        models: interval.models,
+      }));
+      reconstructed.set(key, observations);
+    }
+    return { ...item, observations: reconstructed.get(key) };
+  });
+  return page;
 }
 
 function getQuotaSampleHistory(query, root) {

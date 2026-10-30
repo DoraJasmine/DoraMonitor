@@ -373,7 +373,25 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
   const resolvedSettings = settings || loadSettings();
 
   const targets = CACHE_TARGETS.map((cacheHitRate) => {
-    const common = { cacheHitRate, sampleCount, percentSpan, coverage, confidence, residual, dataRange, modelMix: profile };
+    const common = {
+      cacheHitRate,
+      sampleCount,
+      percentSpan,
+      coverage,
+      confidence,
+      residual,
+      dataRange,
+      modelMix: profile,
+      observations: complete.map((interval) => ({
+        start: new Date(interval.start).toISOString(),
+        end: new Date(interval.end).toISOString(),
+        dp: interval.dp,
+        totalTokens: interval.totalTokens,
+        costCny: interval.costCny,
+        cacheHitRate: interval.cacheHitRate,
+        models: interval.models,
+      })),
+    };
     if (fit && basicMedian > 0) {
       const pricedTokens = tokensFromCost(monetary, profile, cacheHitRate, resolvedSettings);
       if (pricedTokens) {
@@ -441,6 +459,48 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
   return { targets, residual, sampleCount, percentSpan, coverage };
 }
 
+function mergeLongIntervals(intervals, minimumDuration) {
+  const merged = [];
+  let current = null;
+  const finish = () => {
+    if (!current || current.durationMs < minimumDuration) return;
+    const totals = emptyModel();
+    for (const usage of Object.values(current.models)) addTokens(totals, usage);
+    const input = totals.inputOther + totals.inputCacheRead + totals.inputCacheCreation;
+    current.cacheHitRate = input > 0 ? totals.inputCacheRead / input : 0;
+    current.dominantModelShare = current.totalTokens > 0
+      ? Math.max(...Object.values(current.models).map((usage) => usage.totalTokens)) / current.totalTokens
+      : 0;
+    current.reason = current.totalTokens > 0 ? null : "untracked_usage";
+    merged.push(current);
+  };
+  for (const interval of intervals) {
+    if (!current || current.end !== interval.start) {
+      finish();
+      current = { ...interval, models: Object.fromEntries(Object.entries(interval.models).map(([name, usage]) => [name, { ...usage }])) };
+    } else {
+      current.end = interval.end;
+      current.durationMs += interval.durationMs;
+      current.dp += interval.dp;
+      current.totalTokens += interval.totalTokens;
+      current.costCny += interval.costCny;
+      current.unknownTokens += interval.unknownTokens;
+      if (interval.coverage === "pending" || current.coverage === "pending") current.coverage = "pending";
+      else if (interval.coverage === "provisional" || current.coverage === "provisional") current.coverage = "provisional";
+      for (const [name, usage] of Object.entries(interval.models)) {
+        if (!current.models[name]) current.models[name] = emptyModel();
+        addTokens(current.models[name], usage);
+      }
+    }
+    if (current.durationMs >= minimumDuration) {
+      finish();
+      current = null;
+    }
+  }
+  finish();
+  return merged;
+}
+
 function estimateCapacity({ samples, records, provider, usageScope = "all-clients", accountKey = null, isComplete, now = Date.now(), settings = null }) {
   const targets = [];
   const longTermTargets = [];
@@ -452,15 +512,33 @@ function estimateCapacity({ samples, records, provider, usageScope = "all-client
 
     const automaticSamples = windowSamples.filter((sample) => sample.source !== "manual-calibration");
     const minimumDuration = window === "session" ? 30 * 60_000 : 6 * 3_600_000;
-    const longIntervals = buildIntervals({ samples: automaticSamples, records, provider, window, usageScope, accountKey, isComplete })
-      .filter((interval) => interval.durationMs >= minimumDuration && interval.coverage === "complete");
+    const longIntervals = mergeLongIntervals(
+      buildIntervals({ samples: automaticSamples, records, provider, window, usageScope, accountKey, isComplete }),
+      minimumDuration
+    ).filter((interval) => interval.coverage === "complete");
     const longSpan = longIntervals.reduce((sum, interval) => sum + interval.dp, 0);
     const longEstimated = longIntervals.length >= 3 && longSpan >= 5
       ? estimateWindow(longIntervals, { now, settings })
       : estimateWindow([], { now, settings });
-    for (const target of longEstimated.targets) longTermTargets.push({ window, ...target, estimateKind: "long-term" });
+    for (const target of longEstimated.targets) longTermTargets.push({
+      window,
+      ...target,
+      estimateKind: "long-term",
+      longTermCandidateCount: longIntervals.length,
+      longTermPercentSpan: longSpan,
+      longTermMinimumSamples: 3,
+      longTermMinimumPercentSpan: 5,
+    });
   }
-  return { provider, usageScope, accountKey, generatedAt: new Date(now).toISOString(), algorithmVersion: 3, targets, longTermTargets };
+  return {
+    provider,
+    usageScope,
+    accountKey,
+    generatedAt: new Date(now).toISOString(),
+    algorithmVersion: 5,
+    targets,
+    longTermTargets,
+  };
 }
 
 module.exports = { CACHE_TARGETS, TOKEN_TYPES, buildIntervals, estimateWindow, estimateCapacity, fitRates, weightedQuantile };

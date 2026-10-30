@@ -15,7 +15,7 @@
  │  Claude Code      ~/.claude/projects/**/*.jsonl                       │
  │  dsh              ~/.dsh/sessions/**  (.jsonl.zstd 多帧)               │
  └──────────────────────────────┬────────────────────────────────────────┘
-                                │ providers/*.scan(home)  只读元数据
+                                │ tools/*.scan(home)  只读元数据
                                 ▼
  ┌─────────────────── 采集层 collect.js（15s 增量缓存）───────────────────┐
  │  文件戳探测(mtime+size) → 未变则复用旧 records → 变了才重扫              │
@@ -69,15 +69,15 @@
 | --- | --- | --- |
 | `server.js` | ~730 | HTTP 服务：26 个 `/api/*` 端点、静态托管、SPA 回退、gzip、安全防护 |
 | `collect.js` | ~130 | 采集调度：15s TTL 增量缓存、文件戳探测、单 provider 故障隔离 |
-| `providers/index.js` | ~140 | provider 注册表、可用性探测、增量缓存用的源文件清单 |
-| `providers/base.js` | ~170 | 共享基础：记录形状、工具元数据、home 展开、SQLite 后端 |
-| `providers/kimi-code.js` | ~240 | Kimi Code：wire.jsonl 解析、fork 去重、tool.call 事件 |
-| `providers/zcode.js` | ~140 | ZCode：SQLite `model_usage` 表 → 记录 |
-| `providers/codex.js` | ~310 | Codex：rollout 文件（含 zst）、response_id 去重、rate_limits 快照 |
-| `providers/claude-code.js` | ~170 | Claude Code：projects/*.jsonl、message.id 去重 |
-| `providers/dsh.js` | ~230 | dsh：多帧 zstd、session 头、message.id 去重 |
-| `providers/qoder-cn.js` | ~200 | QoderCN IDE：SQLite `chat_message`、token_info JSON |
-| `providers/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
+| `tools/index.js` | ~140 | 工具注册表、可用性探测、增量缓存用的源文件清单 |
+| `tools/base.js` | ~170 | 共享基础：记录形状、工具元数据、home 展开、SQLite 后端 |
+| `tools/kimi-code.js` | ~240 | Kimi Code：wire.jsonl 解析、fork 去重、tool.call 事件 |
+| `tools/zcode.js` | ~140 | ZCode：SQLite `model_usage` 表 → 记录 |
+| `tools/codex.js` | ~310 | Codex：rollout 文件（含 zst）、response_id 去重、rate_limits 快照 |
+| `tools/claude-code.js` | ~170 | Claude Code：projects/*.jsonl、message.id 去重 |
+| `tools/dsh.js` | ~230 | dsh：多帧 zstd、session 头、message.id 去重 |
+| `tools/qoder-cn.js` | ~200 | QoderCN IDE：SQLite `chat_message`、token_info JSON |
+| `tools/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
 | `aggregate.js` | ~420 | 范围过滤、模型分组、每日趋势（top6+others）、热力图、工具聚合 |
 | `pricing.js` | ~790 | 八张价目表、匹配、峰谷/节假日、长上下文、自定义价、CNY 账本 |
 | `model-map.js` | ~155 | Kimi 专属：config.toml 别名 + 环境变量模型 → 展示/计价身份 |
@@ -152,8 +152,10 @@
   范围 + 热力图；超过 32 条整体清空。
 - 前端**不做 summary 轮询**：挂载、切换范围/工具/设备、手动刷新时各拉一次；
   页脚显示"上次扫描 N 前"。额度卡内部有 60s 的本地倒计时 tick。
+- 首页只保留官方额度和简洁估算（90%/95% Token、窗口级人民币和质量评分、长程摘要）；
+  `/quota` 独立承载额度变化、全部缓存档、立即测算及完整历史，官方价目只在 `/prices`。
 - 静态托管：Vite 内容哈希文件名 → `Cache-Control: immutable` 一年；>1KB 的
-  js/css/html/svg/json 自动 gzip；`/sessions`、`/models` 等路径 SPA 回退到
+  js/css/html/svg/json 自动 gzip；`/quota`、`/sessions`、`/models` 等路径 SPA 回退到
   `index.html`。
 
 ### 4.5 等效额度测算（quota-*.js）
@@ -161,7 +163,8 @@
 - `quota-sampler.js` 在 Web 服务内每 60 秒采样 Kimi/Codex 双窗口百分比；Codex 首次启动时
   回补 rollout 中的全部历史 `rate_limits`，Kimi 历史只能从功能上线后积累。
 - `quota-models.js` 只纳入目标厂商的模型：GPT 可来自 Codex/OMP，Kimi 可来自 Kimi Code/OMP；
-  DeepSeek 等无关模型和未知模型默认排除。Kimi 可选择仅使用 Kimi Code 用量。
+  DeepSeek 等无关模型和未知模型默认排除。Kimi 可选择仅使用 Kimi Code 用量，Codex 也可选择仅使用
+  Codex 客户端用量；开关只出现在 `/quota` 详情页。
 - `sync.js` 在原日摘要之外增加 `quotaUsage` 一分钟桶与 `usageWaterMark`，并携带额度样本；
   本机与 WSL 的用量因此能在同一时间区间对齐。旧格式或超过 24 小时的 peer 数据只产生
   低置信度临时估算，新鲜 peer 水位未覆盖区间时则不测算。
@@ -169,10 +172,14 @@
   做带时间衰减的稳健回归，输出 85% / 90% / 95% / 98% 四档等效 Token 与人民币容量；重置、
   百分比下降及待同步区间不参与计算。样本不足时使用 API 刊例价弱先验推算，明确标记外推，
   并输出 0–100 数据质量评分及原因，不能把评分解释为统计概率。
-- 长程稳健估算使用独立的 `longTermTargets`：5h 仅取 ≥30 分钟、weekly 仅取 ≥6 小时的完整
-  自动区间，至少 3 个区间和 5 个百分点；排除手动校准样本，历史以 `estimateKind` 隔离。
+- 长程稳健估算使用独立的 `longTermTargets`：先合并同一窗口内连续的短区间，避免频繁增长时
+  永远得不到长样本；5h 仅取合并后 ≥30 分钟、weekly 仅取 ≥6 小时的完整自动区间，至少 3 个
+  区间和 5 个百分点；排除手动校准样本，历史以 `estimateKind` 隔离。
+- Kimi 的真实周额度样本不足时，以同缓存档 5h 估算的 5 倍作为低置信度降级结果
+  （`method=sessionDerived`）；它不覆盖真实周样本，也不计入最高有效纪录。Codex 不使用该关系。
 - `quota-calibration.js` 支持手动设置测算起点、结束和取消；结束强制校验 5 分钟、10K 有效
-  Token、1 个百分点增量、窗口未重置及 peer 覆盖，失败保留起点。
+  Token、1 个百分点增量、窗口未重置及 peer 覆盖，失败保留起点。没有显式起点时直接结束会
+  从上次测算终点续算；重设起点会先结算可用的上一段并以 `reanchor` 记录原因。
 - `quota-estimator-store.js` 在 `~/.doramonitor/quota-estimator/` 保存 90 天样本、6 小时
   测算缓存和最高有效纪录；每次实际重算追加到 `history.jsonl`，永久保留完整时间链、模型
   结构和测算元数据，历史接口分页读取。所有结果都是推测值，与官方剩余百分比分开展示；
@@ -198,7 +205,7 @@
 DoraMonitor/
 ├─ src/                    # Node 后端（见上表）
 │  ├─ data/builtin-catalog.json   # models.dev 离线快照
-│  └─ providers/           # 七个工具的数据采集器
+│  └─ tools/           # 七个工具的数据采集器
 ├─ web/                    # 前端源码（Vite root）
 │  ├─ src/App.jsx          # 用量页（SPA 主壳）
 │  ├─ src/pages/           # ModelsPage（模型/定价设置）、SessionsPage

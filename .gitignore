@@ -13,3 +13,11 @@ desktop/src-tauri/gen/
 /daemon-hidden.vbs
 /web-hidden.vbs
 /start-doramonitor.bat
+
+# 本地私人文件（开源仓库不入库）
+/待办.md
+/待办2.md
+/开源计划.md
+/DoraMonitor.lnk
+/.tmp/
+/.graphflow/

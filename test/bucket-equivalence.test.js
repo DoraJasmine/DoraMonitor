@@ -25,7 +25,7 @@ const {
   dayKey,
 } = require("../src/aggregate");
 const { bucketFromRecords, mergeBuckets } = require("../src/buckets");
-const { toolMeta, emptyRecord } = require("../src/providers/base");
+const { toolMeta, emptyRecord } = require("../src/tools/base");
 const { costForUsage } = require("../src/pricing");
 
 const EPS = 1e-9;

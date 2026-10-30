@@ -1,6 +1,6 @@
 "use strict";
 
-const { listProviders, getProvider, sourceFiles, fileStamp } = require("./providers");
+const { listTools, getTool, sourceFiles, fileStamp } = require("./tools");
 const { loadModelMap } = require("./model-map");
 const { bucketFromRecords } = require("./buckets");
 
@@ -8,7 +8,7 @@ const { bucketFromRecords } = require("./buckets");
  * Incremental, cached collector.
  *
  * - In-memory cache with a short TTL avoids rescanning on every request.
- * - Between TTLs, each provider's source files are probed with stat only;
+ * - Between TTLs, each tool's source files are probed with stat only;
  *   unchanged file sets reuse cached records instead of re-reading.
  * - force=true bypasses both layers (Refresh button).
  * - Phase 3: the snapshot also carries per-file DAY BUCKETS (day × tool ×
@@ -24,8 +24,8 @@ const RECORD_WINDOW_DAYS = 30;
 /** Hard cap on resident raw records — a single pathological day must not
  *  break the memory bound on its own. */
 const RECORD_CAP = 20_000;
-/** Heavy providers whose scan() accepts the incremental-bucket opts. */
-const BUCKET_PROVIDERS = new Set(["kimi-code", "codex", "dsh"]);
+/** Heavy tools whose scan() accepts the incremental-bucket opts. */
+const BUCKET_TOOLS = new Set(["kimi-code", "codex", "dsh"]);
 
 function recordSince(now) {
   return now - (RECORD_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000;
@@ -56,10 +56,10 @@ function stampsEqual(prev, files) {
   return true;
 }
 
-function probeStamps(provider, home) {
+function probeStamps(tool, home) {
   // Sorted by path so a readdir-order change cannot read as "something
   // changed" and trigger a pointless full rescan.
-  return sourceFiles(provider, home)
+  return sourceFiles(tool, home)
     .map((p) => {
       const st = fileStamp(p);
       return st
@@ -69,32 +69,32 @@ function probeStamps(provider, home) {
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-function scanProvider(provider, home, since) {
-  if (provider.id === "kimi-code") {
+function scanTool(tool, home, since) {
+  if (tool.id === "kimi-code") {
     const modelMap = loadModelMap(home);
-    const out = provider.scan(home, modelMap, { recordSince: since });
+    const out = tool.scan(home, modelMap, { recordSince: since });
     return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, buckets: out.buckets || [], home };
   }
-  if (BUCKET_PROVIDERS.has(provider.id)) {
-    const out = provider.scan(home, { recordSince: since });
+  if (BUCKET_TOOLS.has(tool.id)) {
+    const out = tool.scan(home, { recordSince: since });
     return { records: out.records, meta: out.meta, events: out.events, quota: out.quota, quotaSamples: out.quotaSamples || [], buckets: out.buckets || [], home };
   }
-  // Light providers: whole-scan each time (cheap); fold their output into
+  // Light tools: whole-scan each time (cheap); fold their output into
   // a single in-memory bucket so aggregation has ONE code path. Wrapped in
-  // the same { relPath, bucket } shape the heavy providers emit.
-  const out = provider.scan(home);
+  // the same { relPath, bucket } shape the heavy tools emit.
+  const out = tool.scan(home);
   return {
     records: out.records,
     meta: out.meta,
     events: out.events,
     quota: out.quota,
-    buckets: [{ relPath: ":memory", bucket: bucketFromRecords(out.records || [], out.events || [], `${provider.id}:memory`, null) }],
+    buckets: [{ relPath: ":memory", bucket: bucketFromRecords(out.records || [], out.events || [], `${tool.id}:memory`, null) }],
     home,
   };
 }
 
 /**
- * Collect usage from all providers.
+ * Collect usage from all tools.
  * Returns { tools, byTool, records, scannedAt, fromCache }.
  */
 function collect({ force = false } = {}) {
@@ -109,19 +109,19 @@ function collect({ force = false } = {}) {
     return { ...cachedSnapshot(), fromCache: true };
   }
 
-  const tools = listProviders();
+  const tools = listTools();
   const since = recordSince(now);
   let reused = 0;
   let rescanned = 0;
 
   for (const tool of tools) {
-    const provider = getProvider(tool.id);
-    if (!tool.available || !provider) {
+    const definition = getTool(tool.id);
+    if (!tool.available || !definition) {
       cache.byTool.delete(tool.id);
       cache.stamps.delete(tool.id);
       continue;
     }
-    const files = probeStamps(provider, tool.home);
+    const files = probeStamps(definition, tool.home);
     if (!force && stampsEqual(cache.stamps.get(tool.id), files)) {
       // Keep cached records; refresh stamp metadata only.
       cache.stamps.set(tool.id, files);
@@ -129,11 +129,11 @@ function collect({ force = false } = {}) {
       continue;
     }
     try {
-      cache.byTool.set(tool.id, scanProvider(provider, tool.home, since));
+      cache.byTool.set(tool.id, scanTool(definition, tool.home, since));
       cache.stamps.set(tool.id, files);
       rescanned += 1;
     } catch {
-      // A broken provider must not take down the whole dashboard.
+      // A broken tool must not take down the whole dashboard.
       if (!cache.byTool.has(tool.id)) {
         cache.byTool.set(tool.id, {
           records: [],
@@ -178,16 +178,16 @@ function snapshot() {
 
 /**
  * Drop all caches: the scan generation, the built snapshot, and every
- * provider's per-file parse cache. Must be called when pricing settings
+ * tool's per-file parse cache. Must be called when pricing settings
  * change (cached records carry costCny computed under the old settings) and
  * after session files move or are deleted.
  */
 function invalidate() {
   cache.scannedAt = 0;
   cache.snapshot = null;
-  for (const tool of listProviders()) {
-    const provider = getProvider(tool.id);
-    if (provider && typeof provider.clearCache === "function") provider.clearCache();
+  for (const tool of listTools()) {
+    const definition = getTool(tool.id);
+    if (definition && typeof definition.clearCache === "function") definition.clearCache();
   }
 }
 

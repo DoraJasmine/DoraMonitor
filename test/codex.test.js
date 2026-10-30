@@ -6,7 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const codex = require("../src/providers/codex");
+const codex = require("../src/tools/codex");
 const { matchPrice } = require("../src/pricing");
 const matchPriceFx = (name) => matchPrice(name, { fxRate: 7.2 });
 

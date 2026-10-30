@@ -44,7 +44,7 @@ Status / daemon options:
   --plan-price <n>     套餐价格（杠杆计算；默认读 ~/.kimi-code/kimi-status.toml）
   --currency <sym>     货币符号（默认读全局设置）
   --interval <sec>     daemon 刷新间隔 (默认 30)
-  --status-file <path> daemon 缓存文件 (默认 ~/.doramonitor-monitor/status.cache)
+  --status-file <path> daemon 缓存文件 (默认 ~/.doramonitor/status.cache)
 
 Privacy: 只读取模型名、时间与 token 计数；不读取提示词、代码与凭据。`);
 }
@@ -88,7 +88,7 @@ function cmdWeb(rest) {
     return;
   }
   const { createServer, urlHost } = require("./server");
-  const { listProviders } = require("./providers");
+  const { listTools } = require("./tools");
   const server = createServer(null);
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
@@ -101,7 +101,7 @@ function cmdWeb(rest) {
     const url = `http://${urlHost(opts.host)}:${opts.port}/`;
     console.log(`DoraMonitor v${pkg.version}`);
     console.log(`  URL:   ${url}`);
-    const tools = listProviders()
+    const tools = listTools()
       .map((t) => `${t.label}${t.available ? "" : "(未检测到)"}`)
       .join(", ");
     console.log(`  Tools: ${tools}`);
@@ -251,7 +251,7 @@ async function cmdSync() {
   const { loadSettings } = require("./settings");
   const settings = loadSettings();
   if (!syncEnabled(settings)) {
-    console.log("同步未启用。在 ~/.doramonitor-monitor/config.json 中配置 sync 段后重试。");
+    console.log("同步未启用。在 ~/.doramonitor/config.json 中配置 sync 段后重试。");
     process.exit(1);
   }
   const collected = collect({ force: true });
@@ -268,10 +268,10 @@ async function cmdSync() {
 }
 
 function cmdTools() {
-  const { listProviders } = require("./providers");
-  const rows = listProviders();
+  const { listTools } = require("./tools");
+  const rows = listTools();
   if (!rows.length) {
-    console.log("未注册任何 provider");
+    console.log("未注册任何工具");
     return;
   }
   const width = Math.max(...rows.map((r) => r.label.length)) + 2;

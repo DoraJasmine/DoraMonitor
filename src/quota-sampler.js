@@ -1,7 +1,7 @@
 "use strict";
 
 const { collect } = require("./collect");
-const { getProvider } = require("./providers");
+const { getTool } = require("./tools");
 const { getCodexQuota } = require("./codex-quota");
 const { fetchQuota } = require("./quota");
 const { resolveKimiHome } = require("./paths");
@@ -29,9 +29,9 @@ function ensureCodexBackfill(home, root) {
   if (!home) return 0;
   const name = `codex-backfill:${home}`;
   if (getCheckpoint(name, root)) return 0;
-  const provider = getProvider("codex");
-  if (!provider || typeof provider.backfillQuotaSamples !== "function") return 0;
-  const samples = provider.backfillQuotaSamples(home);
+  const tool = getTool("codex");
+  if (!tool || typeof tool.backfillQuotaSamples !== "function") return 0;
+  const samples = tool.backfillQuotaSamples(home);
   const count = appendSamples(samples, root);
   setCheckpoint(name, { completedAt: new Date().toISOString(), sampleCount: count }, root);
   return count;

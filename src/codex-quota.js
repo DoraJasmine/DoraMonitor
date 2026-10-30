@@ -17,7 +17,7 @@ const crypto = require("crypto");
  *
  * Successful snapshots persist to ~/.doramonitor/codex-quota.json; any
  * network/auth failure silently falls back to that persisted snapshot, and
- * the provider further falls back to rollout-derived quota.
+ * the tool further falls back to rollout-derived quota.
  */
 
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";

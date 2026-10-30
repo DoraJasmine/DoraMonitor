@@ -267,8 +267,8 @@ const QWEN_PRICES = [
     patterns: [/^qwen3\.6[-_ ]?flash$/i],
     cacheHit: 0.04,
     cacheWrite: 0.5,
-    input: 0.4,
-    output: 1.6,
+    input: 0.25,
+    output: 1.5,
     context: 1_000_000,
     currency: "USD",
   },
@@ -287,8 +287,8 @@ const QWEN_PRICES = [
     patterns: [/^qwen3\.5[-_ ]?plus$/i],
     cacheHit: 0.02,
     cacheWrite: 0.25,
-    input: 0.2,
-    output: 1.2,
+    input: 0.4,
+    output: 2.4,
     context: 1_000_000,
     currency: "USD",
   },
@@ -315,19 +315,19 @@ const QWEN_PRICES = [
 ];
 
 /**
- * MiniMax list prices (USD per 1M tokens), used by QoderCN's "mmodel" code.
- * Source: https://opencode.ai/docs/zen (cached 2026-08-17)
+ * MiniMax list prices, used by QoderCN's "mmodel" code. M3 uses the official
+ * China rate (CNY); M2.7 retains the published international USD rate.
+ * Source: https://platform.minimaxi.com/document/Price
  */
 const MINIMAX_PRICES = [
   {
     id: "minimax-m3",
     patterns: [/^minimax[-_ ]?m3$/i],
-    cacheHit: 0.06,
-    cacheWrite: 0.375,
-    input: 0.3,
-    output: 1.2,
+    cacheHit: 0.42,
+    input: 2.1,
+    output: 8.4,
     context: 1_000_000,
-    currency: "USD",
+    currency: "CNY",
   },
   {
     id: "minimax-m2.7",
@@ -378,6 +378,7 @@ const VENDOR_EXTRA_PRICES = [
     input: 0.14,
     output: 0.58,
     context: 192_000,
+    estimated: true,
     currency: "USD",
   },
 ];
@@ -420,7 +421,7 @@ const OPENAI_PRICES = [
     id: "gpt-6.1-sol",
     patterns: [/gpt[_-]?6\.1([_-]?sol)?$/i, /gpt[_-]?6\.1[_-]?sol/i, /^gpt[_-]?6\.1$/i],
     cacheHit: 0.1,
-    cacheWrite: 2.0,
+    cacheWrite: 2.5,
     input: 2.0,
     output: 10.0,
     context: 1_050_000,
@@ -519,16 +520,16 @@ const OPENAI_PRICES = [
  * provider. Sources: https://www.anthropic.com/pricing and
  * https://platform.claude.com/docs/en/docs/about-claude/models/overview
  * (2026-09 lineup: Fable/Mythos 5, Opus 5, Sonnet 5, Haiku 4.5).
- * Cache read bills at 10% of input and cache write at 1.25× input across the
- * whole family. Specific versions precede the generic family row — first
- * match wins.
+ * Cache write defaults to 1.25× input; cache read is 10% on older models,
+ * 5% on Opus 5.5, and 2.5% on Fable/Mythos 5.1. Specific versions precede
+ * the generic family row — first match wins.
  */
 const CLAUDE_PRICES = [
   {
     id: "claude-fable-5",
     // Mythos 5 shares Fable 5's specs and pricing (invitation-only preview).
     patterns: [/claude[_-]?(fable|mythos)/i],
-    cacheHit: 1.0,
+    cacheHit: 0.25,
     cacheWrite: 12.5,
     input: 10.0,
     output: 50.0,
@@ -924,6 +925,23 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function priceSourceUrl(p) {
+  if (OPENAI_PRICES.includes(p)) {
+    return p.id === "codex-auto-review"
+      ? "https://developers.openai.com/api/docs/pricing"
+      : `https://developers.openai.com/api/docs/models/${p.id}`;
+  }
+  if (p.offPeakMultiplier) return "https://api-docs.deepseek.com/quick_start/pricing/";
+  if (CLAUDE_PRICES.includes(p)) return "https://platform.claude.com/docs/en/docs/about-claude/models/overview";
+  if (ZHIPU_PRICES.includes(p)) return "https://docs.bigmodel.cn/cn/guide/models";
+  if (GOOGLE_PRICES.includes(p)) return "https://ai.google.dev/gemini-api/docs/pricing";
+  if (QWEN_PRICES.includes(p)) return "https://www.alibabacloud.com/help/en/model-studio/model-pricing";
+  if (MINIMAX_PRICES.includes(p)) return "https://platform.minimaxi.com/document/Price";
+  if (p.id === "hy3") return "https://models.dev/models/tencent/hy3";
+  if (VENDOR_EXTRA_PRICES.includes(p)) return "https://docs.bigmodel.cn/cn/guide/models";
+  return "https://platform.kimi.com/docs/pricing/chat";
+}
+
 function listPrices(options = {}) {
   const rows = [];
   for (const p of ALL_PRICE_TABLES()) {
@@ -938,23 +956,8 @@ function listPrices(options = {}) {
       period,
       nativeCurrency: p.currency || "USD",
       unit: `${p.currency || "USD"} / 1M tokens`,
-      source: p.offPeakMultiplier
-        ? "https://api-docs.deepseek.com/quick_start/pricing/"
-        : OPENAI_PRICES.includes(p)
-          ? "https://developers.openai.com/api/docs/pricing"
-          : CLAUDE_PRICES.includes(p)
-            ? "https://www.anthropic.com/pricing"
-            : ZHIPU_PRICES.includes(p)
-              ? "https://docs.bigmodel.cn/cn/guide/models"
-              : GOOGLE_PRICES.includes(p)
-                  ? "https://ai.google.dev/gemini-api/docs/pricing"
-                  : QWEN_PRICES.includes(p)
-                ? "https://opencode.ai/docs/go"
-                : MINIMAX_PRICES.includes(p)
-                  ? "https://opencode.ai/docs/zen"
-                  : VENDOR_EXTRA_PRICES.includes(p)
-                    ? "https://opencode.ai/docs/go"
-                    : "https://platform.kimi.com/",
+      source: priceSourceUrl(p),
+      sourceUrl: priceSourceUrl(p),
     });
     if (p.offPeakMultiplier) {
       add("peak", 1);

@@ -14,7 +14,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const omp = require("../src/providers/omp");
+const omp = require("../src/tools/omp");
 
 function tmpHome(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -100,6 +100,22 @@ test("omp provider: defaultHome honors PI_CODING_AGENT_DIR", () => {
     if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prev;
   }
+});
+
+test("omp provider: defaultHome falls back to legacy sessions when the new home only has config", (t) => {
+  const home = tmpHome("omp-migration-");
+  const primary = path.join(home, ".omp", "agent");
+  const legacy = path.join(home, ".pi", "agent");
+  fs.mkdirSync(primary, { recursive: true });
+  fs.mkdirSync(path.join(legacy, "sessions"), { recursive: true });
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
+  t.mock.method(os, "homedir", () => home);
+  t.after(() => {
+    if (previous !== undefined) process.env.PI_CODING_AGENT_DIR = previous;
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  assert.strictEqual(omp.defaultHome(), legacy);
 });
 
 test("omp provider: parses assistant + model_usage usage", () => {

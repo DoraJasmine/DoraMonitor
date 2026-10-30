@@ -174,13 +174,21 @@ function readHistory(query = {}, root = DEFAULT_ROOT) {
       // Preserve readable history when the final appended line is incomplete.
     }
   }
-  return [...rows.values()]
+  const sorted = [...rows.values()]
     .filter((item) => historyMatches(item, query))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const latest = new Map();
+  for (const item of sorted) {
+    const key = estimateKey(item);
+    const previous = latest.get(key);
+    if (previous) item.calculationStartAt = previous.calculationEndAt || item.calculationStartAt;
+    latest.set(key, item);
+  }
+  return sorted;
 }
 
 function readHistoryPage(query, root = DEFAULT_ROOT) {
-  const rows = readHistory(query, root);
+  const rows = readHistory(query, root).reverse();
   const limit = Math.max(1, Math.min(200, Number(query.limit) || HISTORY_LIMIT));
   const offset = Math.max(0, Number(query.offset) || 0);
   return { history: rows.slice(offset, offset + limit), total: rows.length, limit, offset };
@@ -216,7 +224,7 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
       accountKey,
       usageScope,
       createdAt: capacity.generatedAt,
-      calculationStartAt: target.dataRange?.start || calculation?.startAt || null,
+      calculationStartAt: previous?.calculationEndAt || calculation?.startAt || target.dataRange?.start || null,
       calculationEndAt: target.dataRange?.end || calculation?.endAt || null,
       previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
       trigger: calculation?.trigger || "scheduled",

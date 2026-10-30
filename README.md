@@ -1,215 +1,132 @@
 # DoraMonitor
 
-本地、隐私安全的 **AI 编码工具用量看板**：一个页面汇总 Kimi Code、ZCode、QoderCN、QoderCN CLI、Codex、Claude Code、dsh、Oh My Pi 的 token 用量、费用与额度。
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#requirements)
 
-由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 架构扩展而来（React 19 + Tailwind + Node 标准库 HTTP server，零后端框架依赖；SQLite 读取使用 Node 22 内置 `node:sqlite`）。
+**English** · [简体中文](./README.zh-CN.md)
 
-![截图](assets/screenshot.png)
+DoraMonitor is a local, privacy-first dashboard for AI coding tools. It combines token usage, API-equivalent cost, cache hit rates, quota windows, sessions, and multi-device summaries in one Web UI and CLI.
 
-> **📖 完整文档**：[docs/README.md](./docs/README.md) — 架构总览、[数据源与采集](./docs/providers.md)、[计价体系](./docs/pricing.md)、[HTTP API 参考](./docs/api.md)、[配置与设置](./docs/configuration.md)、[会话管理](./docs/sessions.md)、[多设备同步](./docs/sync.md)、[CLI 与守护进程](./docs/cli.md)、[部署与运行](./docs/deployment.md)、[开发指南](./docs/development.md)、[隐私与安全](./docs/privacy.md)。
+![DoraMonitor dashboard](./assets/screenshot.png)
 
-## 支持的工具
+## Supported tools
 
-| 工具 | 数据来源（只读） | 统计内容 |
-|---|---|---|
-| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl`（全部 agent 目录） | token、估算费用（Kimi 官方价）、套餐杠杆、5h/7d 额度与重置时间 |
-| ZCode | `~/.zcode/cli/db/db.sqlite` → `model_usage` | token（含 reasoning/cache 分项） |
-| QoderCN（IDE） | `~/.config/QoderCN/SharedClientCache/cache/db/local.db` → `chat_message` | token（内部模型码自动映射显示名） |
-| QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | **credits 计费值**（CLI 不落地 token，仅记录 credits） |
-| Codex | `~/.codex/sessions/**/*.jsonl` + `archived_sessions` | token（`token_usage_record`，按 `response_id` 去重；模型/cwd 取自 `turn_context`）、费用（OpenAI 官方价） |
-| Claude Code | `~/.claude/projects/**/*.jsonl`（`CLAUDE_CONFIG_DIR` 可覆盖） | token（Anthropic 口径，`input_tokens` 不含缓存；按 `message.id`+`requestId` 去重，防止 `--resume` 复制历史导致双算）、费用（Anthropic 官方价）；无额度部分 |
-| dsh（DeepSeek Harness） | `~/.dsh/sessions/**/session.v4.jsonl.zstd`（多帧 zstd，`DSH_HOME` 可覆盖） | token（`assistant/message` 的 `usage`，`inputTokens` 不含缓存；按 `message.id` 去重）、费用（DeepSeek 官方价）；无额度部分 |
-| Oh My Pi（omp） | `~/.omp/agent/sessions/**/*.jsonl`（`PI_CODING_AGENT_DIR` 可覆盖；兼容旧 `~/.pi/agent`） | token（assistant 消息与 `model_usage` 的 `usage`，`input` 不含缓存；按 entry `id`+`timestamp` 跨文件去重，防止 `/fork` 复制历史导致双算）、费用（按官方价表）；无额度部分 |
+| Tool | Local data source | Usage data |
+| --- | --- | --- |
+| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` | Tokens, cost, 5-hour/weekly quota |
+| Codex | `~/.codex/sessions/**` and archived rollouts | Tokens, cost, rate-limit snapshots |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | Tokens and cost |
+| Oh My Pi (omp) | `~/.omp/agent/sessions/**` (legacy `~/.pi/agent`) | Tokens and cost |
+| Gemini CLI | Gemini settings and OpenTelemetry export | Tokens and tool events |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | Tokens |
+| QoderCN IDE | QoderCN `local.db` | Tokens |
+| QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
+| dsh | `~/.dsh/sessions/**` | Tokens and cost |
 
-- 所有 SQLite 均以**只读模式**打开，不影响运行中的工具。
-- 每个工具的数据缺失时自动降级为「不可用」，不影响其他工具展示。
+Missing tools are reported as unavailable without preventing other tools from loading. SQLite databases are opened read-only.
 
-## 快速开始
+## Requirements
 
-**命令行直接安装（推荐，Web UI 已随包预构建，无需手动 build）：**
+- Node.js **18 or newer**. Node.js **22.5+** is recommended for the built-in SQLite and zstd support.
+- On older Node versions, ZCode/QoderCN SQLite readers require the `sqlite3` CLI in `PATH`; compressed transcripts use the bundled pure-JS `fzstd` fallback.
+- No database server, Rust toolchain, or administrator account is required.
 
-```bash
-npm install -g doramonitor   # 安装
-npm update -g doramonitor    # 更新
-doramonitor                          # 启动 Web 仪表盘（默认打开浏览器）
-```
-
-**或从源码运行：**
-
-需要 Node.js **22.5+**（内置 `node:sqlite`）；Node 20 亦可运行，SQLite 读取自动回退到 `sqlite3` CLI（需在 PATH 中）。
+## Install and run
 
 ```bash
-npm install
-npm run build    # React UI → dist/
-npm start        # http://127.0.0.1:3847
+npm install -g doramonitor
+doramonitor
 ```
 
-开发模式（API + Vite 热更新）：
+Open <http://127.0.0.1:3847>. The npm package includes the prebuilt Web UI, so a frontend build is not required after installation.
+
+From source:
 
 ```bash
-npm run dev
+git clone https://github.com/DoraJasmine/DoraMonitor.git
+cd DoraMonitor
+npm ci
+npm run build
+npm start
 ```
 
-### 功能
+For development with Vite hot reload, run `npm run dev`.
 
-- **工具页签**：全部 / 单工具切换，页签上直接显示各自用量
-- **设备页签**：多设备时显示 合并 / 本机 / 各设备，数字随选择联动
-- **联网搜索统计**：解析 kimi 会话 `tool.call` 事件，统计 WebSearch / FetchURL 次数
-- **时间范围**：今天 / 近 7 天 / 近 30 天 / 全部
-- **范围 KPI 卡**：各范围 token、请求数、费用、命中率（随工具过滤联动）
-- **货币与自定义定价**：显示货币切换（USD/CNY + 汇率），为任意模型录入自定义单价（支持 CNY 录入），保存后自动重算全部费用
-- **Kimi 额度卡**：5 小时滚动窗口 + 每周额度（自订阅日每 7 天刷新），显示精确重置倒计时；OAuth 凭证过期自动续期
-- **联网搜索统计**：解析 kimi 会话的 `tool.call` 事件，统计 WebSearch / FetchURL 次数（KPI 卡展示）
-- **年度热力图**：GitHub 风格每日 token 强度
-- **每日趋势**：Top 模型多序列曲线
-- **模型统计 / 最近请求**：带工具维度与 credits 列
-- **会话管理**（Kimi）：按工作区归档 / 恢复 / 删除
-- **模型配置**（Kimi）：config.toml 别名与价格映射
+## Background and Windows startup
 
-## 命令行
-
-安装命令（软链到 `~/.local/bin`，已在 PATH 即可直接使用）：
+Start a detached server without opening a browser:
 
 ```bash
-ln -sf "$PWD/src/doramonitor.js" ~/.local/bin/doramonitor
+doramonitor web --background --no-open
 ```
 
-```bash
-doramonitor                    # 启动 Web 仪表盘（默认打开浏览器）
-doramonitor status             # 单行用量状态（适合 shell prompt）
-doramonitor status --style tmux
-doramonitor daemon             # 守护进程：写状态缓存 + 周期同步
-doramonitor stop               # 停止守护进程
-doramonitor sync               # 立即上传/拉取各设备用量
-doramonitor tools              # 列出检测到的工具与数据源
-```
-
-输出示例（`--plan-price 199 --currency ¥`）：
-
-```
-Z:287.7M | K:852.0M ¥261.79 | QC:3924cr | Q:107.7K (1.32x) 命中:96.7%
-```
-
-- 杠杆（`1.32x`）仅在配置了套餐价时显示，默认读取 `~/.kimi-code/kimi-status.toml` 的 `plan_price` / `currency_symbol`，也可用 `--plan-price` 覆盖。
-- daemon 缓存文件默认 `~/.doramonitor/status.cache`，tmux 可直接读取。
-
-## Windows 一键安装
-
-在 Windows PowerShell 中（两行，逐行执行）：
-
-```powershell
-curl.exe -o install-windows.ps1 http://<ubuntu-ip>:8765/install-windows.ps1
-powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 -WithWeb
-```
-
-脚本自动完成：便携版 Node 22、应用安装、同步配置（CNY 显示 / 设备名 / 指向 Ubuntu）、
-SSH 免密推送（输入一次 Ubuntu 密码）、首次同步、登录自启（daemon 隐藏运行 +
-本地看板 http://127.0.0.1:3847）。安装后任意 PowerShell 可直接使用 `doramonitor` 命令。
-
-维护者打包方式（Ubuntu 侧）：
-
-```bash
-git ls-files > /tmp/fl.txt
-tar czf doramonitor-win.tar.gz -T /tmp/fl.txt dist node_modules/smol-toml
-# python3 -m http.server 8765 --bind <ip> --directory <dir>  提供下载点
-```
-
-`node_modules/smol-toml` 是唯一运行时第三方依赖，必须随包分发。
-
-仓库根目录另附 Windows 便捷启动器：`start-doramonitor.bat`（最小化窗口启动本地看板）、`daemon-hidden.vbs` 与 `web-hidden.vbs`（无窗口启动 daemon / 看板，供计划任务调用）。
-登录自启执行一条命令即可（自动定位安装目录与 node、生成隐藏窗口启动器，注册 `doramonitor-daemon` + `doramonitor-web` 两个计划任务，无需管理员）：
+On Windows, `scripts/start-windows.bat` provides the same portable, double-clickable launcher. For hidden startup at logon and automatic restart:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 ```
 
-## 跨设备同步
+The one-command Windows installer uses only nodejs.org and the public npm registry:
 
-每台设备把**按天聚合**的用量摘要（每天/每工具/每模型的 token 与 credits，一年约十几 KB）上传到共享后端，看板合并显示并支持按设备筛选。
-
-```jsonc
-// ~/.doramonitor/config.json 的 sync 段
-"sync": {
-  "enabled": true,
-  "backend": "ssh",            // "ssh" 或 "webdav"
-  "deviceName": "ubuntu4090-ts",
-  "syncInterval": 300,         // daemon 同步间隔（秒）
-  "ssh": { "host": "127.0.0.1", "user": "zxt", "port": 22,
-           "remotePath": "~/.kimi-status-sync" },
-  "webdav": { "url": "https://...", "username": "...", "password": "..." }
-}
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
 ```
 
-- 远端文件：`<remotePath>/ai-usage-monitor/<device>.json`（SSH）或 `<url>/ai-usage-monitor/<device>.json`（WebDAV）
-- 对端文件缓存在 `~/.doramonitor/remote-cache/`，网络不可达时看板自动降级使用缓存
-- 触发方式：`doramonitor sync` 手动、`doramonitor daemon` 周期、仪表盘「立即同步」按钮
-- 看板顶部出现「设备」页签（合并/本机/各设备），数字随选择联动
-- 从旧 kimi-status 迁移：沿用相同 SSH 拓扑，新旧文件互不干扰
+See [deployment and recovery](./docs/deployment.md) before exposing or changing the listening address. The default is loopback only.
 
-## Kimi 额度口径说明
+## CLI
 
-Kimi 的额度模型**没有月度窗口**（官方文档）：
-
-- **每周额度**：自订阅日起每 7 天自动刷新；
-- **5 小时窗口**：滚动限速，窗口结束自动恢复。
-
-看板通过 `GET https://api.kimi.com/coding/v1/usages` 获取两个窗口的已用百分比与官方重置时间。凭证为 15 分钟短效 token：过期时看板自动用 refresh_token 续期并按 kimi CLI 的格式写回 `~/.kimi-code/credentials/kimi-code.json`，与 kimi CLI 共享同一份凭证轮换；续期失败时额度卡显示原因，不影响本地统计。
-
-## 货币与自定义定价
-
-「模型 → 定价与货币」页：
-
-- **显示货币**：USD 或 CNY。内部统一以**人民币**记账（人民币厂商直接用官方价，美元厂商入账时按汇率换算为人民币），显示美元时按同一汇率换出（默认取当前市场中间价，可在界面修改）。
-- **自定义模型定价**：为官方价格表没有的模型（如 GLM）录入单价，每 1M tokens 三分项（输入 / 缓存命中 / 输出），币种可按行选择。匹配规则：模型名大小写不敏感，先精确后子串，最长模式优先；留空分项沿用官方参考价。保存后自动全量重算。
-
-配置持久化在 `~/.doramonitor/config.json`；所有工具（Kimi / ZCode / QoderCN / Codex / Claude Code / dsh）的费用统一按此计算。
-
-- Kimi 模型按 [Kimi 中国区 API Platform](https://platform.kimi.com/) 人民币官方价，GLM-5.3 系列按 [智谱 BigModel 中国区文档](https://docs.bigmodel.cn/cn/guide/models) 人民币官方价；Codex 的 OpenAI 模型按 [OpenAI 官方美元价](https://developers.openai.com/api/docs/pricing)（GPT-6.1 Sol、GPT-6 Astra/Sol/Luna、GPT-5.6 Sol/Terra/Luna、GPT-5 系列等，见 `src/pricing.js` 的 `OPENAI_PRICES`），入账时按设置汇率换算成人民币。Claude Code 的 Claude 模型按 [Anthropic 官方美元价](https://www.anthropic.com/pricing)（Opus 5.5、Fable/Mythos 5、Opus 5 及 4.5–4.8、Sonnet 5、Sonnet 4.6 及更早、Haiku 4.5/3.5/3 等，见 `CLAUDE_PRICES`），缓存读取按输入 5–10%、缓存写入按输入 1.25× 计。DeepSeek Flash / V4 Pro 按 [DeepSeek 官方人民币价](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 计算：工作日 UTC 01:00–04:00、06:00–10:00 为峰时，其余时段为半价。无公开价的型号（如 `codex-auto-review`）按近似价估算并在界面标注「估算」。
-
-QoderCN CLI 仅记录 credits 计费（日志中 token 字段全为 0），看板会显示 credits 提示并以 credits 作为其费用口径。
-
-## 架构：新增一个工具只需一个文件
-
-```
-src/
-  providers/
-    base.js          # 统一数据模型与工具函数
-    index.js         # 注册表 + 数据源文件探测（增量缓存用）
-    kimi-code.js     # wire.jsonl 扫描
-    zcode.js         # node:sqlite 只读查询
-    qoder-cn.js      # node:sqlite + 模型码映射
-    qoder-cn-cli.js  # jsonl 转录扫描
-    codex.js         # rollout jsonl 扫描（token_usage_record）
-    claude-code.js   # projects jsonl 转录扫描（message.usage，resume 去重）
-    dsh.js           # sessions 多帧 zstd 扫描（assistant/message usage，message.id 去重）
-    omp.js           # Oh My Pi sessions jsonl 扫描（assistant/model_usage usage，fork 去重）
-  collect.js         # 增量收集器（stat 探测 + TTL 缓存）
-  aggregate.js       # 时间范围 / byTool / 热力图聚合
-  quota.js           # Kimi 额度 API 客户端
-  cli.js             # 状态行 + daemon
-  server.js          # HTTP API + 静态资源（gzip + immutable 缓存）
+```text
+doramonitor [web]                 Start the Web dashboard
+doramonitor web -d --no-open     Start in the background
+doramonitor status                Print a one-line usage summary
+doramonitor daemon                Write status cache and synchronize periodically
+doramonitor sync                  Synchronize once
+doramonitor tools                 List detected tools and data directories
+doramonitor stop                  Stop the daemon
+doramonitor --help                Show all options
 ```
 
-统一记录模型：`{ tool, time, model, inputOther, output, inputCacheRead, inputCacheCreation, costCny, credits, project, session }`。内部统一以人民币记账；Web API 在响应边界按设置输出 `cost`（人民币原值或人民币金额除以汇率后的美元值）。
+## Features
 
-新增工具：在 `src/providers/` 写一个 `{ id, label, defaultHome, isAvailable, scan }` 模块并注册进 `index.js` 的 `PROVIDERS` 数组即可，聚合、API、UI 自动生效。
+- Today, 7-day, 30-day, and all-time usage, model statistics, trends, and an annual heatmap.
+- Input, output, cache-read, and cache-write tokens with per-model cache hit rates.
+- Official-price links, custom prices, USD/CNY display, and a single internal CNY ledger.
+- Kimi and Codex quota cards plus clearly marked, non-official equivalent-capacity estimates.
+- Cross-client model attribution: GPT usage in omp can count toward OpenAI quota estimation; unrelated models are excluded.
+- Optional client-only estimation switches and detailed estimation history on the `/quota` page.
+- Kimi session/workspace management with secret-redacting previews.
+- Optional SSH/WebDAV multi-device synchronization, including minute-level quota-usage buckets.
 
-### 性能设计
+Equivalent capacity and API-price costs are estimates, not vendor bills or guaranteed subscription limits.
 
-- 收集层：15s TTL 内存缓存 + 文件 stat 增量探测，未变化不重扫
-- 聚合层：4 个时间范围 + 热力图按扫描代数缓存，TTL 内零重算
-- 传输层：文本资源 gzip；Vite 内容哈希分块（react/motion/radix 独立 chunk）配 immutable 缓存
+## Privacy
 
-## 隐私
+DoraMonitor reads usage metadata, not prompts, replies, source code, or provider credentials. The server binds to `127.0.0.1` by default and does not enable CORS. Multi-device upload is off until explicitly configured. See [Privacy & security](./docs/privacy.md).
 
-只读取模型名、时间戳与 token 计数等**用量元数据**；提示词、回复、代码、API Key 与凭据一律不读取、不展示、不存储。
+## Documentation
 
-## 测试
+- [Documentation index](./docs/README.md)
+- [Architecture](./docs/architecture.md)
+- [Tool data sources](./docs/tools.md)
+- [Configuration](./docs/configuration.md)
+- [Pricing](./docs/pricing.md)
+- [Quota estimation](./docs/quota-capacity-estimation.md)
+- [Deployment](./docs/deployment.md)
+- [npm release checklist](./docs/release.md)
+- [Development](./docs/development.md)
+
+## Verify and contribute
 
 ```bash
-npm test   # node --test，含 provider 鲁棒性 / 额度解析 / 聚合过滤用例
+npm test
+npm run build
+npm pack --dry-run
 ```
 
-## License
+CI runs the same checks on Ubuntu and Windows with Node 18 and 22. See [the development guide](./docs/development.md) for tool-adapter conventions.
 
-MIT（继承 kimicode-dashboard）
+## License and attribution
+
+MIT. DoraMonitor is derived from [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard), with substantial changes. The original Jochen copyright and MIT license are retained; DoraMonitor's copyright and attribution details are in [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

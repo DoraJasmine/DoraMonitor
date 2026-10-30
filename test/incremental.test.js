@@ -14,9 +14,9 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const kimiCode = require("../src/providers/kimi-code");
-const codex = require("../src/providers/codex");
-const dsh = require("../src/providers/dsh");
+const kimiCode = require("../src/tools/kimi-code");
+const codex = require("../src/tools/codex");
+const dsh = require("../src/tools/dsh");
 
 function tmpHome(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

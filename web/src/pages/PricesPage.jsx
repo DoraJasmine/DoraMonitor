@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Loader2, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { fetchCatalogPrices, fetchPrices, fetchSettings, saveSettings } from "@/lib/backend";
 import { fmtInt, fmtMoney } from "@/format";
+import { fill } from "@/i18n";
 
 /**
  * Price page (phase: 待办 3) — the single place to manage model pricing.
@@ -529,7 +530,15 @@ export function PricesPage({ t, locale, onSaved }) {
                 <TableRow key={`${p.id}-${p.period || "standard"}`}>
                   <TableCell className="font-medium">
                     <span className="inline-flex items-center gap-1.5">
-                      {p.id}
+                      <a
+                        href={p.sourceUrl || p.source}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-sm underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={fill(t("officialSourceLink"), { model: p.id })}
+                      >
+                        {p.id}<ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                      </a>
                       {p.estimated ? <Badge variant="warn">{t("estimated")}</Badge> : null}
                     </span>
                   </TableCell>

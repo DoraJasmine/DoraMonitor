@@ -8,7 +8,7 @@ const { URL } = require("url");
 
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
 const { collect, invalidate: invalidateCollect } = require("./collect");
-const { listProviders } = require("./providers");
+const { listTools } = require("./tools");
 const {
   aggregate,
   summaryAllRanges,
@@ -30,7 +30,7 @@ const { getCapacityForProvider, getCapacityHistory, getQuotaSampleHistory, peerC
 const { startCalibration, finishCalibration, cancelCalibration, listCalibrations } = require("./quota-calibration");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
 const { runSync, peerRecordsCached, syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
-const { toolMeta } = require("./providers/base");
+const { toolMeta } = require("./tools/base");
 const { detectLocale, messages } = require("./i18n");
 const {
   listSessions,
@@ -58,6 +58,9 @@ const {
 // Prefer Vite build output; fall back to legacy public/ for plain static.
 const DIST = path.join(__dirname, "..", "dist");
 const PUBLIC = fs.existsSync(DIST) ? DIST : path.join(__dirname, "..", "public");
+if (!fs.existsSync(path.join(PUBLIC, "index.html"))) {
+  console.warn("[doramonitor] Web UI build not found; the dashboard will return 404. Run `npm run build` first (the npm package ships prebuilt).");
+}
 
 const DEFAULT_HOST = "127.0.0.1";
 
@@ -191,7 +194,7 @@ function ensureAggregates(collected, key, records, tool, buckets, settings) {
 }
 
 /** Range filter keys allowed on /api/summary. */
-const TOOL_IDS = () => listProviders().map((t) => t.id);
+const TOOL_IDS = () => listTools().map((t) => t.id);
 
 function json(res, status, body) {
   const data = JSON.stringify(body);
@@ -358,7 +361,7 @@ async function handleApi(req, res, url, cliHome) {
       current: home,
       valid: isKimiHome(home),
       candidates,
-      tools: listProviders(),
+      tools: listTools(),
       env: {
         KIMI_CODE_HOME: process.env.KIMI_CODE_HOME || null,
         KIMI_MODEL_NAME: process.env.KIMI_MODEL_NAME || null,
@@ -440,7 +443,7 @@ async function handleApi(req, res, url, cliHome) {
       cacheHitRate: m.cacheHitRate,
     }));
 
-    const providerList = listProviders();
+    const toolList = listTools();
     // Aggregates intentionally retain CNY internally so one exchange-rate
     // conversion is applied here, at the API/display boundary.  This keeps
     // the price table, model statistics, charts and recent rows in the same
@@ -469,7 +472,7 @@ async function handleApi(req, res, url, cliHome) {
       meta: Object.fromEntries(collected.tools.map((t) => [t.id, t.meta])),
       range,
       tool,
-      tools: providerList,
+      tools: toolList,
       byTool: byToolRange,
       stats: displayAggregate,
       toolEvents: cached.toolEvents
@@ -552,7 +555,7 @@ async function handleApi(req, res, url, cliHome) {
       const body = await readBody(req);
       const provider = ["openai", "kimi"].includes(body.provider) ? body.provider : null;
       const window = ["session", "weekly"].includes(body.window) ? body.window : null;
-      const usageScope = ["all-clients", "kimi-code-only"].includes(body.scope) ? body.scope : "all-clients";
+      const usageScope = ["all-clients", "kimi-code-only", "codex-only"].includes(body.scope) ? body.scope : "all-clients";
       if (!provider || !window || !["start", "end", "cancel"].includes(body.action)) {
         return json(res, 400, { error: "invalid_calibration", message: "Invalid provider, window, or action" });
       }
@@ -564,23 +567,32 @@ async function handleApi(req, res, url, cliHome) {
       const { quota, accountKey, collected, peers } = await loadProviderQuota(provider, cliHome, true);
       if (!quota.available) return json(res, 409, { error: "quota_unavailable", message: quota.reason || "Quota unavailable" });
       const options = { provider, accountKey, usageScope, window, quota };
-      if (body.action === "start") {
-        const calibration = startCalibration(options);
-        return json(res, 200, { ok: true, calibration, accountKey });
-      }
       const records = [...(collected || collect()).records, ...peers.flatMap(quotaUsageRecords)];
-      const calibration = finishCalibration({
-        ...options,
-        records,
-        isComplete: (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now()),
-      });
+      const isComplete = (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now());
+      if (body.action === "start") {
+        let previousCalibration = null;
+        if (listCalibrations({ provider, accountKey, usageScope }).some((item) => item.window === window)) {
+          previousCalibration = finishCalibration({ ...options, records, isComplete });
+          getCapacityForProvider({
+            provider,
+            accountKey,
+            usageScope,
+            force: true,
+            collected,
+            calculation: { trigger: "reanchor", calibrationId: previousCalibration.id, startAt: previousCalibration.startAt, endAt: previousCalibration.endAt },
+          });
+        }
+        const calibration = startCalibration(options);
+        return json(res, 200, { ok: true, calibration, previousCalibration, accountKey });
+      }
+      const calibration = finishCalibration({ ...options, records, isComplete, allowImplicitStart: true });
       const capacity = getCapacityForProvider({
         provider,
         accountKey,
         usageScope,
         force: true,
         collected,
-        calculation: { trigger: "manual", calibrationId: calibration.id, startAt: calibration.startAt, endAt: calibration.endAt },
+        calculation: { trigger: "manual-end", calibrationId: calibration.id, startAt: calibration.startAt, endAt: calibration.endAt },
       });
       return json(res, 200, { ok: true, calibration, accountKey, capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
     } catch (error) {
@@ -622,15 +634,20 @@ async function handleApi(req, res, url, cliHome) {
     const provider = url.searchParams.get("tool") === "codex" ? "openai" : "kimi";
     const { quota, accountKey, collected } = await loadProviderQuota(provider, cliHome, force);
     const requestedScope = url.searchParams.get("scope");
-    const usageScope = provider === "openai" ? "all-clients" : ["all-clients", "kimi-code-only"].includes(requestedScope)
-      ? requestedScope
-      : loadSettings().quotaEstimation.kimiCodeOnly ? "kimi-code-only" : "all-clients";
+    const settings = loadSettings();
+    const usageScope = provider === "openai"
+      ? ["all-clients", "codex-only"].includes(requestedScope)
+        ? requestedScope
+        : settings.quotaEstimation.codexOnly ? "codex-only" : "all-clients"
+      : ["all-clients", "kimi-code-only"].includes(requestedScope)
+        ? requestedScope
+        : settings.quotaEstimation.kimiCodeOnly ? "kimi-code-only" : "all-clients";
     const capacity = getCapacityForProvider({ provider, accountKey, usageScope, force, collected });
     return json(res, 200, { ...quota, accountKey, tool: provider === "openai" ? "codex" : "kimi-code", capacity: withCalibrations(capacity, provider, accountKey, usageScope) });
   }
 
   if (url.pathname === "/api/tools") {
-    return json(res, 200, { tools: listProviders() });
+    return json(res, 200, { tools: listTools() });
   }
 
   if (url.pathname === "/api/sync" && req.method === "POST") {
@@ -913,7 +930,8 @@ function createServer(cliHome) {
       // SPA fallback for client routes
       if (
         !rel.includes(".") &&
-        (rel === "/sessions" ||
+        (rel === "/quota" ||
+          rel === "/sessions" ||
           rel.startsWith("/sessions/") ||
           rel === "/models" ||
           rel.startsWith("/models/") ||
@@ -961,7 +979,7 @@ function main() {
     const url = `http://${urlHost(opts.host)}:${opts.port}/`;
     console.log(`DoraMonitor`);
     console.log(`  URL:  ${url}`);
-    const tools = listProviders()
+    const tools = listTools()
       .map((t) => `${t.label}${t.available ? "" : " (not found)"}`)
       .join(", ");
     console.log(`  Tools: ${tools}`);

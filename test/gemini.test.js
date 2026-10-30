@@ -13,7 +13,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const gemini = require("../src/providers/gemini");
+const gemini = require("../src/tools/gemini");
 const { matchPrice } = require("../src/pricing");
 
 function tmpHome(prefix) {

@@ -1,0 +1,11 @@
+DoraMonitor
+Copyright (c) 2026 DoraJasmine
+
+DoraMonitor is derived from kimicode-dashboard:
+https://github.com/JochenYang/kimicode-dashboard
+Copyright (c) 2026 Jochen
+
+The original project and DoraMonitor are distributed under the MIT License.
+The original copyright notice and license are retained in LICENSE.
+DoraMonitor includes substantial changes to supported tools, data collection,
+pricing, synchronization, quota estimation, session management, and the UI.
