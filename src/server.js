@@ -25,7 +25,7 @@ const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const { listPrices } = require("./pricing");
 const { startQuotaSampler } = require("./quota-sampler");
 const { resolveQuotaTool } = require("./quota-tool");
-const { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration } = require("./tool-quota-service");
+const { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, listToolQuotaAccounts } = require("./tool-quota-service");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
 const { runSync, peerRecordsCached, syncEnabled } = require("./sync");
 const { toolMeta } = require("./tools/base");
@@ -522,6 +522,17 @@ async function handleApi(req, res, url, cliHome) {
       fxRate: settings.fxRate,
       customPrices: settings.customPrices,
     });
+  }
+
+  if (url.pathname === "/api/quota/accounts") {
+    let tool;
+    try {
+      tool = resolveQuotaTool({ tool: url.searchParams.get("tool"), provider: url.searchParams.get("provider") });
+    } catch (error) {
+      return json(res, error.status, { error: error.code, message: error.message });
+    }
+    const accounts = listToolQuotaAccounts({ tool, cliHome }).map(({ accountKey, label }) => ({ accountKey, label }));
+    return json(res, 200, { tool, accounts });
   }
 
   if (url.pathname === "/api/quota/capacity/calibration" && req.method === "POST") {

@@ -149,7 +149,9 @@
 `quotaEstimation.kimiCodeOnly` / `quotaEstimation.codexOnly`。
 
 - `tool=kimi-code`：调用 Kimi 在线 usages API（`https://api.kimi.com/coding/v1/usages`，
-  凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。60s 内存缓存。
+  凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。每个 home 独立缓存 60s。
+  `GET /api/quota/accounts?tool=kimi-code` 返回配置的账号（不含 home）；额外账号仅开放官方额度、
+  采样和历史，`capacity=null`，账号用量归属未可靠映射前禁用估算与校准。
 - `tool=codex`：读取本地 rollout、同步缓存及主动轮询的 `rate_limits` 快照，采用
   `fetchedAt` 最新的一份。主动轮询使用本机 Codex 登录态请求 `wham/usage`，60s 节流。
 - `tool=zcode`：使用显式 `BIGMODEL_API_KEY`（国内端点优先）或 `Z_AI_API_KEY` 读取 GLM Coding Plan

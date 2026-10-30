@@ -23,6 +23,10 @@ ZCode 官方额度不从私有 OAuth 读取。需要时显式设置 `BIGMODEL_AP
   "currencySymbol": "¥",        // 符号（trim 后最多 4 字符；切币种自动带出 $/¥）
   "fxRate": 6.67,               // USD→CNY 汇率（默认取 2026-10 市场中间价），合法 (0, 100000)
   "customPrices": [],           // 自定义价格，见下
+  "quotaAccounts": [            // 可选；配置后替代默认单 Kimi 账号
+    { "tool": "kimi-code", "accountKey": "kimi:default", "label": "个人", "home": "/home/user/.kimi-code" },
+    { "tool": "kimi-code", "accountKey": "kimi:work", "label": "工作", "home": "/home/user/.kimi-code-work" }
+  ],
   "quotaEstimation": {
     "kimiCodeOnly": false,       // true 时仅用 Kimi Code 中的 Kimi 模型估算额度
     "codexOnly": false           // true 时仅用 Codex 中的 GPT 模型估算额度

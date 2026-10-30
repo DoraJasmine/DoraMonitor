@@ -96,13 +96,19 @@ export async function fetchSummary(home, range = "30d", refresh = false, tool = 
 
 /** GET /api/quota — Kimi 5-hour / weekly quota windows with reset times.
  *  tool="codex" reads the rate_limits snapshot from Codex rollout files. */
-export async function fetchQuota(refresh = false, tool = null, scope = null) {
+export async function fetchQuota(refresh = false, tool = null, scope = null, accountKey = null) {
   const qs = new URLSearchParams();
   if (refresh) qs.set("refresh", "1");
   if (tool) qs.set("tool", tool);
   if (scope) qs.set("scope", scope);
+  if (accountKey) qs.set("accountKey", accountKey);
   const q = qs.toString();
   return httpJson(`/api/quota${q ? `?${q}` : ""}`);
+}
+
+export async function fetchQuotaAccounts(tool) {
+  const qs = new URLSearchParams({ tool });
+  return httpJson(`/api/quota/accounts?${qs}`);
 }
 
 export async function fetchQuotaCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {

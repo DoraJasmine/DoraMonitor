@@ -10,7 +10,7 @@ const { loadSettings } = require("./settings");
 const { syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
 const { quotaProviderForTool, resolveQuotaAccount, getQuotaIntegration } = require("./quota-tool");
 const { fetchZcodeQuota } = require("./zcode-quota");
-const { resolveKimiHome } = require("./paths");
+const { listToolQuotaAccounts, resolveKimiQuotaAccount } = require("./quota-accounts");
 
 function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) {
   return {
@@ -21,7 +21,7 @@ function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool,
   };
 }
 
-async function loadToolQuota(tool, cliHome, force = false) {
+async function loadToolQuota(tool, cliHome, force = false, requestedAccountKey) {
   const quotaProvider = quotaProviderForTool(tool);
   if (tool === "zcode") {
     const quota = await fetchZcodeQuota({ force });
@@ -42,16 +42,19 @@ async function loadToolQuota(tool, cliHome, force = false) {
     const accountKey = quota.accountKey || (entry && entry.home ? codexAccountKey(entry.home) : "openai:default");
     return { quota, accountKey, collected, peers };
   }
-  const quota = await fetchQuota(resolveKimiHome(cliHome), { force });
+  const account = resolveKimiQuotaAccount(cliHome, requestedAccountKey);
+  const quota = await fetchQuota(account.home, { force, accountKey: account.accountKey });
   persistQuota(quota, quotaProvider, "kimi-api");
-  return { quota, accountKey: quota.accountKey || "kimi:default", collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
+  return { quota, accountKey: account.accountKey, collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
 }
 
 async function getToolQuota({ tool, cliHome, force = false, scope, root, accountKey: requestedAccountKey }) {
   const quotaProvider = quotaProviderForTool(tool);
-  const { quota, accountKey: loadedAccountKey, collected } = await loadToolQuota(tool, cliHome, force);
+  const { quota, accountKey: loadedAccountKey, collected } = await loadToolQuota(tool, cliHome, force, requestedAccountKey);
   const accountKey = resolveQuotaAccount({ accountKey: requestedAccountKey, accounts: [loadedAccountKey] });
-  if (!getQuotaIntegration(tool)?.capabilities.estimation) return { ...quota, accountKey, tool, capacity: null };
+  if (!getQuotaIntegration(tool)?.capabilities.estimation || (tool === "kimi-code" && accountKey !== "kimi:default")) {
+    return { ...quota, accountKey, tool, capacity: null };
+  }
   const settings = loadSettings();
   const usageScope = quotaProvider === "openai"
     ? ["all-clients", "codex-only"].includes(scope)
@@ -111,7 +114,7 @@ async function runToolCalibration({ tool, body, cliHome, root }) {
     const calibration = cancelCalibration({ provider: quotaProvider, accountKey, usageScope, window, root });
     return { ok: true, tool, calibration };
   }
-  const { quota, accountKey: loadedAccountKey, collected, peers } = await loadToolQuota(tool, cliHome, true);
+  const { quota, accountKey: loadedAccountKey, collected, peers } = await loadToolQuota(tool, cliHome, true, body.accountKey);
   if (!quota.available) {
     const error = new Error(quota.reason || "Quota unavailable");
     error.code = "quota_unavailable";
@@ -119,6 +122,12 @@ async function runToolCalibration({ tool, body, cliHome, root }) {
     throw error;
   }
   const accountKey = resolveQuotaAccount({ accountKey: body.accountKey, accounts: [loadedAccountKey] });
+  if (tool === "kimi-code" && accountKey !== "kimi:default") {
+    const error = new Error("Capacity estimation requires a reliable account usage mapping");
+    error.code = "calibration_unsupported";
+    error.status = 409;
+    throw error;
+  }
   const options = { provider: quotaProvider, accountKey, usageScope, window, quota, root };
   const records = [...(collected || collect()).records, ...peers.flatMap(quotaUsageRecords)];
   const isComplete = (start, end) => peerCoverage(peers, start, end, peers.length > 0, Date.now());
@@ -152,4 +161,4 @@ async function runToolCalibration({ tool, body, cliHome, root }) {
   return { ok: true, tool, calibration, accountKey, capacity: withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) };
 }
 
-module.exports = { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, loadToolQuota };
+module.exports = { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, loadToolQuota, listToolQuotaAccounts };

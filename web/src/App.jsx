@@ -42,7 +42,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
-import { QuotaCard } from "@/components/QuotaCard";
+import { QuotaToolCards } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
 import { fetchPaths, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
@@ -811,7 +811,7 @@ export default function App() {
           animate="show"
           variants={fadeUp}
         >
-          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} />
         </motion.div>
       ) : null}
 
@@ -825,7 +825,7 @@ export default function App() {
           animate="show"
           variants={fadeUp}
         >
-          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} tool="codex" />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="codex" />
         </motion.div>
       ) : null}
 
@@ -838,7 +838,7 @@ export default function App() {
           animate="show"
           variants={fadeUp}
         >
-          <QuotaCard t={t} locale={locale} refreshSignal={data?.scannedAt} tool="zcode" />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="zcode" />
         </motion.div>
       ) : null}
 

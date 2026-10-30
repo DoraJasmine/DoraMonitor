@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { fetchQuota, fetchQuotaCapacityHistory, fetchQuotaSampleHistory, fetchSettings, runQuotaCalibration, saveSettings } from "@/lib/backend";
+import { fetchQuota, fetchQuotaAccounts, fetchQuotaCapacityHistory, fetchQuotaSampleHistory, fetchSettings, runQuotaCalibration, saveSettings } from "@/lib/backend";
 import { fill } from "@/i18n";
 import { fmtTokens } from "@/format";
 import { cn } from "@/lib/utils";
@@ -561,7 +561,7 @@ function HomeCapacity({ capacity, locale, t }) {
   );
 }
 
-export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false }) {
+export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false, accountKey = null, accountLabel = null }) {
   const [quota, setQuota] = useState(null);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState("all-clients");
@@ -578,14 +578,14 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const d = await fetchQuota(refresh, tool, scope);
+      const d = await fetchQuota(refresh, tool, scope, accountKey);
       setQuota(d);
     } catch {
       setQuota(null);
     } finally {
       setLoading(false);
     }
-  }, [tool, scope]);
+  }, [tool, scope, accountKey]);
 
   useEffect(() => {
     load(false);
@@ -620,7 +620,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Gauge className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <CardTitle>{t(i18n.title)}</CardTitle>
+            <CardTitle>{t(i18n.title)}{accountLabel && <span className="ml-2 text-xs font-normal text-muted-foreground">· {accountLabel}</span>}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
             {detail && (tool === "kimi-code" || tool === "codex") && (
@@ -675,5 +675,25 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
         {detail && quota && <LongTermCapacitySection capacity={quota.capacity} locale={locale} t={t} />}
       </CardContent>
     </Card>
+  );
+}
+
+export function QuotaToolCards(props) {
+  const { tool = "kimi-code" } = props;
+  const [accounts, setAccounts] = useState([]);
+  useEffect(() => {
+    let active = true;
+    fetchQuotaAccounts(tool).then((data) => {
+      if (active) setAccounts(data.accounts || []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [tool]);
+  if (accounts.length <= 1) return <QuotaCard {...props} accountKey={accounts[0]?.accountKey || null} />;
+  return (
+    <div className="space-y-5">
+      {accounts.map((account) => (
+        <QuotaCard key={account.accountKey} {...props} accountKey={account.accountKey} accountLabel={account.label} />
+      ))}
+    </div>
   );
 }

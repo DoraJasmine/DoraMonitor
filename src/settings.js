@@ -25,6 +25,7 @@ const DEFAULTS = {
   currencySymbol: "¥", // display symbol (auto-set from currency, overridable)
   fxRate: 6.67, // USD -> CNY
   customPrices: [], // see module doc
+  quotaAccounts: [],
   quotaEstimation: {
     kimiCodeOnly: false,
     codexOnly: false,
@@ -81,6 +82,23 @@ function sanitizeSettings(raw) {
       kimiCodeOnly: raw.quotaEstimation.kimiCodeOnly === true,
       codexOnly: raw.quotaEstimation.codexOnly === true,
     };
+  }
+  out.quotaAccounts = [];
+  if (Array.isArray(raw.quotaAccounts)) {
+    const seen = new Set();
+    for (const account of raw.quotaAccounts) {
+      if (!account || account.tool !== "kimi-code") continue;
+      const accountKey = String(account.accountKey || "").trim();
+      const home = String(account.home || "").trim();
+      if (!/^[a-z0-9][a-z0-9:._-]{1,79}$/.test(accountKey) || !home || seen.has(accountKey)) continue;
+      seen.add(accountKey);
+      out.quotaAccounts.push({
+        tool: "kimi-code",
+        accountKey,
+        label: String(account.label || accountKey).trim().slice(0, 80) || accountKey,
+        home: home.slice(0, 500),
+      });
+    }
   }
   if (raw.sync && typeof raw.sync === "object") {
     const s = raw.sync;

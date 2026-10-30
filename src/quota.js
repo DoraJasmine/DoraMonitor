@@ -36,7 +36,7 @@ const WINDOW_UNIT_KEYS = ["timeUnit", "time_unit", "unit", "windowUnit"];
 const ENTRY_DETAIL_KEYS = ["detail", "usage", "quota"];
 const ENTRY_WINDOW_KEYS = ["window", "period", "rateLimit", "rate_limit"];
 
-let cache = { fetchedAt: 0, payload: null };
+const cache = new Map();
 
 function credentialsPath(home) {
   return path.join(home, "credentials", "kimi-code.json");
@@ -233,30 +233,28 @@ function parseUsageBody(body) {
   return [...seen.values()];
 }
 
-async function fetchQuota(home, { force = false } = {}) {
+async function fetchQuota(home, { force = false, accountKey = "kimi:default" } = {}) {
   const now = Date.now();
-  if (!force && cache.payload && now - cache.fetchedAt < CACHE_TTL_MS) {
-    return cache.payload;
-  }
+  const cacheKey = credentialsPath(home);
+  const cached = cache.get(cacheKey);
+  if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.payload;
+  const store = (payload) => {
+    cache.set(cacheKey, { fetchedAt: now, payload });
+    return payload;
+  };
   // Credentials expire_at is in SECONDS (matches the kimi CLI file format);
   // mixing it with Date.now() ms would make the expiry check always true and
   // rotate the OAuth token on every quota fetch.
   const nowSec = Math.floor(now / 1000);
 
-  const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code", accountKey: "kimi:default" };
+  const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code", accountKey };
   let creds = readAccessTokenForCall(home);
-  if (!creds) {
-    cache = { fetchedAt: now, payload: { ...base, available: false, reason: "no_credentials", windows: [] } };
-    return cache.payload;
-  }
+  if (!creds) return store({ ...base, available: false, reason: "no_credentials", windows: [] });
 
   // Short-lived (~15 min) token: refresh when expired or about to expire.
   if (creds.expiresAt && creds.expiresAt < nowSec + 30) {
     const refreshed = await refreshAccessToken(home);
-    if (!refreshed.ok) {
-      cache = { fetchedAt: now, payload: { ...base, available: false, reason: refreshed.reason, windows: [] } };
-      return cache.payload;
-    }
+    if (!refreshed.ok) return store({ ...base, available: false, reason: refreshed.reason, windows: [] });
     creds = { token: refreshed.accessToken, expiresAt: nowSec + 900 };
   }
 
@@ -268,17 +266,13 @@ async function fetchQuota(home, { force = false } = {}) {
       signal: controller.signal,
     });
     clearTimeout(timer);
-    if (!resp.ok) {
-      cache = { fetchedAt: now, payload: { ...base, available: false, reason: `http_${resp.status}`, windows: [] } };
-      return cache.payload;
-    }
+    if (!resp.ok) return store({ ...base, available: false, reason: `http_${resp.status}`, windows: [] });
     const body = await resp.json();
     const windows = parseUsageBody(body);
-    cache = { fetchedAt: now, payload: { ...base, available: windows.length > 0, reason: windows.length ? null : "empty", windows } };
+    return store({ ...base, available: windows.length > 0, reason: windows.length ? null : "empty", windows });
   } catch (err) {
-    cache = { fetchedAt: now, payload: { ...base, available: false, reason: String((err && err.message) || err), windows: [] } };
+    return store({ ...base, available: false, reason: String((err && err.message) || err), windows: [] });
   }
-  return cache.payload;
 }
 
 function readAccessTokenForCall(home) {

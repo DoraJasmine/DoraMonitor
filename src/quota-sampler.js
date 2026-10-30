@@ -6,7 +6,7 @@ const { getCodexQuota } = require("./codex-quota");
 const { fetchQuota } = require("./quota");
 const { fetchZcodeQuota } = require("./zcode-quota");
 const { getQuotaIntegration, toolForQuotaProvider } = require("./quota-tool");
-const { resolveKimiHome } = require("./paths");
+const { listKimiQuotaAccounts } = require("./quota-accounts");
 const { loadSettings } = require("./settings");
 const { samplesFromQuota, readSamples, appendSamples, getCheckpoint, setCheckpoint } = require("./quota-estimator-store");
 
@@ -32,6 +32,7 @@ function maybeRunScheduledEstimation(root, { now = Date.now(), calculate = null 
   for (const sample of readSamples(root, now)) {
     if (!sample || !["session", "weekly"].includes(sample.window) || !Number.isFinite(sample.usedPercent)) continue;
     if (!getQuotaIntegration(toolForQuotaProvider(sample.provider))?.capabilities.estimation) continue;
+    if (sample.provider === "kimi" && sample.accountKey !== "kimi:default") continue;
     const key = `${sample.provider}\0${sample.accountKey || "default"}\0${sample.window}`;
     const current = latest.get(key);
     if (!current || Date.parse(sample.sampledAt) > Date.parse(current.sampledAt)) latest.set(key, sample);
@@ -144,8 +145,14 @@ function startQuotaSampler(cliHome, { intervalMs = 60_000, root } = {}) {
         ensureCodexBackfill(codex.home, root);
         persistQuota(await getCodexQuota(codex.home), "openai", "wham", root);
       }
-      const kimi = await fetchQuota(resolveKimiHome(cliHome));
-      persistQuota(kimi, "kimi", "kimi-api", root);
+      for (const account of listKimiQuotaAccounts(cliHome)) {
+        try {
+          const kimi = await fetchQuota(account.home, { accountKey: account.accountKey });
+          persistQuota(kimi, "kimi", "kimi-api", root);
+        } catch {
+          // One account failure must not block sampling for the others.
+        }
+      }
       persistQuota(await fetchZcodeQuota(), "zcode", "zcode-api", root);
       // Scheduled estimation: usage-duration and usage-amount triggers (OR).
       try {
