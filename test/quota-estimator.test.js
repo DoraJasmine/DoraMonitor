@@ -139,7 +139,7 @@ test("cost-based conversion includes uncached input, cache read, cache write and
   const result = estimateWindow([interval], { settings: { fxRate: 6.67, customPrices: [] } });
   const target = result.targets.find((item) => item.cacheHitRate === 0.9);
   assert.ok(Math.abs(target.fullWindowTokens - 55_000) < 1);
-  assert.equal(target.fullWindowCostCny, costCny * 50);
+  assert.ok(Math.abs(target.fullWindowCostCny - costCny * 50) < 1e-10);
 });
 
 test("capacity response always contains both windows and four targets", () => {
@@ -222,4 +222,72 @@ test("Kimi weekly capacity is estimated directly from weekly samples without ses
     now: t0 + 4 * 3600000,
   });
   assert.ok(openai.longTermTargets.filter((target) => target.window === "weekly").every((target) => !Number.isFinite(target.fullWindowTokens)));
+});
+
+test("duplicate timestamps keep the highest milestone without zero-duration intervals", () => {
+  const t0 = Date.parse("2026-10-30T10:00:00Z");
+  const samples = [10, 11].map((usedPercent) => ({
+    provider: "openai", window: "session", sampledAt: new Date(t0).toISOString(), usedPercent, resetsAt: "r",
+  }));
+  samples.push({ provider: "openai", window: "session", sampledAt: new Date(t0 + 60000).toISOString(), usedPercent: 12, resetsAt: "r" });
+  const intervals = buildIntervals({ samples, records: [record("gpt-6", { time: t0 + 30000 })], provider: "openai", window: "session" });
+  assert.equal(intervals.length, 1);
+  assert.equal(intervals[0].dp, 1);
+  assert.equal(intervals[0].durationMs, 60000);
+});
+
+test("cost-density outliers are excluded from fits and observations", () => {
+  const normal = [10, 11, 12, 13, 14].map((density, index) => {
+    const interval = syntheticInterval(0.9, index);
+    interval.costCny = density * interval.dp;
+    return interval;
+  });
+  const outlier = { ...syntheticInterval(0.9, 5), costCny: normal[0].costCny * 1000 };
+  const result = estimateWindow([...normal, outlier], { now: Date.parse("2026-10-02T00:00:00Z") });
+  assert.equal(result.outlierCount, 1);
+  assert.equal(result.sampleCount, 5);
+  for (const target of result.targets) {
+    assert.equal(target.outlierCount, 1);
+    assert.equal(target.observations.length, 5);
+    assert.ok(target.observations.every((observation) => observation.costCny !== outlier.costCny));
+    assert.ok(target.confidenceReasons.includes("outliers_excluded"));
+  }
+});
+
+test("normal cost variation and heavy usage with normal cost density are retained", () => {
+  const intervals = [10, 11, 12, 13, 14].map((density, index) => {
+    const interval = syntheticInterval(0.9, index);
+    interval.costCny = density * interval.dp;
+    if (index === 2) interval.totalTokens *= 1000;
+    return interval;
+  });
+  const result = estimateWindow(intervals, { now: Date.parse("2026-10-02T00:00:00Z") });
+  assert.equal(result.outlierCount, 0);
+  assert.equal(result.sampleCount, 5);
+  assert.ok(result.targets[0].observations.some((observation) => observation.totalTokens === 1_000_000_000));
+});
+
+test("invalid and non-positive-duration intervals never enter estimates", () => {
+  const valid = syntheticInterval(0.9, 0);
+  const result = estimateWindow([
+    valid,
+    { ...syntheticInterval(0.9, 1), durationMs: 0 },
+    { ...syntheticInterval(0.9, 2), durationMs: -1 },
+    { ...syntheticInterval(0.9, 3), dp: Infinity },
+    { ...syntheticInterval(0.9, 4), totalTokens: Infinity },
+  ]);
+  assert.equal(result.sampleCount, 1);
+  assert.ok(result.targets.every((target) => target.observations.length === 1));
+});
+
+test("cost capacity aggregates weighted cost and quota instead of jumping between medians", () => {
+  const withDensity = (density, index) => {
+    const interval = syntheticInterval(0.9, index);
+    interval.costCny = density * interval.dp;
+    return interval;
+  };
+  const before = estimateWindow([8, 9, 10, 20, 21].map(withDensity), { now: Date.parse("2026-10-01T00:00:00Z") });
+  const after = estimateWindow([8, 9, 10, 20, 21, 10].map(withDensity), { now: Date.parse("2026-10-01T00:00:00Z") });
+  assert.ok(Math.abs(before.targets[0].fullWindowCostCny - 1360) < 1e-8);
+  assert.ok(Math.abs(after.targets[0].fullWindowCostCny - 1300) < 1e-8);
 });

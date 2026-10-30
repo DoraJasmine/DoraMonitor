@@ -228,28 +228,34 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
   const capacity = { ...computed, algorithmVersion: computed.algorithmVersion || ALGORITHM_VERSION };
   const next = loadState(root);
   const previousByTarget = new Map();
-  for (const item of readHistory({}, root)) previousByTarget.set(estimateKey(item), item);
+  if (calculation) {
+    for (const item of readHistory({}, root)) previousByTarget.set(estimateKey(item), item);
+  }
   const history = [];
   for (const target of [...(capacity.targets || []), ...(capacity.longTermTargets || [])]) {
     if (!Number.isFinite(target.fullWindowTokens)) continue;
+    if (calculation?.window && target.window !== calculation.window) continue;
+    if (calculation?.estimateKind && (target.estimateKind || "standard") !== calculation.estimateKind) continue;
     const keyForTarget = estimateKey({ ...target, provider, accountKey, usageScope });
     const previous = previousByTarget.get(keyForTarget);
     const calculationEndAt = target.dataRange?.end || calculation?.endAt || null;
-    if (!calculation && previous && calculationEndAt && previous.calculationEndAt === calculationEndAt) continue;
-    const entry = {
-      ...target,
-      provider,
-      accountKey,
-      usageScope,
-      createdAt: capacity.generatedAt,
-      calculationStartAt: previous?.calculationEndAt || calculation?.startAt || target.dataRange?.start || null,
-      calculationEndAt,
-      previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
-      trigger: calculation?.trigger || "scheduled",
-      calibrationId: calculation?.calibrationId || null,
-      signature: targetSignature(target),
-    };
-    history.push(entry);
+    if (calculation && !calculation.calibrationId && previous && calculationEndAt && previous.calculationEndAt === calculationEndAt) continue;
+    if (calculation) {
+      const entry = {
+        ...target,
+        provider,
+        accountKey,
+        usageScope,
+        createdAt: capacity.generatedAt,
+        calculationStartAt: previous?.calculationEndAt || calculation?.startAt || target.dataRange?.start || null,
+        calculationEndAt,
+        previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
+        trigger: calculation.trigger || "scheduled",
+        calibrationId: calculation.calibrationId || null,
+        signature: targetSignature(target),
+      };
+      history.push(entry);
+    }
     const maximum = next.maxima[keyForTarget];
     if (
       target.coverage === "complete" &&

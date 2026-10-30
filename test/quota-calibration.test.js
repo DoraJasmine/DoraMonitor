@@ -66,6 +66,7 @@ test("immediate finish uses the previous calculation endpoint without an explici
     ...base,
     root: store,
     now: T0,
+    calculation: { trigger: "scheduled" },
     compute: () => ({
       generatedAt: new Date(T0).toISOString(),
       targets: [{ window: "session", cacheHitRate: 0.95, fullWindowTokens: 1000000, dataRange: { start: new Date(T0 - 3600000).toISOString(), end: new Date(T0).toISOString() } }],

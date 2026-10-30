@@ -13,6 +13,8 @@ const {
   SCHEDULED_MIN_MINUTES,
   SCHEDULED_MIN_DELTA,
   SCHEDULED_DELTA_PERCENT,
+  LONG_TERM_DELTA_PERCENT,
+  LONG_TERM_MIN_MINUTES,
   SCHEDULED_MIN_GAP_MS,
 } = require("../src/quota-sampler");
 
@@ -106,6 +108,49 @@ test("a failed scheduled calculation keeps its anchor and retries the same inter
   assert.equal(maybeRunScheduledEstimation(root, { now, calculate: () => { throw new Error("temporary failure"); } }).length, 1);
   assert.equal(maybeRunScheduledEstimation(root, { now, calculate: () => {} }).length, 1);
   assert.equal(maybeRunScheduledEstimation(root, { now }).length, 0);
+});
+
+test("session and weekly schedules fire independently", () => {
+  const root = tempRoot();
+  const now = Date.now();
+  appendSamples([
+    kimiSample(10, new Date(now - 120_000).toISOString()),
+    kimiSample(10, new Date(now - 120_000).toISOString(), { window: "weekly" }),
+  ], root);
+  maybeRunScheduledEstimation(root, { now, calculate: () => assert.fail("anchor only") });
+  appendSamples([
+    kimiSample(10 + SCHEDULED_DELTA_PERCENT, new Date(now).toISOString()),
+    kimiSample(11, new Date(now).toISOString(), { window: "weekly" }),
+  ], root);
+  const fired = maybeRunScheduledEstimation(root, { now, calculate: () => {} });
+  assert.equal(fired.length, 1);
+  assert.equal(fired[0].window, "session");
+  assert.equal(fired[0].estimateKind, "standard");
+});
+
+test("long-term estimation requires 15 percent and the window duration", () => {
+  const root = tempRoot();
+  const now = Date.now();
+  appendSamples([
+    kimiSample(10, new Date(now - LONG_TERM_MIN_MINUTES.session * 60_000).toISOString()),
+    kimiSample(10, new Date(now - LONG_TERM_MIN_MINUTES.weekly * 60_000).toISOString(), { window: "weekly" }),
+  ], root);
+  maybeRunScheduledEstimation(root, { now, calculate: () => assert.fail("anchor only") });
+  appendSamples([
+    kimiSample(10 + LONG_TERM_DELTA_PERCENT - 1, new Date(now).toISOString()),
+    kimiSample(10 + LONG_TERM_DELTA_PERCENT - 1, new Date(now).toISOString(), { window: "weekly" }),
+  ], root);
+  const below = maybeRunScheduledEstimation(root, { now, calculate: () => {} });
+  assert.ok(below.every((target) => target.estimateKind === "standard"));
+
+  const later = now + 60_000;
+  appendSamples([
+    kimiSample(10 + LONG_TERM_DELTA_PERCENT, new Date(later).toISOString()),
+    kimiSample(10 + LONG_TERM_DELTA_PERCENT, new Date(later).toISOString(), { window: "weekly" }),
+  ], root);
+  const fired = maybeRunScheduledEstimation(root, { now: later, calculate: () => {} });
+  const longTargets = fired.filter((target) => target.estimateKind === "long-term");
+  assert.deepEqual(new Set(longTargets.map((target) => target.window)), new Set(["session", "weekly"]));
 });
 
 test("scope selection follows the estimation settings", () => {

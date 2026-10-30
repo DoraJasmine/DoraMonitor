@@ -56,6 +56,17 @@ test("quota samples persist and deduplicate by source timestamp", () => {
   assert.equal(restored[0].usedPercent, 42);
 });
 
+test("quota samples preserve fractional percentages when a provider supplies them", () => {
+  const root = tmpRoot();
+  const samples = samplesFromQuota({
+    available: true,
+    accountKey: "openai:test",
+    windows: [{ kind: "session", usedPercent: 42.75, resetsAt: null }],
+  }, "openai", "test");
+  appendSamples(samples, root);
+  assert.equal(readSamples(root)[0].usedPercent, 42.75);
+});
+
 test("sample compaction physically removes expired and duplicate records", () => {
   const root = tmpRoot();
   const now = Date.now();
@@ -105,7 +116,7 @@ test("capacity cache retains complete history, time links and accepted maxima", 
     calls += 1;
     return capacity(now, 1_000_000 + calls * 1000);
   };
-  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" } };
   getOrComputeCapacity({ ...options, compute, now });
   getOrComputeCapacity({ ...options, compute, now: now + 1000 });
   assert.equal(calls, 1);
@@ -143,7 +154,7 @@ test("capacity cache retains complete history, time links and accepted maxima", 
 test("every real recalculation is appended even when the estimate is unchanged", () => {
   const root = tmpRoot();
   const now = Date.now();
-  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, force: true };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" }, force: true };
   getOrComputeCapacity({ ...options, now, compute: () => capacity(now, 1_000_000) });
   getOrComputeCapacity({ ...options, now: now + 1000, compute: () => capacity(now + 1000, 1_000_000) });
   assert.equal(readHistory({ provider: "openai" }, root).length, 2);
@@ -153,7 +164,7 @@ test("an old algorithm version cannot reuse a fresh persisted cache", () => {
   const { ALGORITHM_VERSION } = require("../src/quota-estimator");
   const root = tmpRoot();
   const now = Date.now();
-  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" } };
   let calls = 0;
   getOrComputeCapacity({ ...options, now, compute: () => ({ ...capacity(now, 1_000_000), algorithmVersion: ALGORITHM_VERSION - 1 }) });
   const result = getOrComputeCapacity({ ...options, now: now + 1000, compute: () => { calls += 1; return capacity(now + 1000, 1_100_000); } });
@@ -166,11 +177,27 @@ test("an old algorithm version cannot reuse a fresh persisted cache", () => {
 test("unchanged scheduled targets do not append empty history batches", () => {
   const root = tmpRoot();
   const now = Date.now();
-  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, force: true };
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled" }, force: true };
   const first = capacity(now, 1_000_000);
   getOrComputeCapacity({ ...options, now, compute: () => first });
   getOrComputeCapacity({ ...options, now: now + 1000, compute: () => ({ ...first, generatedAt: new Date(now + 1000).toISOString() }) });
   assert.equal(readHistory({ provider: "openai" }, root).length, 1);
+});
+
+test("history writes are scoped by window and estimate kind, and passive reads write none", () => {
+  const root = tmpRoot();
+  const now = Date.now();
+  const computed = capacity(now, 1_000_000);
+  computed.longTermTargets = [{ ...computed.targets[0], window: "weekly", estimateKind: "long-term" }];
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, force: true };
+  getOrComputeCapacity({ ...options, now, compute: () => computed });
+  assert.equal(readHistory({}, root).length, 0);
+
+  getOrComputeCapacity({ ...options, now: now + 1000, calculation: { trigger: "scheduled", window: "session", estimateKind: "standard" }, compute: () => computed });
+  getOrComputeCapacity({ ...options, now: now + 2000, calculation: { trigger: "scheduled", window: "weekly", estimateKind: "long-term" }, compute: () => computed });
+  const history = readHistory({}, root);
+  assert.equal(history.length, 2);
+  assert.deepEqual(history.map((item) => [item.window, item.estimateKind || "standard"]), [["session", "standard"], ["weekly", "long-term"]]);
 });
 
 test("history reconstructs missing interval usage and model cache details", () => {
@@ -184,6 +211,7 @@ test("history reconstructs missing interval usage and model cache details", () =
   ], root);
   getOrComputeCapacity({
     provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, now, force: true,
+    calculation: { trigger: "scheduled" },
     compute: () => capacity(now, 1_000_000),
   });
   const records = [{

@@ -7,7 +7,7 @@ const { loadSettings } = require("./settings");
 const CACHE_TARGETS = [0.85, 0.9, 0.95, 0.98];
 // Bump whenever estimation logic changes: cache validation rejects results
 // from every older algorithm version, including persisted results after restart.
-const ALGORITHM_VERSION = 6;
+const ALGORITHM_VERSION = 8;
 const TOKEN_TYPES = ["inputOther", "inputCacheRead", "inputCacheCreation", "output"];
 const DAY_MS = 86_400_000;
 
@@ -63,7 +63,7 @@ function buildIntervals({ samples, records, provider, window, usageScope = "all-
     .filter((s) => s && s.provider === provider && s.window === window && (!accountKey || s.accountKey === accountKey))
     .map((s) => ({ ...s, time: timeOf(s.sampledAt), usedPercent: Number(s.usedPercent) }))
     .filter((s) => s.time > 0 && Number.isFinite(s.usedPercent) && s.usedPercent >= 0 && s.usedPercent <= 100)
-    .sort((a, b) => a.time - b.time);
+    .sort((a, b) => a.time - b.time || a.usedPercent - b.usedPercent);
 
   const usage = [];
   for (const record of records || []) {
@@ -82,6 +82,10 @@ function buildIntervals({ samples, records, provider, window, usageScope = "all-
   let anchor = null;
   for (const sample of sortedSamples) {
     if (!anchor) {
+      anchor = sample;
+      continue;
+    }
+    if (sample.time <= anchor.time) {
       anchor = sample;
       continue;
     }
@@ -276,7 +280,10 @@ function confidenceFor(sampleCount, percentSpan, coverage, residual) {
 
 function confidenceDetails(target) {
   if (target.method === "insufficient" || !Number.isFinite(target.fullWindowTokens)) {
-    return { confidenceScore: 0, confidenceReasons: ["insufficient_samples"] };
+    return {
+      confidenceScore: 0,
+      confidenceReasons: ["insufficient_samples", ...(target.outlierCount > 0 ? ["outliers_excluded"] : [])],
+    };
   }
   const reasons = [];
   if (target.sampleCount < 5) reasons.push("few_samples");
@@ -285,13 +292,15 @@ function confidenceDetails(target) {
   if (target.method === "extrapolated") reasons.push("cache_extrapolation");
   if (target.method === "modeled") reasons.push("price_prior");
   if (target.residual > 0.35) reasons.push("fit_residual");
+  if (target.outlierCount > 0) reasons.push("outliers_excluded");
   const methodScore = target.method === "interpolated" ? 15 : target.method === "local" ? 12 : target.method === "modeled" ? 8 : 4;
   const residualScore = Number.isFinite(target.residual) ? 20 * Math.max(0, 1 - Math.min(1, target.residual)) : 0;
   const score = Math.min(25, target.sampleCount * 5)
     + Math.min(20, target.percentSpan * 4)
     + (target.coverage === "complete" ? 20 : 8)
-    + methodScore + residualScore;
-  return { confidenceScore: Math.round(score), confidenceReasons: reasons };
+    + methodScore + residualScore
+    - Math.min(10, (target.outlierCount || 0) * 2);
+  return { confidenceScore: Math.max(0, Math.round(score)), confidenceReasons: reasons };
 }
 
 function costCapacity(intervals, now) {
@@ -299,8 +308,10 @@ function costCapacity(intervals, now) {
   if (!costed.length) return {};
   const weights = costed.map((interval) => baseWeight(interval, now));
   const values = costed.map((interval) => interval.costCny * 100 / interval.dp);
+  const weightedCost = costed.reduce((sum, interval, index) => sum + weights[index] * interval.costCny, 0);
+  const weightedDp = costed.reduce((sum, interval, index) => sum + weights[index] * interval.dp, 0);
   return {
-    fullWindowCostCny: weightedQuantile(values, weights, 0.5),
+    fullWindowCostCny: weightedCost * 100 / weightedDp,
     lowCostCny: weightedQuantile(values, weights, 0.25),
     highCostCny: weightedQuantile(values, weights, 0.75),
     costBasis: "api-list-price",
@@ -349,14 +360,49 @@ function modeledTarget(intervals, cacheHitRate, common, now, settings, observedM
   };
 }
 
+function excludeCostOutliers(intervals) {
+  const costed = intervals.filter((interval) => Number.isFinite(interval.costCny) && interval.costCny > 0);
+  if (costed.length < 5) return intervals;
+  const logCosts = costed.map((interval) => Math.log(interval.costCny / interval.dp));
+  const weights = logCosts.map(() => 1);
+  const median = weightedQuantile(logCosts, weights, 0.5);
+  const deviations = logCosts.map((value) => Math.abs(value - median));
+  const mad = weightedQuantile(deviations, weights, 0.5);
+  const scale = Math.max(1.4826 * mad, 0.25);
+  const outliers = new Set(costed.filter((interval, index) => Math.abs(logCosts[index] - median) > 3.5 * scale));
+  return intervals.filter((interval) => !outliers.has(interval));
+}
+
 function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
-  const all = (intervals || []).filter((interval) => interval.dp > 0);
-  const complete = all.filter((interval) => ["complete", "provisional"].includes(interval.coverage) && interval.totalTokens > 0);
+  const all = (intervals || []).filter((interval) => interval
+    && Number.isFinite(interval.dp) && interval.dp > 0
+    && Number.isFinite(interval.durationMs) && interval.durationMs > 0
+    && Number.isFinite(interval.totalTokens) && interval.totalTokens >= 0
+    && Number.isFinite(interval.start) && Number.isFinite(interval.end)
+    && (interval.costCny == null || (Number.isFinite(interval.costCny) && interval.costCny >= 0)));
+  const candidates = all.filter((interval) => ["complete", "provisional"].includes(interval.coverage) && interval.totalTokens > 0);
+  const complete = excludeCostOutliers(candidates);
+  const outlierCount = candidates.length - complete.length;
   const coverage = all.some((interval) => interval.coverage !== "complete") ? "provisional" : "complete";
   const sampleCount = complete.length;
   const percentSpan = complete.reduce((sum, interval) => sum + interval.dp, 0);
   if (!sampleCount) {
-    return { targets: CACHE_TARGETS.map((cacheHitRate) => ({ cacheHitRate, confidence: "insufficient", method: "insufficient", sampleCount: 0, coverage, confidenceScore: 0, confidenceReasons: ["insufficient_samples"] })) };
+    return {
+      targets: CACHE_TARGETS.map((cacheHitRate) => ({
+        cacheHitRate,
+        confidence: "insufficient",
+        method: "insufficient",
+        sampleCount: 0,
+        outlierCount,
+        coverage,
+        confidenceScore: 0,
+        confidenceReasons: ["insufficient_samples", ...(outlierCount > 0 ? ["outliers_excluded"] : [])],
+      })),
+      outlierCount,
+      sampleCount,
+      percentSpan,
+      coverage,
+    };
   }
 
   const weights = complete.map((interval) => baseWeight(interval, now));
@@ -379,6 +425,7 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
     const common = {
       cacheHitRate,
       sampleCount,
+      outlierCount,
       percentSpan,
       coverage,
       confidence,
@@ -459,7 +506,7 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
     if (modeled) return modeled;
     return { ...common, confidence: "insufficient", method: "insufficient", fullWindowTokens: null, fullWindowCostCny: null, low: null, high: null };
   }).map((target) => ({ ...target, ...confidenceDetails(target) }));
-  return { targets, residual, sampleCount, percentSpan, coverage };
+  return { targets, residual, sampleCount, outlierCount, percentSpan, coverage };
 }
 
 function mergeLongIntervals(intervals, minimumDuration) {
@@ -478,6 +525,7 @@ function mergeLongIntervals(intervals, minimumDuration) {
     merged.push(current);
   };
   for (const interval of intervals) {
+    if (!Number.isFinite(interval.durationMs) || interval.durationMs <= 0) continue;
     if (!current || current.end !== interval.start) {
       finish();
       current = { ...interval, models: Object.fromEntries(Object.entries(interval.models).map(([name, usage]) => [name, { ...usage }])) };

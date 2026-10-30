@@ -160,13 +160,17 @@
 `capacity` 包含 `provider`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
 `maxima` 和 `calibrations`。`targets` 固定覆盖 `session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98`
 的组合；每项包含 `fullWindowTokens`、`fullWindowCostCny`、`confidence`、`confidenceScore`、
-`confidenceReasons`、`method`、`sampleCount`、`dataRange`、`modelMix` 和 `observations`。
+`confidenceReasons`、`method`、`sampleCount`、`outlierCount`、`dataRange`、`modelMix` 和 `observations`。
 每个 observation 包含起止时间、额度增量、实际 Token、CNY、缓存命中率及各模型 Token 组成。
+费用密度显著偏离中位数的区间会被剔除，不计入 `observations`；此时 `outlierCount` 大于 0，
+且 `confidenceReasons` 包含 `outliers_excluded`。`fullWindowCostCny` 主值按加权总费用 ÷ 加权总额度
+消耗 ×100 计算，`lowCostCny` / `highCostCny` 使用逐区间容量的 25% / 75% 加权分位数。
 人民币是 API 刊例价等效价值，不是真实账单。稀疏样本可用价格弱先验推算缺失档位，并标记
 `modeled` / `extrapolated` 和低置信度。数据不足时数值字段为 `null` 或缺省，不能当作官方额度或
 精确的零。`maxima` 仅记录完整覆盖、非外推且中高置信度的结果。`longTermTargets` 是独立长程序列：
 先合并连续短区间，5h 采用合并后 ≥30 分钟、weekly 采用 ≥6 小时的自动区间；不设样本数硬门槛，
-样本少时通过低置信度体现，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离。
+样本少时通过低置信度体现，且排除手动校准样本。历史以 `estimateKind=standard|long-term` 隔离；
+界面优先采用高置信度普通测算，长程结果默认收起为交叉校验。
 
 `GET /api/quota/capacity/history` 查询参数为 `provider`、`accountKey`、`scope`、`window`、
 `cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
@@ -186,8 +190,9 @@
 5 分钟、10K 有效 Token、额度增长 1 个百分点且 peer 覆盖完整，随后立即重算；没有显式起点时
 从上次测算终点续算并标记 `trigger=manual-end`。`cancel` 放弃进行中的区间。校验失败保留起点。
 
-Web 服务每 60 秒采样并检查定时触发：30 分钟且额度增长 1%，或单次累计增长 10% 时重算；
-失败保留下一次重试锚点。普通读取使用 6 小时缓存，算法版本变化会立即使旧缓存失效。
+Web 服务每 60 秒采样。5h/7d 标准测算分别有独立锚点：1 小时且增长 4%，或增长 10% 时触发；
+长程测算也分别独立：增长 15% 且满足 30 分钟/6 小时长区间门槛时触发。失败或无有效结果保留
+重试锚点。普通读取只更新展示和缓存，不写历史；算法版本变化会立即使旧缓存失效。
 
 ## 8. GET /api/tools
 
