@@ -948,7 +948,7 @@ function listPrices(options = {}) {
     const add = (period, multiplier) => rows.push({
       id: p.id,
       cacheHit: p.cacheHit * multiplier * priceToCnyMultiplier(p, options.fxRate),
-      cacheWrite: (p.cacheWrite ?? p.input) * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      cacheWrite: p.cacheWrite == null ? null : p.cacheWrite * multiplier * priceToCnyMultiplier(p, options.fxRate),
       input: p.input * multiplier * priceToCnyMultiplier(p, options.fxRate),
       output: p.output * multiplier * priceToCnyMultiplier(p, options.fxRate),
       context: p.context,

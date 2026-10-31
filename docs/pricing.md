@@ -51,21 +51,24 @@ wire 记录 (model="kimi-code/kimi-for-coding", usage={...})
 
 ## 3. 内置价目表（官方价，单位：每 1M tokens）
 
+缓存写入列的 `—` 表示官方未单列该价格，不代表免费。费用估算中，未单列且按普通输入计费的缓存相关 Token 仍按输入价计算；官方明确免费时才为 0。
+
 ### 3.1 Kimi 中国区（`KIMI_PRICES`，CNY）
 
 来源：<https://platform.kimi.com/docs/pricing/chat>
 
 | id | 缓存命中 | 缓存写入(默认5min TTL) | 输入 | 输出 | 上下文 | 备注 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `kimi-k3.1-pro-highspeed` | 1.30 | 13.00 | 26.00 | 136.00 | 1,048,576 | 高速版 = 标准版 2 倍价 |
+| `kimi-k3.1-pro-highspeed` | 1.30 | 26.00 | 26.00 | 136.00 | 1,048,576 | 高速版 = 标准版 2 倍价 |
 | `kimi-k3.1-pro` | 1.30 | 13.00 | 13.00 | 68.00 | 1,048,576 | 2026-10-24 官方挂牌 |
 | `kimi-k3` | 2.00 | 20.00 | 20.00 | 100.00 | 1,048,576 | 官方 1h TTL 为 ¥40；wire 无 TTL 字段，按默认 5min 档计 |
-| `kimi-k2.7-code-highspeed` | 2.60 | 13.00 | 13.00 | 54.00 | 262,144 | 高速版 |
-| `kimi-k2.7-code` | 1.30 | 6.50 | 6.50 | 27.00 | 262,144 | **`kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按此计价**；K2 系列 2026-12 底下线 |
-| `kimi-k2.6` | 1.10 | 6.50 | 6.50 | 27.00 | 262,144 | |
+| `kimi-k2.7-code-highspeed` | 2.60 | — | 13.00 | 54.00 | 262,144 | 高速版；不支持独立 Cache Write |
+| `kimi-k2.7-code` | 1.30 | — | 6.50 | 27.00 | 262,144 | 不支持独立 Cache Write；**`kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按此计价**；K2 系列 2026-12 底下线 |
+| `kimi-k2.6` | 1.10 | — | 6.50 | 27.00 | 262,144 | 不支持独立 Cache Write |
 
 K3 系列官方缓存写入分 TTL 档：5min（默认）与 1h（价格为 5min 档的 2 倍）。
 由于 wire.jsonl 的 `inputCacheCreation` 不携带 TTL 信息，一律按默认 5min 档计。
+K2.7 与 K2.6 不支持独立 Cache Write，详见[官方上下文缓存说明](https://platform.kimi.com/docs/guide/context-caching)。
 
 ### 3.2 DeepSeek（`DEEPSEEK_PRICES`，CNY，峰谷分时）
 

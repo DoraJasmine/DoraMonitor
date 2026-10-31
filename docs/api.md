@@ -138,6 +138,7 @@
 ```
 
 - DeepSeek 模型会输出两行：`period: "peak"` 与 `period: "offPeak"`。
+- `cacheWrite` 仅在官方单列缓存写入价时提供数值；未单列时为 `null`，前端显示 `—`，不代表免费。
 - `display.*` 已按用户币种换算好，前端直接展示。
 - `estimated: true` 的行界面显示「估算」徽标。
 

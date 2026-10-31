@@ -539,7 +539,7 @@ async function handleApi(req, res, url, cliHome) {
         currency: settings.currency,
         symbol: settings.currencySymbol,
         cacheHit: toDisplay(p.cacheHit, settings),
-        cacheWrite: toDisplay(p.cacheWrite, settings),
+        cacheWrite: p.cacheWrite == null ? null : toDisplay(p.cacheWrite, settings),
         input: toDisplay(p.input, settings),
         output: toDisplay(p.output, settings),
       },

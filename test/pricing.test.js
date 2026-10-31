@@ -56,6 +56,18 @@ describe("pricing", () => {
     assert.equal(p.cacheHit, 1.3);
   });
 
+  it("does not present the input-rate billing fallback as an official cache-write price", () => {
+    const prices = listPrices({ fxRate: 7.2 });
+    for (const id of ["kimi-k2.7-code-highspeed", "kimi-k2.7-code", "kimi-k2.6", "deepseek-flash", "deepseek-v4-pro", "gemini-3.1-pro", "gemini-3.8-flash", "gemini-3-flash", "minimax-m3", "gpt-5", "codex-auto-review"]) {
+      assert.equal(prices.find((p) => p.id === id).cacheWrite, null, id);
+    }
+    for (const id of ["kimi-k3", "kimi-k3.1-pro", "qwen3.7-max", "minimax-m2.7", "gpt-6-sol", "claude-sonnet-5"]) {
+      assert.ok(prices.find((p) => p.id === id).cacheWrite > 0, id);
+    }
+    const k2 = matchPrice("kimi-k2.7-code", { fxRate: 7.2 });
+    assert.equal(k2.cacheWrite, k2.input);
+  });
+
   it("matches k2.6", () => {
     const p = matchPrice("kimi-k2.6", { fxRate: 7.2 });
     assert.equal(p.id, "kimi-k2.6");

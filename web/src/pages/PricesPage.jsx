@@ -552,7 +552,7 @@ export function PricesPage({ t, locale, onSaved }) {
                     {fmtMoney(p.display?.cacheHit ?? p.cacheHit, moneyCfg)}
                   </TableCell>
                   <TableCell className="text-right num">
-                    {fmtMoney(p.display?.cacheWrite ?? p.cacheWrite, moneyCfg)}
+                    {p.cacheWrite == null ? "—" : fmtMoney(p.display?.cacheWrite ?? p.cacheWrite, moneyCfg)}
                   </TableCell>
                   <TableCell className="text-right num">
                     {fmtMoney(p.display?.input ?? p.input, moneyCfg)}
