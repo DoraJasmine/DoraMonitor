@@ -178,7 +178,7 @@
 界面优先采用高置信度普通测算，长程结果默认收起为交叉校验。
 
 `GET /api/quota/capacity/history` 查询参数为 `tool`、`accountKey`、`scope`、`window`、
-`cacheHitRate`、`estimateKind`、`limit`（默认 30，最大 200）和 `offset`，返回
+`cacheHitRate`、`estimateKind`、`minConfidenceScore`、`limit`（默认 30，最大 200）和 `offset`，返回
 `{ "history": [...], "total": 0, "limit": 30, "offset": 0, "tool": "codex" }`，按最新记录优先分页。
 旧 `provider=openai|kimi` 在兼容期仍可使用；同时传 tool/provider 但语义冲突时返回
 `400 conflicting_tool_provider`，未知工具返回 `400 unsupported_tool`。有新观测终点的测算结果追加到

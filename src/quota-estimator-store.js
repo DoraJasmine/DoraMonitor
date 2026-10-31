@@ -164,13 +164,14 @@ function withMaxima(capacity, state) {
   return { ...capacity, maxima };
 }
 
-function historyMatches(item, { provider, accountKey, usageScope, window, cacheHitRate, estimateKind }) {
+function historyMatches(item, { provider, accountKey, usageScope, window, cacheHitRate, estimateKind, minConfidenceScore }) {
   return (!provider || quotaProviderOf(item) === provider) &&
     (!accountKey || item.accountKey === accountKey) &&
     (!usageScope || item.usageScope === usageScope) &&
     (!window || item.window === window) &&
     (!estimateKind || (item.estimateKind || "standard") === estimateKind) &&
-    (cacheHitRate === undefined || item.cacheHitRate === Number(cacheHitRate));
+    (cacheHitRate === undefined || item.cacheHitRate === Number(cacheHitRate)) &&
+    (minConfidenceScore === undefined || Number(item.confidenceScore) >= Number(minConfidenceScore));
 }
 
 function readHistory(query = {}, root = DEFAULT_ROOT) {

@@ -539,23 +539,54 @@ function HomeCapacityGroup({ title, targets, locale, t }) {
       <div className="t-label">{title}</div>
       {[0.95].map((rate) => {
         const target = targets.find((item) => item.cacheHitRate === rate);
-        return target ? <CapacityRateLine key={rate} target={target} locale={locale} t={t} /> : null;
+        return target ? <div key={rate}>
+          <CapacityRateLine target={target} locale={locale} t={t} />
+          <div className="t-caption">{t("capacityLatestHigh")}: {formatDate(target.createdAt, locale)}</div>
+        </div> : null;
       })}
     </div>
   );
 }
 
 function HomeCapacity({ capacity, locale, t }) {
-  const standardTargets = capacity?.targets || [];
-  const highConfidenceTargets = standardTargets.filter((target) => Number(target.confidenceScore) >= 95 && Number.isFinite(target.fullWindowTokens));
-  if (!standardTargets.length) return null;
+  const [highConfidenceTargets, setHighConfidenceTargets] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!capacity) {
+      setHighConfidenceTargets([]);
+      return () => { active = false; };
+    }
+    setHighConfidenceTargets(null);
+    Promise.all(["session", "weekly"].map(async (window) => {
+      const data = await fetchQuotaCapacityHistory({
+        tool: capacity.tool,
+        accountKey: capacity.accountKey,
+        scope: capacity.usageScope,
+        window,
+        cacheHitRate: 0.95,
+        estimateKind: "standard",
+        minConfidenceScore: 95,
+        limit: 1,
+        offset: 0,
+      });
+      return (data.history || []).find((target) => Number(target.confidenceScore) >= 95 && Number.isFinite(target.fullWindowTokens)) || null;
+    })).then((targets) => {
+      if (active) setHighConfidenceTargets(targets.filter(Boolean));
+    }).catch(() => {
+      if (active) setHighConfidenceTargets([]);
+    });
+    return () => { active = false; };
+  }, [capacity?.tool, capacity?.accountKey, capacity?.usageScope, capacity?.generatedAt]);
+
+  if (!capacity) return null;
   return (
     <section className="mt-4 space-y-3 border-t border-border/60 pt-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{t("capacityTitle")}</h3>
         <a href="/quota" className="rounded-sm text-[11px] text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t("capacityDetails")}</a>
       </div>
-      {highConfidenceTargets.length ? (
+      {highConfidenceTargets === null ? <p className="text-xs text-muted-foreground">{t("loading")}</p> : highConfidenceTargets.length ? (
         <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
           {["session", "weekly"].map((window) => {
             const targets = highConfidenceTargets.filter((target) => target.window === window);

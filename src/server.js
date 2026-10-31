@@ -583,6 +583,7 @@ async function handleApi(req, res, url, cliHome) {
       return json(res, error.status, { error: error.code, message: error.message });
     }
     const cache = url.searchParams.get("cacheHitRate");
+    const minConfidenceScore = url.searchParams.get("minConfidenceScore");
     const page = getToolCapacityHistory({
       tool,
       accountKey: url.searchParams.get("accountKey"),
@@ -590,6 +591,7 @@ async function handleApi(req, res, url, cliHome) {
       window: url.searchParams.get("window"),
       cacheHitRate: cache === null ? undefined : Number(cache),
       estimateKind: url.searchParams.get("estimateKind"),
+      minConfidenceScore: minConfidenceScore === null ? undefined : Number(minConfidenceScore),
       limit: url.searchParams.get("limit"),
       offset: url.searchParams.get("offset"),
     });

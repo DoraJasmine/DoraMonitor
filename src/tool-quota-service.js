@@ -61,7 +61,7 @@ async function getToolQuota({ tool, cliHome, force = false, scope, root, account
   return { ...quota, accountKey, tool, capacity: withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) };
 }
 
-function getToolCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind, limit, offset }, root, options) {
+function getToolCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind, minConfidenceScore, limit, offset }, root, options) {
   const quotaProvider = quotaProviderForTool(tool);
   return getCapacityHistory({
     provider: quotaProvider,
@@ -70,6 +70,7 @@ function getToolCapacityHistory({ tool, accountKey, scope, window, cacheHitRate,
     window: window || undefined,
     cacheHitRate,
     estimateKind: estimateKind || undefined,
+    minConfidenceScore,
     limit: limit || undefined,
     offset: offset || undefined,
   }, root, options);

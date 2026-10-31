@@ -160,6 +160,23 @@ test("every real recalculation is appended even when the estimate is unchanged",
   assert.equal(readHistory({ provider: "openai" }, root).length, 2);
 });
 
+test("history can select the newest estimate meeting a minimum confidence score", () => {
+  const { readHistoryPage } = require("../src/quota-estimator-store");
+  const root = tmpRoot();
+  const now = Date.now();
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, calculation: { trigger: "scheduled", window: "session", estimateKind: "standard" }, force: true };
+  for (const [offset, score, tokens] of [[0, 97, 1_000_000], [1000, 85, 2_000_000], [2000, 96, 3_000_000]]) {
+    const computed = capacity(now + offset, tokens);
+    computed.targets[0].confidenceScore = score;
+    getOrComputeCapacity({ ...options, now: now + offset, compute: () => computed });
+  }
+  const page = readHistoryPage({ provider: "openai", accountKey: "openai:test", usageScope: "all-clients", window: "session", estimateKind: "standard", cacheHitRate: 0.95, minConfidenceScore: 95, limit: 1 }, root);
+  assert.equal(page.total, 2);
+  assert.equal(page.history.length, 1);
+  assert.equal(page.history[0].confidenceScore, 96);
+  assert.equal(page.history[0].fullWindowTokens, 3_000_000);
+});
+
 test("an old algorithm version cannot reuse a fresh persisted cache", () => {
   const { ALGORITHM_VERSION } = require("../src/quota-estimator");
   const root = tmpRoot();

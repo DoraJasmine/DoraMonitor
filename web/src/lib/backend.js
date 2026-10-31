@@ -111,9 +111,10 @@ export async function fetchQuotaAccounts(tool) {
   return httpJson(`/api/quota/accounts?${qs}`);
 }
 
-export async function fetchQuotaCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind = "standard", limit = 30, offset = 0 }) {
+export async function fetchQuotaCapacityHistory({ tool, accountKey, scope, window, cacheHitRate, estimateKind = "standard", minConfidenceScore, limit = 30, offset = 0 }) {
   const qs = new URLSearchParams({ tool, accountKey, scope, window, estimateKind, limit: String(limit), offset: String(offset) });
   if (cacheHitRate !== undefined) qs.set("cacheHitRate", String(cacheHitRate));
+  if (minConfidenceScore !== undefined) qs.set("minConfidenceScore", String(minConfidenceScore));
   return httpJson(`/api/quota/capacity/history?${qs}`);
 }
 
