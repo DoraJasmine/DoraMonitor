@@ -164,8 +164,8 @@
 
 - `tool-quota-service.js` 接收公开 `tool`，通过 `quota-tool.js` 映射内部额度账户族，统一编排官方额度、
   估算、历史、采样与校准；`server.js` 不再直接依赖估算仓储或校准实现。
-- `quota-sampler.js` 在 Web 服务内每 60 秒采样 Kimi/Codex 双窗口百分比；Codex 首次启动时
-  回补 rollout 中的全部历史 `rate_limits`。5h/7d 标准调度分别按 1 小时 +4% 或 +10% 触发；
+- `quota-sampler.js` 在 daemon 内每 60 秒采样 Kimi/Codex 双窗口百分比，daemon 未运行时由 Web 兜底；
+  daemon PID 心跳用于避免两个进程同时采样。Codex 首次启动时回补 rollout 中的全部历史 `rate_limits`。5h/7d 标准调度分别按 1 小时 +4% 或 +10% 触发；
   长程定期调度已停用，旧长程锚点不会再触发计算。
 - `quota-models.js` 只纳入目标厂商的模型：GPT 可来自 Codex/OMP，Kimi 可来自 Kimi Code/OMP；
   DeepSeek 等无关模型和未知模型默认排除。Kimi 可选择仅使用 Kimi Code 用量，Codex 也可选择仅使用

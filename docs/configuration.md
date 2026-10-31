@@ -167,7 +167,7 @@ capabilities、thinking efforts、默认 effort=high），可选设置 default_m
 | --- | --- | --- |
 | `~/.doramonitor/config.json` | 自身设置 | 上文 |
 | `~/.doramonitor/status.cache` | CLI/daemon 状态行缓存 | `daemon` 每 30s（默认）原子覆盖 |
-| `~/.doramonitor/daemon.pid` | daemon pid | 单实例守卫 + `stop` 子命令用 |
+| `~/.doramonitor/daemon.pid` | daemon pid 与心跳 | 单实例守卫、`stop` 子命令及 Web/daemon 采样协调；每 15 秒刷新 |
 | `~/.doramonitor/sync.state` | 最近尝试、最近成功、上传/下载结果、错误和对端设备 | 每次手动或后台同步后原子更新 |
 | `~/.doramonitor/device-id` | 随机安装 ID | 同步摘要的设备身份；不要在 Windows/WSL 或不同机器间复制 |
 | `~/.doramonitor/remote-cache/` | 对端设备摘要缓存 | 日汇总、一分钟测算桶和额度样本；dashboard 请求只读此缓存 |

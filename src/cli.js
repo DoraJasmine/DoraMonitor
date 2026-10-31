@@ -19,6 +19,7 @@ const path = require("path");
 const os = require("os");
 const { collect } = require("./collect");
 const { toolMeta } = require("./tools/base");
+const { daemonPidFile, processIsRunning } = require("./daemon-liveness");
 const { loadSettings, toDisplay } = require("./settings");
 
 const DEFAULT_STATUS_FILE = path.join(".doramonitor", "status.cache");
@@ -208,37 +209,12 @@ function atomicWrite(target, content) {
   renameSync(tmp, target);
 }
 
-function daemonPidFile() {
-  return path.join(os.homedir(), ".doramonitor", "daemon.pid");
-}
-
-function isRunning(pid) {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-  // The pid file can outlive a reboot and WSL recycles pids aggressively;
-  // confirm the process actually is an DoraMonitor daemon before honoring the
-  // single-instance guard, otherwise a recycled pid blocks startup forever.
-  if (process.platform !== "win32") {
-    try {
-      const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
-      if (!/cli\.js|ai-usage|doramonitor/.test(cmd)) return false;
-    } catch {
-      return false; // /proc entry gone — not our daemon
-    }
-  }
-  return true;
-}
-
 function runDaemon(opts) {
   const pf = daemonPidFile();
   // Single-instance guard: a stale pid file (dead process) is replaced.
   if (fs.existsSync(pf)) {
     const prev = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
-    if (isRunning(prev) && prev !== process.pid) {
+    if (processIsRunning(prev) && prev !== process.pid) {
       console.log(`DoraMonitor daemon 已在运行 (pid ${prev})`);
       process.exit(0);
     }
@@ -259,7 +235,19 @@ function runDaemon(opts) {
 
   fs.mkdirSync(path.dirname(pf), { recursive: true });
   fs.writeFileSync(pf, String(process.pid), "utf8");
+  const stopQuotaSampler = require("./quota-sampler").startQuotaSampler(null);
+  const heartbeat = setInterval(() => {
+    try {
+      const now = new Date();
+      fs.utimesSync(pf, now, now);
+    } catch {
+      // The next heartbeat retries; Web eventually resumes if the daemon is gone.
+    }
+  }, 15_000);
+  heartbeat.unref();
   const cleanup = () => {
+    clearInterval(heartbeat);
+    stopQuotaSampler();
     try {
       if (fs.readFileSync(pf, "utf8").trim() === String(process.pid)) {
         fs.unlinkSync(pf);
@@ -308,7 +296,7 @@ function runDaemon(opts) {
   setInterval(maybeSync, 60_000);
 
   setInterval(tick, opts.interval * 1000);
-  console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}；每分钟检查同步设置`);
+  console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}；每 60s 采样额度并检查同步设置`);
 }
 
 /** Stop a running daemon via its pid file. Returns exit code. */
@@ -319,7 +307,7 @@ function stopDaemon() {
     return 0;
   }
   const pid = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
-  if (!isRunning(pid)) {
+  if (!processIsRunning(pid)) {
     fs.unlinkSync(pf);
     console.log("DoraMonitor daemon 进程已不存在，清理 PID 文件");
     return 0;

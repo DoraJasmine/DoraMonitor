@@ -996,7 +996,7 @@ function main() {
     process.exit(0);
   }
   const server = createServer(opts.home, opts.host);
-  startQuotaSampler(opts.home);
+  startQuotaSampler(opts.home, { deferToDaemon: true });
   server.listen(opts.port, opts.host, () => {
     // Show an address the user can actually click; the wildcard binds are
     // not valid literals in a URL.

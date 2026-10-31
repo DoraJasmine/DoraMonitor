@@ -6,6 +6,7 @@ const { getCodexQuota } = require("./codex-quota");
 const { fetchQuota } = require("./quota");
 const { getQuotaIntegration, toolForQuotaProvider } = require("./quota-tool");
 const { listKimiQuotaAccounts } = require("./quota-accounts");
+const { isDaemonRunning } = require("./daemon-liveness");
 const { loadSettings } = require("./settings");
 const { samplesFromQuota, readSamples, appendSamples, getCheckpoint, setCheckpoint } = require("./quota-estimator-store");
 
@@ -127,10 +128,10 @@ function ensureCodexBackfill(home, root) {
   return count;
 }
 
-function startQuotaSampler(cliHome, { intervalMs = 60_000, root } = {}) {
+function startQuotaSampler(cliHome, { intervalMs = 60_000, root, deferToDaemon = false } = {}) {
   let running = false;
   const sample = async () => {
-    if (running) return;
+    if (running || (deferToDaemon && isDaemonRunning())) return;
     running = true;
     try {
       const collected = collect();

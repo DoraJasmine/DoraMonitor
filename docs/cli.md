@@ -87,10 +87,12 @@ node src/cli.js daemon [--interval 30] [--tool all] [--style tmux] [--status-fil
     匹配 `cli.js|ai-usage|doramonitor`，防止 pid 复用导致永久误判。
 - 启动立即执行一次 tick，然后每 `interval` 秒一次：
   - 渲染状态行 → **原子写**（tmp + rename）到 `status.cache`；
+  - 每 60 秒执行额度采样与标准定期测算；每 15 秒刷新 PID 心跳，Web 在 daemon 健康时不再重复采样，
+    心跳过期约两分钟后自动接管；
   - 每 `max(60, settings.sync.syncInterval || 300)` 秒额外执行一次强制
     collect + runSync；每次尝试后写 `sync.state`，保留最近成功时间、失败原因与对端设备。
-- SIGINT/SIGTERM 清理 pid 文件后退出。
-- 启动输出示例：`DoraMonitor daemon: pid 12345，每 30s 写入 ~/.doramonitor/status.cache，每 300s 同步`。
+- SIGINT/SIGTERM 停止采样器并清理 pid 文件后退出。
+- 启动输出示例：`DoraMonitor daemon: pid 12345，每 30s 写入 ~/.doramonitor/status.cache；每 60s 采样额度并检查同步设置`。
 
 ### stop
 
