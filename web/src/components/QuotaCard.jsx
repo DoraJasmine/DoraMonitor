@@ -553,6 +553,7 @@ function HomeCapacityGroup({ title, targets, locale, t }) {
 
 function HomeCapacity({ capacity, locale, t }) {
   const [highConfidenceTargets, setHighConfidenceTargets] = useState(null);
+  const minConfidenceScore = capacity?.tool === "codex" ? 80 : 95;
 
   useEffect(() => {
     let active = true;
@@ -569,11 +570,11 @@ function HomeCapacity({ capacity, locale, t }) {
         window,
         cacheHitRate: 0.95,
         estimateKind: "standard",
-        minConfidenceScore: 95,
+        minConfidenceScore,
         limit: 1,
         offset: 0,
       });
-      return (data.history || []).find((target) => Number(target.confidenceScore) >= 95 && Number.isFinite(target.fullWindowTokens)) || null;
+      return (data.history || []).find((target) => Number(target.confidenceScore) >= minConfidenceScore && Number.isFinite(target.fullWindowTokens)) || null;
     })).then((targets) => {
       if (active) setHighConfidenceTargets(targets.filter(Boolean));
     }).catch(() => {
@@ -598,12 +599,12 @@ function HomeCapacity({ capacity, locale, t }) {
             ) : (
               <div key={window} className="text-[11px] text-muted-foreground">
                 <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
-                {t("capacityHighInsufficient")}
+                {fill(t("capacityHighInsufficient"), { score: minConfidenceScore })}
               </div>
             );
           })}
         </div>
-      ) : <p className="text-xs text-muted-foreground">{t("capacityHighInsufficient")}</p>}
+      ) : <p className="text-xs text-muted-foreground">{fill(t("capacityHighInsufficient"), { score: minConfidenceScore })}</p>}
     </section>
   );
 }
