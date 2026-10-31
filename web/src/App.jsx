@@ -162,6 +162,7 @@ export default function App() {
     fxRate: 7.2,
   });
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [refreshFlash, setRefreshFlash] = useState(false);
   const [quotaRefreshSignal, setQuotaRefreshSignal] = useState(0);
   const [data, setData] = useState(null);
@@ -215,6 +216,7 @@ export default function App() {
       if (loadingRef.current && refresh) return;
       loadingRef.current = true;
       setLoading(true);
+      setRefreshing(refresh);
       setRefreshFlash(false);
       setError(null);
       const started = Date.now();
@@ -245,6 +247,7 @@ export default function App() {
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
         loadingRef.current = false;
         setLoading(false);
+        setRefreshing(false);
       }
     },
     [home, range, tool, device, t]
@@ -547,16 +550,16 @@ export default function App() {
                 setQuotaRefreshSignal((value) => value + 1);
                 loadSummary({ refresh: true });
               }}
-              disabled={loading}
-              aria-busy={loading}
+              disabled={refreshing}
+              aria-busy={refreshing}
               className={cn(
                 "gap-1.5 text-xs font-medium",
                 refreshFlash &&
-                  !loading &&
+                  !refreshing &&
                   "ring-1 ring-white/35 bg-primary/90"
               )}
               title={
-                loading
+                refreshing
                   ? t("refreshing")
                   : refreshFlash
                     ? t("refreshed")
@@ -566,12 +569,12 @@ export default function App() {
               <RefreshCw
                 className={cn(
                   "h-4 w-4 shrink-0 text-current",
-                  loading && "icon-spin"
+                  refreshing && "icon-spin"
                 )}
                 aria-hidden
               />
               <span>
-                {loading
+                {refreshing
                   ? t("refreshing")
                   : refreshFlash
                     ? t("refreshed")
