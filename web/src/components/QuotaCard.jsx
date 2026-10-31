@@ -572,19 +572,24 @@ function HomeCapacity({ capacity, locale, t }) {
   );
 }
 
-export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false, accountKey = null, accountLabel = null }) {
+export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false, accountKey = null, accountLabel = null, onSettingsChanged }) {
   const [quota, setQuota] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [scope, setScope] = useState("all-clients");
+  const [hiddenQuotaCards, setHiddenQuotaCards] = useState([]);
+  const [homeSaving, setHomeSaving] = useState(false);
   const [, forceTick] = useState(0);
   const requestSeq = useRef(0);
+  const cardId = `${tool}:${accountKey || "default"}`;
+  const showOnHome = !hiddenQuotaCards.includes(cardId);
 
   useEffect(() => {
     fetchSettings().then((settings) => {
       setScope(tool === "codex"
         ? settings.quotaEstimation?.codexOnly ? "codex-only" : "all-clients"
         : settings.quotaEstimation?.kimiCodeOnly ? "kimi-code-only" : "all-clients");
+      setHiddenQuotaCards(settings.dashboard?.hiddenQuotaCards || []);
     }).catch(() => {});
   }, [tool]);
 
@@ -624,6 +629,24 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
     }
   };
 
+  const changeHomeVisibility = async (visible) => {
+    const previous = hiddenQuotaCards;
+    const hidden = visible ? previous.filter((id) => id !== cardId) : [...new Set([...previous, cardId])];
+    setHiddenQuotaCards(hidden);
+    setHomeSaving(true);
+    setError(null);
+    try {
+      const saved = await saveSettings({ dashboard: { hiddenQuotaCards: hidden } });
+      setHiddenQuotaCards(saved.dashboard?.hiddenQuotaCards || []);
+      onSettingsChanged?.(saved);
+    } catch (e) {
+      setHiddenQuotaCards(previous);
+      setError(e.message || t("settingsSaveFailed"));
+    } finally {
+      setHomeSaving(false);
+    }
+  };
+
   const windows = quota?.windows || [];
   const reasonKey = REASON_KEY[quota?.reason];
   const reasonText = reasonKey
@@ -660,7 +683,21 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
             </Button>
           </div>
         </div>
-        <CardDescription>{t(i18n.hint)}</CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <CardDescription>{t(i18n.hint)}</CardDescription>
+          {detail && (
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-primary"
+                checked={showOnHome}
+                disabled={homeSaving}
+                onChange={(event) => changeHomeVisibility(event.target.checked)}
+              />
+              {t("quotaShowOnHome")}
+            </label>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {error && <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
@@ -706,7 +743,7 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
 }
 
 export function QuotaToolCards(props) {
-  const { tool = "kimi-code" } = props;
+  const { tool = "kimi-code", hiddenQuotaCards = [] } = props;
   const [accounts, setAccounts] = useState(null);
   useEffect(() => {
     let active = true;
@@ -719,10 +756,12 @@ export function QuotaToolCards(props) {
     return () => { active = false; };
   }, [tool]);
   if (accounts === null) return <Card aria-busy="true"><CardContent className="p-5"><div className="h-24 animate-pulse rounded-lg bg-secondary/30" /></CardContent></Card>;
-  if (accounts.length <= 1) return <QuotaCard {...props} accountKey={accounts[0]?.accountKey || null} />;
+  const visibleAccounts = props.detail ? accounts : accounts.filter((account) => !hiddenQuotaCards.includes(`${tool}:${account.accountKey || "default"}`));
+  if (!visibleAccounts.length) return null;
+  if (visibleAccounts.length <= 1) return <QuotaCard {...props} accountKey={visibleAccounts[0]?.accountKey || null} />;
   return (
     <div className="space-y-5">
-      {accounts.map((account) => (
+      {visibleAccounts.map((account) => (
         <QuotaCard key={account.accountKey} {...props} accountKey={account.accountKey} accountLabel={account.label} />
       ))}
     </div>

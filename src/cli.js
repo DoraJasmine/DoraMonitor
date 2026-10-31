@@ -276,10 +276,10 @@ function runDaemon(opts) {
 
   // Periodic cross-device sync (non-blocking; failures never break status).
   const { loadSettings } = require("./settings");
-  const syncCfg = loadSettings().sync || {};
-  const syncEvery = Math.max(60, Number(syncCfg.syncInterval) || 300) * 1000;
   let lastSync = 0;
   const maybeSync = () => {
+    const syncCfg = loadSettings().sync || {};
+    const syncEvery = Math.max(60, Number(syncCfg.syncInterval) || 300) * 1000;
     if (!syncCfg.enabled) return;
     if (Date.now() - lastSync < syncEvery) return;
     lastSync = Date.now();
@@ -313,10 +313,10 @@ function runDaemon(opts) {
       });
   };
   maybeSync();
-  setInterval(maybeSync, syncEvery);
+  setInterval(maybeSync, 60_000);
 
   setInterval(tick, opts.interval * 1000);
-  console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}${syncCfg.enabled ? `，每 ${Math.round(syncEvery / 1000)}s 同步` : ""}`);
+  console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}；每分钟检查同步设置`);
 }
 
 /** Stop a running daemon via its pid file. Returns exit code. */

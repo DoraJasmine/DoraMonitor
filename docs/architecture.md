@@ -149,13 +149,15 @@
 ### 4.4 展示（server.js + web/）
 
 - `/api/summary` 的聚合缓存 key 为 `scannedAt|deviceKey|tool`，一次算齐 4 个
-  范围 + 热力图；超过 32 条整体清空。
+  范围 + 热力图；同时返回 7d/30d/1y 热力图与 7d/30d 趋势数据，超过 32 条整体清空。
 - 前端**不做 summary 轮询**：挂载、切换范围/工具/设备、手动刷新时各拉一次；
-  页脚显示"上次扫描 N 前"。额度卡内部有 60s 的本地倒计时 tick。
+  页脚显示"上次扫描 N 前"。额度卡内部有 60s 的本地倒计时 tick。图表范围与首页卡片显示
+  偏好持久化在 `settings.dashboard`，切换图表不触发重扫。
 - 首页只保留官方额度和高置信度普通测算摘要（95% Token、人民币、质量评分与估算模型）；
-  `/quota` 独立承载额度变化、全部缓存档、立即测算及完整历史，官方价目只在 `/prices`。
+  `/quota` 独立承载额度变化、缓存档、立即测算、首页显示开关及完整历史，官方价目只在 `/prices`，
+  `/sync` 管理多设备连接并支持保存后立即同步。
 - 静态托管：Vite 内容哈希文件名 → `Cache-Control: immutable` 一年；>1KB 的
-  js/css/html/svg/json 自动 gzip；`/quota`、`/sessions`、`/models` 等路径 SPA 回退到
+  js/css/html/svg/json 自动 gzip；`/quota`、`/sync`、`/sessions`、`/models` 等路径 SPA 回退到
   `index.html`。
 
 ### 4.5 等效额度测算（quota-*.js）

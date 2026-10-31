@@ -116,7 +116,8 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 | 触发方 | 行为 |
 | --- | --- |
 | 仪表盘「立即同步」按钮 | `POST /api/sync`：强制 collect → 上传本机摘要 → 在线拉取 peers；失败时降级 |
-| CLI daemon | 每 `max(60, syncInterval)` 秒（默认 300s）执行一次强制 collect + runSync；成功后写 `~/.doramonitor/sync.state` |
+| 「同步」页「保存并立即同步」 | 先持久化当前表单，再执行同一 `POST /api/sync` 流程 |
+| CLI daemon | 每分钟读取最新设置，按 `max(60, syncInterval)` 秒（默认 300s）执行强制 collect + runSync；修改配置无需重启 |
 | `doramonitor sync` 子命令 | 手动一次性同步（未启用配置时提示并退出码 1） |
 | **仪表盘普通请求** | **永不联网**——只读 `remote-cache/` 磁盘缓存（`peerRecordsCached()`），标注 `fromCache: true` |
 
@@ -125,6 +126,8 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 
 ## 7. 界面呈现
 
+- 「同步」页可设置启用状态、设备名、同步周期和 SSH/WebDAV/本地目录后端；WebDAV 密码只返回
+  `hasPassword`，留空保存会保留原密码。设备名冲突和连接错误直接显示在表单中。
 - 仪表盘顶部出现「设备」页签行（仅当 `sync.enabled` 且拉到 devices）：
   合并视图 / 本机 / 各 peer；选 peer 时 `/api/summary?device=<name>` 只聚合该
   设备的记录。

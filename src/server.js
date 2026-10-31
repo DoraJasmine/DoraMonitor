@@ -15,6 +15,7 @@ const {
   aggregateByTool,
   aggregateToolEvents,
   buildHeatmap,
+  sliceHeatmap,
   aggregateFromBuckets,
   buildHeatmapFromDaily,
   toolEventsFromBuckets,
@@ -179,6 +180,11 @@ function ensureAggregates(collected, key, records, tool, buckets, settings) {
       toolEvents: mergedEvents,
     };
   }
+  data.heatmaps = {
+    "7d": sliceHeatmap(data.heatmap, 7),
+    "30d": sliceHeatmap(data.heatmap, 30),
+    "1y": data.heatmap,
+  };
   // Bounded: a handful of device/tool combinations at most.
   if (aggCache.size > 32) aggCache.clear();
   aggCache.set(cacheKey, data);
@@ -456,6 +462,14 @@ async function handleApi(req, res, url, cliHome) {
       ...heatmap,
       cells: (heatmap.cells || []).map((cell) => displayCost(cell, settingsNow)),
     };
+    const displayHeatmaps = Object.fromEntries(Object.entries(cached.heatmaps).map(([key, value]) => [key, {
+      ...value,
+      cells: (value.cells || []).map((cell) => displayCost(cell, settingsNow)),
+    }]));
+    const displayTrend = (key) => {
+      const trend = displayCosts(perRange[key], settingsNow);
+      return { daily: trend.daily, dailyByModel: trend.dailyByModel };
+    };
     const byToolRange = (cached.toolEvents
       ? byToolFromBuckets(selectedBuckets, range, toolMeta, Date.now(), {
           fxRate: settingsNow.fxRate,
@@ -488,6 +502,8 @@ async function handleApi(req, res, url, cliHome) {
       ],
       sync: { enabled: syncOn, peers: peerDevices.length },
       heatmap: displayHeatmap,
+      heatmaps: displayHeatmaps,
+      dailyTrends: { "7d": displayTrend("7d"), "30d": displayTrend("30d") },
       allModels,
       allModelCount: allModels.length,
       rangeTotals: displayRangeTotals,
@@ -506,18 +522,20 @@ async function handleApi(req, res, url, cliHome) {
         ...current,
         ...body,
         quotaEstimation: { ...current.quotaEstimation, ...body.quotaEstimation },
+        dashboard: { ...current.dashboard, ...body.dashboard },
         sync: body.sync
           ? {
               ...current.sync,
               ...body.sync,
+              local: { ...current.sync?.local, ...body.sync.local },
               ssh: { ...current.sync?.ssh, ...body.sync.ssh },
               webdav: { ...current.sync?.webdav, ...body.sync.webdav },
             }
           : current.sync,
       };
       const saved = saveSettings(merged);
-      // Costs are computed during scans — force a full rescan so saved
-      // custom prices take effect immediately.
+      // Costs are computed during scans — force a full rescan so every saved
+      // setting takes effect through the same refresh path.
       invalidateCollect();
       collect({ force: true });
       return json(res, 200, settingsView(saved));

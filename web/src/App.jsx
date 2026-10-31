@@ -4,9 +4,9 @@ import {
   Github,
   Languages,
   LayoutDashboard,
-  Loader2,
   Monitor,
   Moon,
+  Network,
   RefreshCw,
   Sun,
   Tags,
@@ -14,6 +14,7 @@ import {
 import AppLogo from "@/components/AppLogo";
 import { PricesPage } from "@/pages/PricesPage";
 import QuotaDetailsPage from "@/pages/QuotaDetailsPage";
+import SyncSettingsPage from "@/pages/SyncSettingsPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +24,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -45,10 +45,11 @@ import { Heatmap } from "@/components/Heatmap";
 import { QuotaToolCards } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchSummary, fetchQuota, fetchSettings, openExternal } from "@/lib/backend";
+import { fetchPaths, fetchSummary, fetchSettings, openExternal, saveSettings, syncNow } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 
 const GITHUB_URL = "https://github.com/DoraJasmine/DoraMonitor";
+const DEFAULT_DASHBOARD = { hiddenQuotaCards: [], heatmapRange: "1y", dailyRange: "30d" };
 
 const RANGE_KEYS = [
   { value: "today", labelKey: "rangeToday" },
@@ -160,6 +161,7 @@ export default function App() {
     currency: "CNY",
     currencySymbol: "¥",
     fxRate: 7.2,
+    dashboard: DEFAULT_DASHBOARD,
   });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -175,12 +177,14 @@ export default function App() {
       const p = window.location.pathname;
       if (p.startsWith("/quota")) return "quota";
       if (p.startsWith("/prices")) return "prices";
+      if (p.startsWith("/sync")) return "sync";
     }
     return localStorage.getItem("kcd_page") || "usage";
   });
   const rangeReady = useRef(false);
   const loadingRef = useRef(false);
   const loadSeq = useRef(0);
+  const dashboardSettingsSeq = useRef(0);
   const flashTimer = useRef(null);
 
   useEffect(() => {
@@ -193,12 +197,7 @@ export default function App() {
     setPage(next);
     localStorage.setItem("kcd_page", next);
     if (typeof window !== "undefined") {
-      const path =
-        next === "quota"
-          ? "/quota"
-          : next === "prices"
-          ? "/prices"
-          : "/";
+      const path = next === "quota" ? "/quota" : next === "prices" ? "/prices" : next === "sync" ? "/sync" : "/";
       window.history.replaceState({}, "", path);
     }
   };
@@ -255,13 +254,7 @@ export default function App() {
 
   useEffect(() => {
     fetchSettings()
-      .then((s) =>
-        setSettings({
-          currency: s.currency || "CNY",
-          currencySymbol: s.currencySymbol || "¥",
-          fxRate: Number(s.fxRate) || 7.2,
-        })
-      )
+      .then((saved) => setSettings({ ...saved, dashboard: { ...DEFAULT_DASHBOARD, ...saved.dashboard } }))
       .catch(() => {});
     fetchPaths()
       .then((d) => {
@@ -311,21 +304,43 @@ export default function App() {
     setTool(next);
   };
 
+  const applySavedSettings = useCallback((saved) => {
+    setSettings({ ...saved, dashboard: { ...DEFAULT_DASHBOARD, ...saved.dashboard } });
+  }, []);
+
   const handlePricingSaved = useCallback(async () => {
-    const savedSettings = await fetchSettings();
-    setSettings({
-      currency: savedSettings.currency || "CNY",
-      currencySymbol: savedSettings.currencySymbol || "¥",
-      fxRate: Number(savedSettings.fxRate) || 7.2,
-    });
+    applySavedSettings(await fetchSettings());
     await loadSummary({ refresh: true });
-  }, [loadSummary]);
+  }, [applySavedSettings, loadSummary]);
+
+  const handleDashboardChange = useCallback(async (patch) => {
+    const seq = ++dashboardSettingsSeq.current;
+    const previous = settings;
+    setSettings({ ...settings, dashboard: { ...settings.dashboard, ...patch } });
+    setError(null);
+    try {
+      const saved = await saveSettings({ dashboard: patch });
+      if (seq === dashboardSettingsSeq.current) applySavedSettings(saved);
+    } catch (e) {
+      if (seq === dashboardSettingsSeq.current) {
+        setSettings(previous);
+        setError(e.message || t("settingsSaveFailed"));
+      }
+    }
+  }, [settings, applySavedSettings, t]);
+
+  const handleSyncSaved = useCallback((saved) => {
+    applySavedSettings(saved);
+    loadSummary({ refresh: false });
+  }, [applySavedSettings, loadSummary]);
 
   const totals = data?.stats?.totals || {};
   const stats = data?.stats || { daily: [], models: [], recent: [] };
   const rangeTotals = data?.rangeTotals || {};
   const meta = data?.meta || {};
-  const heatmap = data?.heatmap || null;
+  const dashboard = settings.dashboard || DEFAULT_DASHBOARD;
+  const heatmap = data?.heatmaps?.[dashboard.heatmapRange] || data?.heatmap || null;
+  const dailyTrend = data?.dailyTrends?.[dashboard.dailyRange] || stats;
   const allModels = data?.allModels || [];
   const allModelCount = data?.allModelCount ?? allModels.length;
   const rangeModelCount = (stats.models || []).length;
@@ -510,6 +525,15 @@ export default function App() {
               <Tags className="h-3.5 w-3.5" aria-hidden />
               {t("navPrices")}
             </Button>
+            <Button
+              size="sm"
+              variant={page === "sync" ? "default" : "ghost"}
+              className="gap-1.5"
+              onClick={() => goPage("sync")}
+            >
+              <Network className="h-3.5 w-3.5" aria-hidden />
+              {t("navSync")}
+            </Button>
           </div>
           <Select value={locale} onValueChange={changeLocale}>
             <SelectTrigger className="w-[120px] text-xs font-medium" aria-label={t("language")}>
@@ -591,9 +615,11 @@ export default function App() {
         </div>
       ) : null}
 
-      {page === "quota" ? <QuotaDetailsPage t={t} locale={locale} /> : null}
+      {page === "quota" ? <QuotaDetailsPage t={t} locale={locale} onSettingsChanged={applySavedSettings} /> : null}
 
       {page === "prices" ? <PricesPage t={t} locale={locale} onSaved={handlePricingSaved} /> : null}
+
+      {page === "sync" ? <SyncSettingsPage t={t} onSaved={handleSyncSaved} onSynced={handleSyncSaved} /> : null}
 
       {page === "usage" ? (
       <>
@@ -666,9 +692,7 @@ export default function App() {
               setSyncing(true);
               setSyncMessage(null);
               try {
-                const response = await fetch("/api/sync", { method: "POST" });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(result.message || result.error || response.statusText);
+                const result = await syncNow();
                 const problem = result.uploadError || result.error;
                 setSyncMessage(problem
                   ? { kind: "error", text: fill(t("syncFailed"), { reason: problem }) }
@@ -781,7 +805,7 @@ export default function App() {
       {(tool === "all" || tool === "kimi-code") &&
       availableTools.some((x) => x.id === "kimi-code") ? (
         <div className="mb-5">
-          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} hiddenQuotaCards={dashboard.hiddenQuotaCards} />
         </div>
       ) : null}
 
@@ -789,16 +813,25 @@ export default function App() {
       {(tool === "all" || tool === "codex") &&
       availableTools.some((x) => x.id === "codex") ? (
         <div className="mb-5">
-          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} tool="codex" />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} tool="codex" hiddenQuotaCards={dashboard.hiddenQuotaCards} />
         </div>
       ) : null}
 
       {/* Heatmap */}
       <div className="mb-5">
         <Card>
-          <CardHeader>
-            <CardTitle>{t("heatmap")}</CardTitle>
-            <CardDescription>{t("heatmapHint")}</CardDescription>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>{t("heatmap")}</CardTitle>
+              <CardDescription className="mt-1">{t("heatmapHint")}</CardDescription>
+            </div>
+            <Tabs value={dashboard.heatmapRange} onValueChange={(heatmapRange) => handleDashboardChange({ heatmapRange })}>
+              <TabsList aria-label={t("heatmapRange")}>
+                <TabsTrigger value="7d">{t("range7d")}</TabsTrigger>
+                <TabsTrigger value="30d">{t("range30d")}</TabsTrigger>
+                <TabsTrigger value="1y">{t("range1y")}</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </CardHeader>
           <CardContent>
             <Heatmap heatmap={heatmap} locale={locale} t={t} moneyCfg={moneyCfg} />
@@ -809,17 +842,22 @@ export default function App() {
       {/* Charts + models */}
       <div className="mb-5 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>
-          <CardHeader>
-            <CardTitle>{t("dailyTrend")}</CardTitle>
-            <CardDescription>
-              {t("dailyTrendHint") ||
-                "Continuous token curve · top models by usage"}
-            </CardDescription>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>{t("dailyTrend")}</CardTitle>
+              <CardDescription className="mt-1">{t("dailyTrendHint")}</CardDescription>
+            </div>
+            <Tabs value={dashboard.dailyRange} onValueChange={(dailyRange) => handleDashboardChange({ dailyRange })}>
+              <TabsList aria-label={t("dailyTrendRange")}>
+                <TabsTrigger value="7d">{t("range7d")}</TabsTrigger>
+                <TabsTrigger value="30d">{t("range30d")}</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </CardHeader>
           <CardContent>
             <DailyBars
-              daily={stats.daily}
-              dailyByModel={stats.dailyByModel}
+              daily={dailyTrend.daily}
+              dailyByModel={dailyTrend.dailyByModel}
               t={t}
               moneyCfg={moneyCfg}
             />

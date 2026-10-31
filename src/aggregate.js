@@ -386,6 +386,36 @@ function buildHeatmap(records, nowMs = Date.now(), weeks = 53, tool = "all") {
   };
 }
 
+function sliceHeatmap(heatmap, days) {
+  const cells = heatmap?.cells || [];
+  if (!cells.length || !Number.isFinite(days) || days < 1 || days >= cells.length) return heatmap;
+  const visible = cells.slice(-Math.floor(days));
+  const base = visible[0].weekIndex * 7 + visible[0].dow;
+  const maxTokens = Math.max(0, ...visible.map((cell) => cell.totalTokens || 0));
+  const monthLabels = [];
+  let lastMonth = "";
+  const mapped = visible.map((cell) => {
+    const weekIndex = Math.floor((cell.weekIndex * 7 + cell.dow - base) / 7);
+    const ratio = maxTokens > 0 ? (cell.totalTokens || 0) / maxTokens : 0;
+    const level = !cell.totalTokens ? 0 : ratio > 0.75 ? 4 : ratio > 0.5 ? 3 : ratio > 0.25 ? 2 : 1;
+    const month = cell.date.slice(0, 7);
+    if (month !== lastMonth) {
+      monthLabels.push({ weekIndex, label: cell.date.slice(5, 7) });
+      lastMonth = month;
+    }
+    return { ...cell, weekIndex, level };
+  });
+  return {
+    ...heatmap,
+    weeks: mapped[mapped.length - 1].weekIndex + 1,
+    start: mapped[0].date,
+    end: mapped[mapped.length - 1].date,
+    maxTokens,
+    cells: mapped,
+    monthLabels,
+  };
+}
+
 /**
  * Tool-call event counts (WebSearch / FetchURL / ...) for a range.
  * events: [{time, eventName, tool}] emitted by tool adapters.
@@ -765,6 +795,7 @@ module.exports = {
   aggregateByTool,
   aggregateToolEvents,
   buildHeatmap,
+  sliceHeatmap,
   dayKey,
   rangeStart,
 };

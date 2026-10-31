@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 
 /**
- * Global settings — currency display and custom model prices.
+ * Global settings — display, dashboard preferences, quota and device sync.
  * Stored at ~/.doramonitor/config.json (best-effort; defaults on any
  * read/write failure so the dashboard never breaks because of config).
  *
@@ -29,6 +29,11 @@ const DEFAULTS = {
   quotaEstimation: {
     kimiCodeOnly: false,
     codexOnly: false,
+  },
+  dashboard: {
+    hiddenQuotaCards: [],
+    heatmapRange: "1y", // "7d" | "30d" | "1y"
+    dailyRange: "30d", // "7d" | "30d"
   },
   sync: {
     enabled: false,
@@ -102,6 +107,14 @@ function sanitizeSettings(raw) {
         home: home.slice(0, 500),
       });
     }
+  }
+  if (raw.dashboard && typeof raw.dashboard === "object") {
+    const hidden = Array.isArray(raw.dashboard.hiddenQuotaCards) ? raw.dashboard.hiddenQuotaCards : [];
+    out.dashboard = {
+      hiddenQuotaCards: [...new Set(hidden.filter((id) => typeof id === "string" && /^(kimi-code|codex):[a-z0-9][a-z0-9:._-]{0,99}$/.test(id)))].slice(0, 100),
+      heatmapRange: ["7d", "30d", "1y"].includes(raw.dashboard.heatmapRange) ? raw.dashboard.heatmapRange : "1y",
+      dailyRange: ["7d", "30d"].includes(raw.dashboard.dailyRange) ? raw.dashboard.dailyRange : "30d",
+    };
   }
   if (raw.sync && typeof raw.sync === "object") {
     const s = raw.sync;

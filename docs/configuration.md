@@ -8,8 +8,9 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
 
 - 读写失败一律静默回退默认值（坏配置绝不弄崩看板）。
 - 保存为原子写（`config.json.<pid>.tmp` → rename）。
-- 界面入口：「定价」页，可管理显示货币、汇率、官方价格与自定义价格。
-- 保存后服务端强制重扫，价格相关设置**立即生效，无需重启**。
+- 界面入口：「价目」页管理货币与价格；「额度」页的每张卡片可控制是否在首页展示；
+  「同步」页管理多设备连接；首页图表标题旁可切换热力图和每日趋势范围。
+- 保存后服务端强制重扫，所有设置**立即生效，无需重启**；daemon 每分钟读取最新同步设置。
 
 ### 1.1 完整字段与默认值
 
@@ -26,6 +27,11 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
   "quotaEstimation": {
     "kimiCodeOnly": false,       // true 时仅用 Kimi Code 中的 Kimi 模型估算额度
     "codexOnly": false           // true 时仅用 Codex 中的 GPT 模型估算额度
+  },
+  "dashboard": {
+    "hiddenQuotaCards": [],       // 首页隐藏的卡片 ID：tool:accountKey；默认全部显示
+    "heatmapRange": "1y",        // "7d" | "30d" | "1y"
+    "dailyRange": "30d"          // "7d" | "30d"
   },
   "sync": {                     // 多设备同步，详见 docs/sync.md
     "enabled": false,

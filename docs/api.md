@@ -95,6 +95,8 @@
   "devices": [ { "id": "local", "label": "本机", "available": true } ],
   "sync": { "enabled": false, "peers": [] },
   "heatmap": { "weeks": 53, "start": "...", "end": "...", "maxTokens": 0, "cells": [ { "date": "...", "dow": 0, "weekIndex": 0, "requests": 0, "totalTokens": 0, "costCny": 0, "cacheHitRate": 0, "level": 0 } ], "monthLabels": [ { "weekIndex": 0, "label": "10月" } ] },
+  "heatmaps": { "7d": { "...": "近 7 天，周列与强度重算" }, "30d": { "...": "近 30 天" }, "1y": { "...": "同 heatmap" } },
+  "dailyTrends": { "7d": { "daily": [], "dailyByModel": {} }, "30d": { "daily": [], "dailyByModel": {} } },
   "allModels": [ /* 全时期模型行，含 display 换算后 cost */ ],
   "allModelCount": 0,
   "rangeTotals": { "today": 0, "7d": 0, "30d": 0, "all": 0 }
@@ -106,7 +108,8 @@
 - 无任何工具数据目录时返回 `200 { "valid": false, "home": "...", "tools": [],
   "message": "No AI tool data directories found" }`。
 - 聚合缓存 key = `scannedAt|deviceKey|tool`；一次计算 4 个 range + 热力图；
-  缓存超过 32 条整体清空。
+  缓存超过 32 条整体清空。`heatmaps` 和 `dailyTrends` 让图表范围独立于顶部统计范围，
+  前端切换时不需要重新扫描。
 - peer 记录来自**磁盘缓存**（`~/.doramonitor/remote-cache/`），请求路径永不阻塞
   网络；peer 合成记录的请求数保留原始日汇总值。
 - 成本字段：内部 `costCny`（CNY 账本），API 输出层按设置币种换算
@@ -115,9 +118,9 @@
 ## 5. GET/POST /api/settings
 
 - GET → 设置视图（结构见[配置与设置](./configuration.md)）；不返回 `sync.webdav.password`，以 `sync.webdav.hasPassword` 表示是否已保存密码。POST 响应同样脱敏。
-- POST：body 与当前设置**浅合并**，`sync` 段深合并（`sync.ssh`、`sync.webdav`
-  各自 merge）。保存后 `invalidateCollect()` + `collect({force:true})`——
-  **自定义价格与汇率立即生效，无需重启**。
+- POST：body 与当前设置**浅合并**，`dashboard`、`quotaEstimation` 与 `sync` 段深合并；
+  `sync.local`、`sync.ssh`、`sync.webdav` 各自 merge。保存后 `invalidateCollect()` + `collect({force:true})`——
+  **所有设置立即生效，无需重启**。
 - 校验失败 → `400 { "error": "invalid_settings", "message": "..." }`。
 
 ## 6. GET /api/prices

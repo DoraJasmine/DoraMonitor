@@ -132,18 +132,22 @@ export async function runQuotaCalibration(body) {
   });
 }
 
-/** GET /api/settings — currency display + custom model prices */
+/** GET /api/settings — display, dashboard, quota and sync preferences */
 export async function fetchSettings() {
   return httpJson("/api/settings");
 }
 
-/** POST /api/settings — save currency display + custom model prices */
+/** POST /api/settings — save display, dashboard, quota and sync preferences */
 export async function saveSettings(body) {
   return httpJson("/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export async function syncNow() {
+  return httpJson("/api/sync", { method: "POST" });
 }
 
 /** GET /api/tools — AI tool availability list */
