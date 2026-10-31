@@ -30,6 +30,7 @@ const { DatabaseSync } = tryRequireSqlite();
 const { rateKeyFor, priceForCell, RATE_KEYS, costCacheCreation } = require("./pricing");
 const { dayKey } = require("./aggregate");
 const { normalizeWorkspace } = require("./workspaces");
+const { validateRecord } = require("./record-schema");
 const { loadSettings } = require("./settings");
 
 function tryRequireSqlite() {
@@ -261,8 +262,17 @@ function ingestTool({ tool, home, records, events, force = false }) {
     db.exec("BEGIN");
     db.prepare("DELETE FROM usage_records WHERE tool = ?").run(tool);
     let rows = 0;
-    for (const rec of records || []) {
-      if (!rec || rec.kind === "event") continue;
+    let invalid = 0;
+    for (const raw of records || []) {
+      if (!raw || raw.kind === "event") continue;
+      // Normalize then validate at the contract boundary (M3.5 ②): malformed
+      // records are skipped and counted, never silently folded.
+      const rec = raw.time == null ? { ...raw, time: 0 } : raw;
+      const check = validateRecord(rec);
+      if (!check.ok) {
+        invalid += 1;
+        continue;
+      }
       const rate = rateKeyFor(rec.modelResolved || rec.model, rec, rec.time);
       const reqs = Number.isFinite(Number(rec.requests)) && Number(rec.requests) >= 0 ? Number(rec.requests) : 1;
       const ws = normalizeWorkspace(tool, rec, home);
@@ -304,7 +314,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
     }
     setMeta(`fp:${tool}`, fp);
     db.exec("COMMIT");
-    return { ok: true, rows };
+    return { ok: true, rows, invalid };
   } catch (err) {
     try {
       db.exec("ROLLBACK");

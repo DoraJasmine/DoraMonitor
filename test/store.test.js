@@ -198,3 +198,22 @@ test("store: migrations apply to the latest version and are idempotent", () => {
   assert.strictEqual(store.schemaVersion(), store.MIGRATIONS.length);
   assert.strictEqual(store.stats().records > 0, true);
 });
+
+test("record-schema: emptyRecord satisfies the declared contract", () => {
+  const { validateRecord, emptyRecord } = require("../src/record-schema");
+  const empty = emptyRecord("kimi-code");
+  assert.strictEqual(empty.tool, "kimi-code");
+  assert.strictEqual(empty.device, "local");
+  const check = validateRecord(empty);
+  assert.ok(check.ok, check.errors.join("; "));
+});
+
+test("store: malformed records are skipped and counted at the ingest boundary", () => {
+  const bad = [rec({ time: Date.now(), inputOther: "oops" })];
+  const res = store.ingestTool({ tool: "kimi-code", home: HOME, records: bad, events: [], force: true });
+  assert.ok(res.ok);
+  assert.strictEqual(res.rows, 0);
+  assert.strictEqual(res.invalid, 1);
+  // Restore the canonical set so other tests see consistent state.
+  store.ingestTool({ tool: "kimi-code", home: HOME, records: RECORDS, events: EVENTS, force: true });
+});

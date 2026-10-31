@@ -138,36 +138,10 @@ function openCliDatabase(dbPath) {
   };
 }
 
-/** Empty record factory so every provider returns the same shape. */
-function emptyRecord(tool) {
-  return {
-    tool,
-    time: 0,
-    /** Device attribution: local scans are always "local"; only sync.js
-     *  synthesizes records for peer devices. Set here so the API layer never
-     *  needs to shallow-copy the whole record set on every request. */
-    device: "local",
-    model: "unknown",
-    modelDisplay: "unknown",
-    modelResolved: null,
-    /** Upstream provider that served the request, when the tool records one
-     *  (dsh names its plugin, e.g. "qodercn"). Null everywhere else. */
-    modelProvider: null,
-    inputOther: 0,
-    output: 0,
-    inputCacheRead: 0,
-    inputCacheCreation: 0,
-    inputCacheCreationShort: null,
-    inputCacheCreationLong: null,
-    costCny: 0,
-    costEstimated: false,
-    priceId: null,
-    credits: null,
-    project: null,
-    session: null,
-    sessionHint: null,
-  };
-}
+/** Empty record factory — delegated to the canonical record schema
+ *  (src/record-schema.js), the versioned contract between collectors,
+ *  aggregation and the store. */
+const { emptyRecord } = require("../record-schema");
 
 module.exports = {
   TOOL_META,
