@@ -31,7 +31,7 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onA
   const toolNamesOf = (w) => {
     const list = w.tools || [];
     if (!list.length) return "";
-    return list.slice(0, 3).map((x) => toolById?.get(x.tool)?.label || x.tool).join("、") + (list.length > 3 ? ` +${list.length - 3}` : "");
+    return list.map((x) => toolById?.get(x.tool)?.label || x.tool).join("、");
   };
 
   const save = async () => {

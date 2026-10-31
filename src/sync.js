@@ -134,10 +134,12 @@ function buildWsDaily(records, salt) {
     /* homeless tools normalize without wd_* mapping */
   }
   const wsDaily = {};
+  const wsNames = {};
   for (const r of records || []) {
     if (!r || !r.time || r.kind === "event") continue;
     const ws = normalizeWorkspace(r.tool, r, homes.get(r.tool) || null);
     const slot = wsHash(ws.workspaceKey, salt);
+    if (ws.workspaceKey && !ws.workspaceKey.startsWith("__")) wsNames[slot] = ws.workspaceKey;
     const day = dayKey(r.time);
     if (!wsDaily[day]) wsDaily[day] = {};
     if (!wsDaily[day][r.tool]) wsDaily[day][r.tool] = {};
@@ -149,7 +151,7 @@ function buildWsDaily(records, salt) {
     cell.req += Number.isFinite(Number(r.requests)) && Number(r.requests) >= 0 ? Number(r.requests) : 1;
     cell.credits += r.credits || 0;
   }
-  return wsDaily;
+  return { wsDaily, wsNames };
 }
 
 /** Build the device summary from local usage records. */
@@ -191,7 +193,8 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
   };
   const wsDaily = buildWsDaily(records, wsSalt);
   if (wsDaily) {
-    summary.wsDaily = wsDaily;
+    summary.wsDaily = wsDaily.wsDaily;
+    summary.wsNames = wsDaily.wsNames;
     summary.wsSalt = wsSalt;
   }
   if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
@@ -846,6 +849,7 @@ function peerWorkspaceSummaries(device = "all") {
           }
           const row = map.get(key);
           row.devices.add(peerDevice);
+          if (!row.wsName && peer.wsNames && peer.wsNames[slot]) row.wsName = peer.wsNames[slot];
           const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
           d.i += cell.i || 0;
           d.o += cell.o || 0;
@@ -868,6 +872,7 @@ function peerWorkspaceSummaries(device = "all") {
   return [...map.values()].map((row) => ({
     key: row.key,
     workspaceKey: row.workspaceKey,
+    workspaceName: row.wsName || null,
     devices: [...row.devices],
     daily: row.daily,
     tools: [...row.tools.values()].sort((a, b) => b.totalTokens - a.totalTokens),
