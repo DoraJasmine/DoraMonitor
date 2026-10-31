@@ -56,6 +56,33 @@ test("zcode provider: missing db returns empty without throwing", () => {
   assert.ok(out.meta.errors.length >= 1);
 });
 
+test("zcode provider: session join attributes usage to workspace directories", () => {
+  const home = tmpDir();
+  const dbDir = path.join(home, "cli", "db");
+  fs.mkdirSync(dbDir, { recursive: true });
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(path.join(dbDir, "db.sqlite"));
+  db.exec("CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT)");
+  db.exec(`CREATE TABLE model_usage (
+    id INTEGER PRIMARY KEY, session_id TEXT, model_id TEXT,
+    input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
+    cache_creation_input_tokens INTEGER, cache_read_input_tokens INTEGER,
+    computed_total_tokens INTEGER, started_at INTEGER, status TEXT)`);
+  db.prepare("INSERT INTO session VALUES (?, ?)").run("s1", "D:\proj\alpha");
+  const ins = db.prepare(
+    "INSERT INTO model_usage (session_id, model_id, input_tokens, output_tokens, reasoning_tokens, cache_creation_input_tokens, cache_read_input_tokens, computed_total_tokens, started_at, status) VALUES (?, 'm', 100, 10, 0, 0, 0, 110, ?, 'ok')"
+  );
+  ins.run("s1", Date.now() - 60_000);
+  ins.run("s2", Date.now() - 30_000); // 无 session 行 → project 为空
+  db.close();
+  const out = zcode.scan(home);
+  assert.strictEqual(out.records.length, 2);
+  const attributed = out.records.find((r) => r.session === "s1");
+  assert.strictEqual(attributed.project, "D:\proj\alpha");
+  const orphan = out.records.find((r) => r.session === "s2");
+  assert.strictEqual(orphan.project, null);
+});
+
 test("qoder-cn provider: missing db returns empty without throwing", () => {
   const home = tmpDir();
   const out = qoderCn.scan(home);

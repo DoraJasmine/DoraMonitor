@@ -103,11 +103,15 @@ DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器�
 **数据源**：`<home>/cli/db/db.sqlite` 表 `model_usage`，SQL：
 
 ```sql
-SELECT model_id, session_id, input_tokens, output_tokens, reasoning_tokens,
-       cache_creation_input_tokens, cache_read_input_tokens,
-       computed_total_tokens, started_at, status
-FROM model_usage WHERE started_at < 20000000000000 ORDER BY started_at DESC
+SELECT m.model_id, m.session_id, ..., s.directory AS session_directory
+FROM model_usage m
+LEFT JOIN session s ON s.id = m.session_id
+WHERE m.started_at < 20000000000000 ORDER BY m.started_at DESC
 ```
+
+**工作区归属**：`model_usage` 本身没有工作区列，但 `session.directory` 记录了
+每个会话的真实工作目录——LEFT JOIN 后 ZCode 用量 100% 可归属到工作区
+（`workspace_id` 列当前全空，不使用；无 session 行的孤儿记录归入"未知工作区"）。
 
 **归一化要点**：
 

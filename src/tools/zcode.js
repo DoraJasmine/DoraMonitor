@@ -14,12 +14,14 @@ const { loadSettings } = require("../settings");
  * Each row is one model request with full token accounting and timestamps.
  */
 const SQL_ALL = `
-SELECT model_id, session_id, input_tokens, output_tokens, reasoning_tokens,
-       cache_creation_input_tokens, cache_read_input_tokens,
-       computed_total_tokens, started_at, status
-FROM model_usage
-WHERE started_at < 20000000000000
-ORDER BY started_at DESC
+SELECT m.model_id, m.session_id, m.input_tokens, m.output_tokens, m.reasoning_tokens,
+       m.cache_creation_input_tokens, m.cache_read_input_tokens,
+       m.computed_total_tokens, m.started_at, m.status,
+       s.directory AS session_directory
+FROM model_usage m
+LEFT JOIN session s ON s.id = m.session_id
+WHERE m.started_at < 20000000000000
+ORDER BY m.started_at DESC
 `;
 
 // Rows without a finished status still carry usage; count them like
@@ -56,6 +58,11 @@ function toolRowToRecord(row, settings) {
     return null;
   }
   rec.session = row.session_id ? String(row.session_id) : null;
+  // Session workspace: the session row carries the real working directory
+  // (verified against the live db — model_usage alone has no workspace, the
+  // join is what makes ZCode usage attributable, contra tools.md's old note).
+  const dir = row.session_directory ? String(row.session_directory).trim() : "";
+  rec.project = dir || null;
   rec.sessionHint = { session: rec.session };
   const cost = costForUsage(rec.model, {
     time: rec.time,
