@@ -365,7 +365,14 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
 
           {/* x labels */}
           {dates.map((date, i) => {
-            if (i % labelStep !== 0 && i !== n - 1) return null;
+            const isLast = i === n - 1;
+            if (i % labelStep !== 0 && !isLast) return null;
+            // The always-rendered last label overlaps the previous grid label
+            // when it lands less than half a step past it — drop it instead.
+            if (isLast && i % labelStep !== 0) {
+              const prevIdx = Math.floor(i / labelStep) * labelStep;
+              if (i - prevIdx < Math.ceil(labelStep / 2)) return null;
+            }
             return (
               <text
                 key={date}

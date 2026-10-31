@@ -16,7 +16,7 @@ import { modelLabel } from "@/lib/labels";
 /**
  * FR-12 单模型明细弹层:当前范围内该模型的汇总、按日趋势与全历史逐请求分页。
  */
-export function ModelDetailDialog({ model, range = "all", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById }) {
+export function ModelDetailDialog({ model, resolved = null, range = "all", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById }) {
   const [query, setQuery] = useState(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -25,7 +25,9 @@ export function ModelDetailDialog({ model, range = "all", tool = "all", workspac
   const [error, setError] = useState(null);
   const PAGE = 50;
 
-  const rangeParams = { range: range || "all" };
+  // 合并行用 model_resolved 查询;原始单模型回退到 model 精确匹配。
+  const modelParams = resolved ? { resolved } : { model };
+  const rangeParams = { range: range || "all", ...modelParams };
 
   useEffect(() => {
     if (!open || !model) return;
@@ -35,10 +37,10 @@ export function ModelDetailDialog({ model, range = "all", tool = "all", workspac
     setTotal(0);
     setOffset(0);
     setError(null);
-    fetchUsageQuery({ ...rangeParams, tool, workspace, model })
+    fetchUsageQuery({ ...rangeParams, tool, workspace })
       .then((d) => alive && setQuery(d))
       .catch((e) => alive && setError(e.message || String(e)));
-    fetchUsageRecords({ tool, workspace, model, limit: PAGE, offset: 0 })
+    fetchUsageRecords({ tool, workspace, ...modelParams, limit: PAGE, offset: 0 })
       .then((d) => {
         if (!alive) return;
         setRows(d.rows || []);
@@ -49,12 +51,12 @@ export function ModelDetailDialog({ model, range = "all", tool = "all", workspac
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, model, tool, workspace, range]);
+  }, [open, model, resolved, tool, workspace, range]);
 
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const next = await fetchUsageRecords({ tool, workspace, model, limit: PAGE, offset: offset + PAGE });
+      const next = await fetchUsageRecords({ tool, workspace, ...modelParams, limit: PAGE, offset: offset + PAGE });
       setRows((prev) => [...prev, ...(next.rows || [])]);
       setTotal(next.total || total);
       setOffset((o) => o + PAGE);

@@ -317,6 +317,15 @@ export default function App() {
   }, [wsFilter]);
 
   const storeEnabled = !!data?.storeEnabled;
+  // 洞察数据只覆盖本机(store 行存);对端设备没有工作区/模型明细,
+  // 选择 peer 设备时全部保持 summary 口径,避免数字错配。
+  const insightsActive = storeEnabled && (device === "all" || device === "local");
+  const filterActive = insightsActive && (wsFilter !== "all" || modelFilter !== "all");
+  const hasPeers = (data?.sync?.peers || 0) > 0;
+  const localOnlyNote = insightsActive && hasPeers && device === "all" ? t("wsLocalNote") : null;
+  // 筛选只作用于本机行存;合并视图无筛选时保持 summary(含 peer)口径,
+  // 筛选激活后 Hero/KPI/区间卡切到本机口径并以 wsLocalNote 明示。
+  const heroFromUsage = insightsActive && filterActive;
 
   // Workspace aliases are display-only and never synced; load once when the
   // store is confirmed available (FR-10).
@@ -332,13 +341,13 @@ export default function App() {
   // both refresh together; failures degrade to "sections hidden".
   const usageSeq = useRef(0);
   useEffect(() => {
-    if (!storeEnabled) {
+    if (!insightsActive) {
       setUsageData(null);
       return undefined;
     }
     const seq = ++usageSeq.current;
     setUsageLoading(true);
-    fetchUsageQuery({ range, tool, workspace: wsFilter, model: modelFilter })
+    fetchUsageQuery({ range, tool, workspace: wsFilter, model: modelFilter, perRange: 1 })
       .then((d) => {
         if (seq === usageSeq.current) setUsageData(d);
       })
@@ -350,7 +359,24 @@ export default function App() {
       });
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeEnabled, range, tool, wsFilter, modelFilter, data?.scannedAt]);
+  }, [insightsActive, range, tool, wsFilter, modelFilter, data?.scannedAt]);
+
+  // 工作区面板始终展示全历史口径的所有工作区(与当前时间范围解耦)。
+  const [wsAllData, setWsAllData] = useState(null);
+  useEffect(() => {
+    if (!storeEnabled) {
+      setWsAllData(null);
+      return undefined;
+    }
+    let alive = true;
+    fetchUsageQuery({ range: "all", tool, workspace: "all", model: "all" })
+      .then((d) => alive && setWsAllData(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeEnabled, tool, data?.scannedAt]);
 
   const switchTool = (next) => {
     setTool(next);
@@ -389,10 +415,17 @@ export default function App() {
   const totals = data?.stats?.totals || {};
   const stats = data?.stats || { daily: [], models: [], recent: [] };
   const rangeTotals = data?.rangeTotals || {};
+  // 筛选激活时 Hero/KPI/区间卡切到本机 usage-query 口径,并以 wsLocalNote 明示。
+  const viewTotals = (heroFromUsage && usageData ? usageData.totals : totals) || totals;
+  const viewRangeTotals = (heroFromUsage && usageData?.perRange) || rangeTotals;
+
   const meta = data?.meta || {};
   const dashboard = settings.dashboard || DEFAULT_DASHBOARD;
   const heatmap = data?.heatmaps?.[dashboard.heatmapRange] || data?.heatmap || null;
-  const dailyTrend = data?.dailyTrends?.[dashboard.dailyRange] || stats;
+  const dailyTrend =
+    heroFromUsage && usageData?.daily
+      ? { daily: usageData.daily, dailyByModel: null } // 筛选模式下无按模型序列,用总量曲线
+      : data?.dailyTrends?.[dashboard.dailyRange] || stats;
   const allModels = data?.allModels || [];
   const allModelCount = data?.allModelCount ?? allModels.length;
   const rangeModelCount = (stats.models || []).length;
@@ -526,29 +559,29 @@ export default function App() {
     const items = [
       {
         title: t("inputOther"),
-        value: fmtTokens(totals.inputOther),
-        sub: fmtInt(totals.inputOther, locale),
+        value: fmtTokens(viewTotals.inputOther),
+        sub: fmtInt(viewTotals.inputOther, locale),
       },
       {
         title: t("output"),
-        value: fmtTokens(totals.output),
-        sub: fmtInt(totals.output, locale),
+        value: fmtTokens(viewTotals.output),
+        sub: fmtInt(viewTotals.output, locale),
       },
       {
         title: t("cacheRead"),
-        value: fmtTokens(totals.inputCacheRead),
-        sub: fmtInt(totals.inputCacheRead, locale),
+        value: fmtTokens(viewTotals.inputCacheRead),
+        sub: fmtInt(viewTotals.inputCacheRead, locale),
       },
       {
         title: t("cacheCreate"),
-        value: fmtTokens(totals.inputCacheCreation),
-        sub: fmtInt(totals.inputCacheCreation, locale),
+        value: fmtTokens(viewTotals.inputCacheCreation),
+        sub: fmtInt(viewTotals.inputCacheCreation, locale),
       },
     ];
-    if ((totals.credits || 0) > 0) {
+    if ((viewTotals.credits || 0) > 0) {
       items.push({
         title: t("credits"),
-        value: fmtCredits(totals.credits),
+        value: fmtCredits(viewTotals.credits),
       });
     }
     const byName = (toolEvents && toolEvents.byName) || {};
@@ -563,7 +596,7 @@ export default function App() {
       });
     }
     return items;
-  }, [totals, t, locale, moneyCfg, settings.currencySymbol]);
+  }, [viewTotals, t, locale]);
 
   return (
     <div className="mx-auto max-w-[1240px] px-4 py-6 pb-16 sm:px-6">
@@ -896,7 +929,7 @@ export default function App() {
       {/* Range overview cards */}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {RANGE_KEYS.map((r) => {
-          const tot = rangeTotals[r.value] || {};
+          const tot = viewRangeTotals[r.value] || {};
           const active = range === r.value;
           return (
             <button
@@ -924,7 +957,7 @@ export default function App() {
       </div>
 
       {/* Hero summary (R1) + token breakdown KPI strip */}
-      <HeroCard totals={totals} moneyCfg={moneyCfg} locale={locale} t={t} loading={loading} />
+      <HeroCard totals={viewTotals} moneyCfg={moneyCfg} locale={locale} t={t} loading={loading} />
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {kpiItems.map((item) => (
           <div key={item.title}>
@@ -969,13 +1002,14 @@ export default function App() {
       {/* Workspace usage (FR-10, store-backed) */}
       {storeEnabled ? (
         <WorkspacePanel
-          workspaces={usageData?.workspaces || []}
+          workspaces={wsAllData?.workspaces || []}
           activeKey={wsFilter}
           onSelect={setWsFilter}
           t={t}
           locale={locale}
           aliases={aliases}
           onAliasesChanged={setAliases}
+          note={localOnlyNote}
         />
       ) : null}
 
@@ -1170,7 +1204,8 @@ export default function App() {
           showToolColumn={showToolColumn}
           toolById={toolById}
           loading={usageLoading}
-          onSelectModel={(m) => setModelDetail(m)}
+          note={localOnlyNote}
+          onSelectModel={(m) => setModelDetail({ model: m.modelDisplay || m.model, resolved: m.key })}
         />
       ) : null}
 
@@ -1454,6 +1489,7 @@ export default function App() {
       />
       <ModelDetailDialog
         model={modelDetail?.model || null}
+        resolved={modelDetail?.resolved || null}
         range={range}
         tool={tool}
         workspace={wsFilter}

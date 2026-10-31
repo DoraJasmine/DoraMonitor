@@ -539,6 +539,9 @@ async function handleApi(req, res, url, cliHome) {
     return {
       ...result,
       totals: conv(result.totals),
+      perRange: result.perRange
+        ? Object.fromEntries(Object.entries(result.perRange).map(([k, v]) => [k, conv(v)]))
+        : undefined,
       daily: (result.daily || []).map(conv),
       hourly: (result.hourly || []).map(conv),
       models: (result.models || []).map(conv),
@@ -547,7 +550,9 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   if (url.pathname === "/api/usage/query") {
-    if (!store.isAvailable()) return json(res, 503, { error: "store_unavailable" });
+    // open() lazily here — usage endpoints can be hit before the first
+    // collect (isAvailable alone is false until collect ran once).
+    if (!store.open()) return json(res, 503, { error: "store_unavailable" });
     const settings = loadSettings();
     const nowMs = Date.now();
     const toolParam = url.searchParams.get("tool") || "all";
@@ -577,7 +582,9 @@ async function handleApi(req, res, url, cliHome) {
       tool,
       workspace,
       model,
+      resolved: url.searchParams.get("resolved") || "all",
       singleDay,
+      perRange: url.searchParams.get("perRange") === "1",
       fxRate: settings.fxRate,
       customPrices: settings.customPrices,
     });
@@ -586,7 +593,7 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   if (url.pathname === "/api/usage/records") {
-    if (!store.isAvailable()) return json(res, 503, { error: "store_unavailable" });
+    if (!store.open()) return json(res, 503, { error: "store_unavailable" });
     const num = (key, dflt) => {
       const n = Number(url.searchParams.get(key));
       return Number.isFinite(n) ? n : dflt;
@@ -599,6 +606,7 @@ async function handleApi(req, res, url, cliHome) {
       tool,
       workspace: url.searchParams.get("workspace") || "all",
       model: url.searchParams.get("model") || "all",
+      resolved: url.searchParams.get("resolved") || "all",
       limit: num("limit", 50),
       offset: num("offset", 0),
     });

@@ -170,6 +170,7 @@ function open(dbPathOverride) {
     dbPath = p;
     return true;
   } catch (err) {
+    console.warn(`[doramonitor] row store unavailable (${p}):`, err && err.message ? err.message : err);
     db = null;
     dbPath = null;
     return false;
@@ -366,7 +367,7 @@ function hitRateOf(t) {
 }
 
 /** WHERE fragment for the shared filters. */
-function filterSql({ tool, workspace, model, startDay, endDay }) {
+function filterSql({ tool, workspace, model, resolved, startDay, endDay }) {
   const where = [];
   const params = [];
   if (tool && tool !== "all") {
@@ -388,6 +389,10 @@ function filterSql({ tool, workspace, model, startDay, endDay }) {
   if (model && model !== "all") {
     where.push("model = ?");
     params.push(model);
+  }
+  if (resolved && resolved !== "all") {
+    where.push("model_resolved = ?");
+    params.push(resolved);
   }
   return { where, params };
 }
@@ -425,10 +430,10 @@ function groupedCells(filters) {
  * aggregateFromBuckets (query-time priceForCell on the resolved key).
  * `singleDay` fills the hourly distribution (FR-11).
  */
-function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", model = "all", singleDay = null, fxRate, customPrices }) {
+function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", model = "all", resolved = "all", singleDay = null, perRange = false, fxRate, customPrices }) {
   if (!open()) return null;
   const { priceFor, cellCost } = priceRows({ fxRate, customPrices });
-  const filters = { tool, workspace, model, startDay, endDay };
+  const filters = { tool, workspace, model, resolved, startDay, endDay };
 
   const totals = { requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, credits: 0, totalTokens: 0 };
   const byDay = new Map();
@@ -509,7 +514,7 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
 
   // Workspace breakdown (records only — legacy rows carry no workspace).
   if (!workspace || workspace === "all") {
-    const wf = { tool, model, startDay, endDay };
+    const wf = { tool, model, resolved, startDay, endDay };
     const { where, params } = filterSql(wf);
     const rows = db
       .prepare(
@@ -541,12 +546,37 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
     t.cacheHitRate = hitRateOf(t);
   }
 
+  // perRange: unfiltered-by-range totals for today/7d/30d/all so the UI can
+  // keep its range switcher working while workspace/model filters stay active.
+  let perRangeOut = null;
+  if (perRange) {
+    const nowMs = Date.now();
+    const startFor = (days) => (days ? dayKey(nowMs - (days - 1) * 86400_000) : null);
+    perRangeOut = {};
+    for (const [name, rangeStart] of [
+      ["today", dayKey(nowMs)],
+      ["7d", startFor(7)],
+      ["30d", startFor(30)],
+      ["all", null],
+    ]) {
+      const acc = { requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, credits: 0, totalTokens: 0 };
+      for (const cell of groupedCells({ tool, workspace, model, resolved, startDay: rangeStart, endDay: null })) {
+        const t = cellTotals(cell);
+        t.costCny = cellCost(cell, priceFor(cell.model_resolved || cell.model, cell.rate_key));
+        addTotals(acc, t);
+      }
+      acc.cacheHitRate = hitRateOf(acc);
+      perRangeOut[name] = acc;
+    }
+  }
+
   return {
     range: { startDay, endDay, singleDay },
     tool,
     workspace,
     model,
     totals,
+    perRange: perRangeOut,
     daily,
     hourly,
     models: [...byModel.values()].map((m) => ({ ...m, cacheHitRate: hitRateOf(m) })).sort((a, b) => b.totalTokens - a.totalTokens),
@@ -555,7 +585,7 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
 }
 
 /** Paginated per-request rows (FR-11/FR-12 detail lists). */
-function recordsPage({ fromMs = 0, toMs = null, tool = "all", workspace = "all", model = "all", limit = 50, offset = 0 }) {
+function recordsPage({ fromMs = 0, toMs = null, tool = "all", workspace = "all", model = "all", resolved = "all", limit = 50, offset = 0 }) {
   if (!open()) return null;
   const where = [];
   const params = [];
@@ -578,6 +608,10 @@ function recordsPage({ fromMs = 0, toMs = null, tool = "all", workspace = "all",
   if (model && model !== "all") {
     where.push("model = ?");
     params.push(model);
+  }
+  if (resolved && resolved !== "all") {
+    where.push("model_resolved = ?");
+    params.push(resolved);
   }
   const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
   const total = db.prepare(`SELECT COUNT(*) AS n FROM usage_records ${whereSql}`).get(...params).n;

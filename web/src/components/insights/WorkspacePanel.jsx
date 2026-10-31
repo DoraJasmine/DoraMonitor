@@ -1,28 +1,30 @@
 import React, { useState } from "react";
-import { FolderOpen, Pencil } from "lucide-react";
+import { ChevronDown, ChevronUp, FolderOpen, Pencil } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { saveWorkspaceAlias } from "@/lib/backend";
 import { fmtInt, fmtTokens } from "@/format";
 import { cn } from "@/lib/utils";
 
 const WS_COLORS = ["#2dd4bf", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#34d399", "#fb923c", "#94a3b8"];
+/** Collapsed view shows this many workspace rows; 展开全部 reveals the rest. */
+const COLLAPSED_COUNT = 6;
 
 /**
- * FR-10 工作区用量:Top N 彩色圆点行 + 占比条,点击行设置全局工作区筛选,
- * 行内可编辑本机别名(仅本地展示,不同步)。
+ * FR-10 工作区用量(全历史口径):彩色圆点行 + 占比条,点击行设置全局工作区
+ * 筛选,行内可编辑本机别名(仅本地展示,不同步)。工作区多时默认收缩。
  */
-export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, moneyCfg, onAliasesChanged, aliases }) {
+export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onAliasesChanged, aliases, note }) {
   const [editing, setEditing] = useState(null); // { key, name, value }
   const [saving, setSaving] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   if (!workspaces || !workspaces.length) return null;
   const totalTokens = workspaces.reduce((s, w) => s + (w.totalTokens || 0), 0) || 1;
-  const top = workspaces.slice(0, 8);
-  const rest = workspaces.slice(8);
+  const rows = expanded ? workspaces : workspaces.slice(0, COLLAPSED_COUNT);
+  const hiddenCount = workspaces.length - rows.length;
   const colorFor = (i) => WS_COLORS[i % WS_COLORS.length];
   const nameOf = (w) => aliases?.[w.workspaceKey] || w.workspaceName || w.workspaceKey;
 
@@ -49,11 +51,12 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, mon
             {t("workspaceStats")}
           </CardTitle>
           <CardDescription className="mt-1">{t("workspaceHint")}</CardDescription>
+          {note ? <div className="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-warning">{note}</div> : null}
         </div>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2">
-          {top.map((w, i) => {
+          {rows.map((w, i) => {
             const share = (w.totalTokens || 0) / totalTokens;
             const active = activeKey === w.workspaceKey;
             return (
@@ -98,22 +101,17 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, mon
             );
           })}
         </div>
-        {rest.length ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {rest.map((w) => (
-              <button
-                key={w.workspaceKey}
-                type="button"
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                  activeKey === w.workspaceKey ? "border-primary/50 bg-primary/10" : "border-border/60 text-muted-foreground hover:border-border"
-                )}
-                onClick={() => onSelect(activeKey === w.workspaceKey ? "all" : w.workspaceKey)}
-                title={w.workspaceKey}
-              >
-                {nameOf(w)} · <span className="num">{fmtTokens(w.totalTokens)}</span>
-              </button>
-            ))}
+        {workspaces.length > COLLAPSED_COUNT ? (
+          <div className="mt-3 text-center">
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? <ChevronUp className="h-3.5 w-3.5" aria-hidden /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
+              {expanded ? t("collapseAll") : `${t("expandAll")} (${workspaces.length})`}
+            </Button>
+          </div>
+        ) : null}
+        {hiddenCount > 0 ? (
+          <div className="mt-1 text-center text-[11px] text-muted-foreground">
+            {t("hiddenWorkspaces").replace("{n}", String(hiddenCount))}
           </div>
         ) : null}
       </CardContent>
