@@ -348,7 +348,7 @@ sequenceDiagram
 - `QuotaCard` 不再读取 `capacity.provider`，多账号时在工具卡片内选择 accountKey；
 - 展开状态等 UI 偏好使用 tool + accountKey 维度键；
 - HTTP 返回的 `tool` 作为响应分类依据，不从模型厂商猜测；
-- 首页使用高置信度普通测算，长程结果仅在额度页作为默认收起的交叉校验。
+- 首页和额度页只使用普通测算；长程结果已退役，仅保留兼容计算与历史查询。
 
 ### 9.2 建议拆分但不强迫一次完成
 

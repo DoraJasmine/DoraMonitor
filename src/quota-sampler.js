@@ -9,13 +9,10 @@ const { listKimiQuotaAccounts } = require("./quota-accounts");
 const { loadSettings } = require("./settings");
 const { samplesFromQuota, readSamples, appendSamples, getCheckpoint, setCheckpoint } = require("./quota-estimator-store");
 
-// Standard windows have independent anchors. Long-term history has its own
-// 15% trigger and keeps the duration requirements of the long-interval builder.
+// Standard windows have independent anchors.
 const SCHEDULED_MIN_MINUTES = 60;
 const SCHEDULED_MIN_DELTA = 4;
 const SCHEDULED_DELTA_PERCENT = 10;
-const LONG_TERM_DELTA_PERCENT = 15;
-const LONG_TERM_MIN_MINUTES = { session: 30, weekly: 6 * 60 };
 const SCHEDULED_MIN_GAP_MS = 5 * 60_000;
 
 function estimateScopeFor(provider, settings) {
@@ -37,33 +34,30 @@ function maybeRunScheduledEstimation(root, { now = Date.now(), calculate = null 
     if (!current || Date.parse(sample.sampledAt) > Date.parse(current.sampledAt)) latest.set(key, sample);
   }
   for (const [key, sample] of latest) {
-    for (const estimateKind of ["standard", "long-term"]) {
-      const checkpointKey = `${estimateKind}-estimation:${key}`;
-      const anchor = getCheckpoint(checkpointKey, root);
-      const used = sample.usedPercent;
-      if (!anchor || !Number.isFinite(anchor.anchorPercent)) {
-        setCheckpoint(checkpointKey, { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: anchor?.lastRunAt || null }, root);
-        continue;
-      }
-      const resetChanged = (anchor.resetsAt || null) !== (sample.resetsAt || null);
-      if (used < anchor.anchorPercent || resetChanged) {
-        setCheckpoint(checkpointKey, { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: anchor.lastRunAt }, root);
-        continue;
-      }
-      const consumed = used - anchor.anchorPercent;
-      const minutes = (now - Date.parse(anchor.anchorAt)) / 60_000;
-      const gap = anchor.lastRunAt ? now - Date.parse(anchor.lastRunAt) : Infinity;
-      const due = estimateKind === "long-term"
-        ? minutes >= LONG_TERM_MIN_MINUTES[sample.window] && consumed >= LONG_TERM_DELTA_PERCENT
-        : consumed >= SCHEDULED_DELTA_PERCENT || (minutes >= SCHEDULED_MIN_MINUTES && consumed >= SCHEDULED_MIN_DELTA);
-      if (!due || gap < SCHEDULED_MIN_GAP_MS) continue;
-      const target = { provider: sample.provider, accountKey: sample.accountKey || "default", window: sample.window, estimateKind };
-      fired.push(target);
-      pending.set(`${estimateKind}:${key}`, {
-        checkpointKey,
-        value: { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: new Date(now).toISOString() },
-      });
+    const estimateKind = "standard";
+    const checkpointKey = `${estimateKind}-estimation:${key}`;
+    const anchor = getCheckpoint(checkpointKey, root);
+    const used = sample.usedPercent;
+    if (!anchor || !Number.isFinite(anchor.anchorPercent)) {
+      setCheckpoint(checkpointKey, { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: anchor?.lastRunAt || null }, root);
+      continue;
     }
+    const resetChanged = (anchor.resetsAt || null) !== (sample.resetsAt || null);
+    if (used < anchor.anchorPercent || resetChanged) {
+      setCheckpoint(checkpointKey, { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: anchor.lastRunAt }, root);
+      continue;
+    }
+    const consumed = used - anchor.anchorPercent;
+    const minutes = (now - Date.parse(anchor.anchorAt)) / 60_000;
+    const gap = anchor.lastRunAt ? now - Date.parse(anchor.lastRunAt) : Infinity;
+    const due = consumed >= SCHEDULED_DELTA_PERCENT || (minutes >= SCHEDULED_MIN_MINUTES && consumed >= SCHEDULED_MIN_DELTA);
+    if (!due || gap < SCHEDULED_MIN_GAP_MS) continue;
+    const target = { provider: sample.provider, accountKey: sample.accountKey || "default", window: sample.window, estimateKind };
+    fired.push(target);
+    pending.set(`${estimateKind}:${key}`, {
+      checkpointKey,
+      value: { anchorAt: sample.sampledAt, anchorPercent: used, resetsAt: sample.resetsAt || null, lastRunAt: new Date(now).toISOString() },
+    });
   }
   const commit = (target) => {
     const item = pending.get(`${target.estimateKind}:${target.provider}\0${target.accountKey}\0${target.window}`);
@@ -97,8 +91,7 @@ function runScheduledCalculation({ provider, accountKey, usageScope, window, est
     root,
     calculation: { trigger: "scheduled", window, estimateKind },
   });
-  const targets = estimateKind === "long-term" ? capacity.longTermTargets : capacity.targets;
-  if (!targets.some((target) => target.window === window && Number.isFinite(target.fullWindowTokens))) {
+  if (!capacity.targets.some((target) => target.window === window && Number.isFinite(target.fullWindowTokens))) {
     throw new Error(`No valid ${estimateKind} estimate for ${provider}:${window}`);
   }
 }
@@ -177,4 +170,4 @@ function startQuotaSampler(cliHome, { intervalMs = 60_000, root } = {}) {
   };
 }
 
-module.exports = { persistQuota, persistCodexEntry, ensureCodexBackfill, startQuotaSampler, maybeRunScheduledEstimation, estimateScopeFor, SCHEDULED_MIN_MINUTES, SCHEDULED_MIN_DELTA, SCHEDULED_DELTA_PERCENT, LONG_TERM_DELTA_PERCENT, LONG_TERM_MIN_MINUTES, SCHEDULED_MIN_GAP_MS };
+module.exports = { persistQuota, persistCodexEntry, ensureCodexBackfill, startQuotaSampler, maybeRunScheduledEstimation, estimateScopeFor, SCHEDULED_MIN_MINUTES, SCHEDULED_MIN_DELTA, SCHEDULED_DELTA_PERCENT, SCHEDULED_MIN_GAP_MS };

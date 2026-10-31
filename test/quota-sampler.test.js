@@ -13,8 +13,6 @@ const {
   SCHEDULED_MIN_MINUTES,
   SCHEDULED_MIN_DELTA,
   SCHEDULED_DELTA_PERCENT,
-  LONG_TERM_DELTA_PERCENT,
-  LONG_TERM_MIN_MINUTES,
   SCHEDULED_MIN_GAP_MS,
 } = require("../src/quota-sampler");
 
@@ -128,29 +126,23 @@ test("session and weekly schedules fire independently", () => {
   assert.equal(fired[0].estimateKind, "standard");
 });
 
-test("long-term estimation requires 15 percent and the window duration", () => {
+test("scheduled estimation ignores legacy long-term anchors", () => {
   const root = tempRoot();
   const now = Date.now();
+  for (const window of ["session", "weekly"]) {
+    setCheckpoint(`long-term-estimation:kimi\0kimi:default\0${window}`, {
+      anchorAt: new Date(now - 6 * 60 * 60_000).toISOString(),
+      anchorPercent: 10,
+      resetsAt: null,
+      lastRunAt: null,
+    }, root);
+  }
   appendSamples([
-    kimiSample(10, new Date(now - LONG_TERM_MIN_MINUTES.session * 60_000).toISOString()),
-    kimiSample(10, new Date(now - LONG_TERM_MIN_MINUTES.weekly * 60_000).toISOString(), { window: "weekly" }),
+    kimiSample(30, new Date(now).toISOString()),
+    kimiSample(30, new Date(now).toISOString(), { window: "weekly" }),
   ], root);
-  maybeRunScheduledEstimation(root, { now, calculate: () => assert.fail("anchor only") });
-  appendSamples([
-    kimiSample(10 + LONG_TERM_DELTA_PERCENT - 1, new Date(now).toISOString()),
-    kimiSample(10 + LONG_TERM_DELTA_PERCENT - 1, new Date(now).toISOString(), { window: "weekly" }),
-  ], root);
-  const below = maybeRunScheduledEstimation(root, { now, calculate: () => {} });
-  assert.ok(below.every((target) => target.estimateKind === "standard"));
-
-  const later = now + 60_000;
-  appendSamples([
-    kimiSample(10 + LONG_TERM_DELTA_PERCENT, new Date(later).toISOString()),
-    kimiSample(10 + LONG_TERM_DELTA_PERCENT, new Date(later).toISOString(), { window: "weekly" }),
-  ], root);
-  const fired = maybeRunScheduledEstimation(root, { now: later, calculate: () => {} });
-  const longTargets = fired.filter((target) => target.estimateKind === "long-term");
-  assert.deepEqual(new Set(longTargets.map((target) => target.window)), new Set(["session", "weekly"]));
+  const fired = maybeRunScheduledEstimation(root, { now, calculate: () => assert.fail("first standard anchor only") });
+  assert.deepEqual(fired, []);
 });
 
 test("scope selection follows the estimation settings", () => {

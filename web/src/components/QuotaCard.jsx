@@ -499,43 +499,6 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
   );
 }
 
-function LongTermCapacitySection({ capacity, locale, t }) {
-  const targets = capacity?.longTermTargets || [];
-  if (!targets.length) return null;
-  const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
-  return (
-    <section className="mt-3 border-t border-border/60 pt-2">
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-sm text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-          <span>{t("longTermTitle")}</span>
-          <span className="flex items-center gap-1.5 text-[11px] font-normal">
-            {t("longTermSecondary")}
-            <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden />
-          </span>
-        </summary>
-        <p className="t-caption mt-2 max-w-3xl">{t("longTermHint")}</p>
-        {!hasData ? (
-          <div className="mt-2 text-[11px] text-muted-foreground">{fill(t("longTermProgress"), { n: targets[0]?.longTermCandidateCount || 0, span: targets[0]?.longTermPercentSpan || 0 })}</div>
-        ) : (
-          <div className="mt-2 grid gap-x-8 gap-y-3 lg:grid-cols-2">
-            {["session", "weekly"].map((window) => (
-              <div key={window}>
-                <div className="mb-0.5">
-                  <span className="t-label">{window === "session" ? t("quota5h") : t("quotaWeekly")}</span>
-                </div>
-                {targets.filter((target) => target.window === window && [0.9, 0.95].includes(target.cacheHitRate)).map((target) => (
-                  <CapacityRateLine key={`long-${target.window}-${target.cacheHitRate}`} target={target} locale={locale} t={t} />
-                ))}
-                <HistoryList window={window} estimateKind="long-term" capacity={capacity} locale={locale} t={t} />
-              </div>
-            ))}
-          </div>
-        )}
-      </details>
-    </section>
-  );
-}
-
 function HomeCapacityGroup({ title, targets, locale, t }) {
   return (
     <div>
@@ -737,7 +700,6 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
         {!detail && quota && <HomeCapacity capacity={quota.capacity} locale={locale} t={t} />}
         {detail && quota?.available && <QuotaSampleHistory quota={quota} locale={locale} t={t} />}
         {detail && quota && <CapacitySection capacity={quota.capacity} locale={locale} t={t} onChanged={() => load(false)} />}
-        {detail && quota && <LongTermCapacitySection capacity={quota.capacity} locale={locale} t={t} />}
       </CardContent>
     </Card>
   );
