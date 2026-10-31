@@ -756,6 +756,10 @@ export function QuotaToolCards(props) {
     return () => { active = false; };
   }, [tool]);
   if (accounts === null) return <Card aria-busy="true"><CardContent className="p-5"><div className="h-24 animate-pulse rounded-lg bg-secondary/30" /></CardContent></Card>;
+  if (!accounts.length) {
+    if (!props.detail && hiddenQuotaCards.includes(`${tool}:default`)) return null;
+    return <QuotaCard {...props} accountKey={null} />;
+  }
   const visibleAccounts = props.detail ? accounts : accounts.filter((account) => !hiddenQuotaCards.includes(`${tool}:${account.accountKey || "default"}`));
   if (!visibleAccounts.length) return null;
   if (visibleAccounts.length <= 1) return <QuotaCard {...props} accountKey={visibleAccounts[0]?.accountKey || null} />;
