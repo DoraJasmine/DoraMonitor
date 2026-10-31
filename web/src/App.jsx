@@ -12,6 +12,7 @@ import {
   Tags,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
+import pkg from "../../package.json";
 import { PricesPage } from "@/pages/PricesPage";
 import QuotaDetailsPage from "@/pages/QuotaDetailsPage";
 import SyncSettingsPage from "@/pages/SyncSettingsPage";
@@ -731,7 +732,7 @@ export default function App() {
               </h1>
               <span className="mb-0.5 shrink-0 text-[11px] leading-none text-muted-foreground/85 tabular-nums">
                 {fill(t("appVersionBy"), {
-                  version: "1.0.0",
+                  version: pkg.version,
                   author: "DoraJasmine",
                 })}
               </span>
