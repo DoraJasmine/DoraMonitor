@@ -1,47 +1,47 @@
 # DoraMonitor
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![许可证：MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#requirements)
+[![平台](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#环境要求)
 
-**English** · [简体中文](./README.zh-CN.md)
+[English](./README.en.md) · **简体中文**
 
-DoraMonitor is a local, privacy-first dashboard for AI coding tools. It combines token usage, API-equivalent cost, cache hit rates, quota windows, sessions, and multi-device summaries in one Web UI and CLI.
+本地、隐私优先的 AI 编码工具用量看板。统一展示 Token、API 刊例价等效费用、缓存命中率、额度窗口、会话与多设备用量，同时提供 Web UI 和命令行。
 
-![DoraMonitor dashboard](./assets/screenshot.png)
+![DoraMonitor 看板](./assets/screenshot.png)
 
-## Supported tools
+## 支持的工具
 
-| Tool | Local data source | Usage data |
+| 工具 | 本地数据源 | 统计内容 |
 | --- | --- | --- |
-| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` | Tokens, cost, 5-hour/weekly quota |
-| Codex | `~/.codex/sessions/**` and archived rollouts | Tokens, cost, rate-limit snapshots |
-| Claude Code | `~/.claude/projects/**/*.jsonl` | Tokens and cost |
-| Oh My Pi (omp) | `~/.omp/agent/sessions/**` (legacy `~/.pi/agent`) | Tokens and cost |
-| Gemini CLI | Gemini settings and OpenTelemetry export | Tokens and tool events |
-| ZCode | `~/.zcode/cli/db/db.sqlite` | Tokens, estimated cost |
-| QoderCN IDE | QoderCN `local.db` | Tokens |
+| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` | Token、费用、5h/周额度 |
+| Codex | `~/.codex/sessions/**` 与归档 rollout | Token、费用、额度快照 |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | Token、费用 |
+| Oh My Pi（omp） | `~/.omp/agent/sessions/**`（兼容旧 `~/.pi/agent`） | Token、费用 |
+| Gemini CLI | Gemini 设置与 OpenTelemetry 导出 | Token、工具事件 |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | Token、费用 |
+| QoderCN IDE | QoderCN `local.db` | Token |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
-| dsh | `~/.dsh/sessions/**` | Tokens and cost |
+| dsh | `~/.dsh/sessions/**` | Token、费用 |
 
-Missing tools are reported as unavailable without preventing other tools from loading. SQLite databases are opened read-only.
+某个工具不存在或数据损坏时，不影响其他工具。SQLite 均以只读方式打开。
 
-## Requirements
+## 环境要求
 
-- Node.js **18 or newer**. Node.js **22.15+** is recommended for built-in SQLite and zstd support (`node:sqlite` needs 22.5+).
-- On older Node versions, ZCode/QoderCN SQLite readers require the `sqlite3` CLI in `PATH`; compressed transcripts use the bundled pure-JS `fzstd` fallback.
-- No database server, Rust toolchain, or administrator account is required.
+- Node.js **18+**，推荐 **22.15+** 以获得内置 SQLite 和 zstd 支持（`node:sqlite` 需要 22.5+）。
+- 旧版 Node 读取 ZCode/QoderCN 时需要 `sqlite3` CLI；压缩会话使用包内 `fzstd` 回退。
+- 不需要数据库服务、Rust 工具链或管理员权限。
 
-## Install and run
+## 安装与启动
 
 ```bash
 npm install -g doramonitor
 doramonitor
 ```
 
-Open <http://127.0.0.1:3847>. The npm package includes the prebuilt Web UI, so a frontend build is not required after installation.
+访问 <http://127.0.0.1:3847>。npm 包已包含构建好的 Web UI，无需手动构建。
 
-From source:
+源码运行：
 
 ```bash
 git clone https://github.com/DoraJasmine/DoraMonitor.git
@@ -50,74 +50,76 @@ npm run deploy
 npm start
 ```
 
-`npm run deploy` checks Node, installs the locked dependencies, and builds the Web UI. Use `npm run deploy -- --background` to deploy and start detached, or `--skip-install` to rebuild without reinstalling. For development with Vite hot reload, run `npm run dev`.
+`npm run deploy` 会检查 Node、安装锁定依赖并构建前端；也可使用 `npm run deploy -- --background` 在部署后后台启动，或用 `--skip-install` 只重新构建。前端开发使用 `npm run dev`，会同时启动 API 和 Vite 热更新。
 
-## Background and Windows startup
-
-Start a detached server without opening a browser:
+## 静默启动与 Windows 自启
 
 ```bash
 doramonitor web --background --no-open
 ```
 
-On Windows, `scripts/start-windows.bat` provides the same portable, double-clickable launcher. For hidden startup at logon and automatic restart:
+Windows 也可双击 `scripts/start-windows.bat`。脚本使用相对路径，移动安装目录后仍可使用；重复执行会检测已有端口，不会重复启动。
+
+注册登录自启、隐藏窗口和崩溃自动重启：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 ```
 
-The one-command Windows installer uses only nodejs.org and the public npm registry:
+Windows 一键安装器仅从 nodejs.org 与 npm 官方源下载，不包含私人同步配置：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
 ```
 
-See [deployment and recovery](./docs/deployment.md) before exposing or changing the listening address. The default is loopback only.
+默认仅监听本机回环地址。修改监听地址前请阅读[部署与故障排查](./docs/deployment.md)。
 
-## CLI
+## 命令行
 
 ```text
-doramonitor [web]                 Start the Web dashboard
-doramonitor web -d --no-open     Start in the background
-doramonitor status                Print a one-line usage summary
-doramonitor daemon                Write status cache and synchronize periodically
-doramonitor sync                  Synchronize once
-doramonitor tools                 List detected tools and data directories
-doramonitor stop                  Stop the daemon
-doramonitor --help                Show all options
+doramonitor [web]                 启动 Web 看板
+doramonitor web -d --no-open     后台启动且不打开浏览器
+doramonitor status                输出单行用量摘要
+doramonitor daemon                状态缓存与周期同步守护进程
+doramonitor sync                  立即同步
+doramonitor tools                 列出检测到的工具和数据目录
+doramonitor stop                  停止 daemon
+doramonitor --help                查看全部参数
 ```
 
-## Features
+## 主要功能
 
-- Today, 7-day, 30-day, and all-time usage, model statistics, 7/30-day trends, and 7/30-day or annual heatmaps.
-- Input, output, cache-read, and cache-write tokens with per-model cache hit rates.
-- Official-price links, custom prices, USD/CNY display, and a single internal CNY ledger.
-- Kimi and Codex quota cards with per-account home visibility controls and clearly marked equivalent-capacity estimates.
-- Cross-client model attribution, optional client-only estimation switches, and detailed history on `/quota`.
-- Kimi session/workspace management with secret-redacting previews.
-- A `/sync` settings page for optional SSH/WebDAV/local-directory synchronization, including minute-level quota-usage buckets.
+- 今天、近 7 天、近 30 天和全部用量，模型统计、7/30 天趋势与 7/30 天或年度热力图。
+- 普通输入、输出、缓存读取、缓存写入 Token 及各模型缓存命中率。
+- 官方定价链接、自定义价格、USD/CNY 展示与内部统一人民币账本。
+- Kimi/Codex 官方额度窗口、按账号控制首页卡片显示，以及明确标注为推测值的等效额度估算。
+- 跨客户端模型归属、客户端限定开关、手动测算、区间实际用量和完整历史。
+- Kimi 会话与工作区管理，安全预览会脱敏疑似凭据。
+- `/sync` 设置页支持可选 SSH/WebDAV/本地目录同步，展示配置完整性、最近同步结果和对端设备，并包含用于额度估算的一分钟 Token 桶。
 
-Equivalent capacity and API-price costs are estimates, not vendor bills or guaranteed subscription limits.
+等效额度与 API 刊例价金额都不是厂商账单，也不代表官方承诺的套餐上限。
 
-## Privacy
+## 隐私
 
-DoraMonitor reads usage metadata, not prompts, replies, source code, or provider credentials. The server binds to `127.0.0.1` by default and does not enable CORS. Multi-device upload is off until explicitly configured. See [Privacy & security](./docs/privacy.md).
+只读取模型、时间、Token 等用量元数据，不读取提示词、回复、代码或 Provider 凭据。服务默认绑定 `127.0.0.1`，不开放 CORS。多设备上传必须显式配置才会启用。详见[隐私与安全](./docs/privacy.md)。
 
-## Documentation
+## 文档
 
-- [Documentation index](./docs/README.md)
-- [Features and calculations](./docs/features.md)
-- [Architecture](./docs/architecture.md)
-- [Usage statistics and tool data sources](./docs/tools.md)
-- [Configuration](./docs/configuration.md)
-- [Pricing and price tables](./docs/pricing.md)
-- [Quota estimation](./docs/quota-capacity-estimation.md)
-- [Known limitations](./docs/limitations.md)
-- [Deployment](./docs/deployment.md)
-- [npm release checklist](./docs/release.md)
-- [Development](./docs/development.md)
+- [文档中心](./docs/README.md)
+- [功能与计算方式](./docs/features.md)
+- [项目需求（PRD）](./docs/product-requirements.md)
+- [架构重构方案](./docs/architecture-refactor-plan.md)与[数据迁移方案](./docs/data-migration-plan.md)
+- [当前架构](./docs/architecture.md)
+- [用量统计与工具数据源](./docs/tools.md)
+- [配置](./docs/configuration.md)
+- [计价与价目表](./docs/pricing.md)
+- [额度估算](./docs/quota-capacity-estimation.md)
+- [已知限制与注意事项](./docs/limitations.md)
+- [部署](./docs/deployment.md)
+- [npm 发布检查](./docs/release.md)
+- [开发指南](./docs/development.md)
 
-## Verify and contribute
+## 验证与贡献
 
 ```bash
 npm test
@@ -125,8 +127,8 @@ npm run build
 npm pack --dry-run
 ```
 
-CI runs the same checks on Ubuntu and Windows with Node 18 and 22. See [the development guide](./docs/development.md) for tool-adapter conventions.
+CI 在 Ubuntu、Windows 和 Node 18/22 组合上执行相同检查。新增工具采集器的约定见[开发指南](./docs/development.md)。
 
-## License and attribution
+## 许可证与来源
 
-MIT. DoraMonitor is derived from [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard), with substantial changes. The original Jochen copyright and MIT license are retained; DoraMonitor's copyright and attribution details are in [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+MIT。本项目由 [kimicode-dashboard](https://github.com/JochenYang/kimicode-dashboard) 二次开发并进行了大量重构。保留 Jochen 原版权与 MIT 许可；DoraMonitor 版权及来源说明见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。
