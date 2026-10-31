@@ -10,7 +10,7 @@ const kimiCode = require("../src/tools/kimi-code");
 const zcode = require("../src/tools/zcode");
 const qoderCn = require("../src/tools/qoder-cn");
 const qoderCli = require("../src/tools/qoder-cn-cli");
-const { collect } = require("../src/collect");
+const { collect, invalidate } = require("../src/collect");
 const { parseUsageBody } = require("../src/quota");
 const { aggregate, aggregateByTool } = require("../src/aggregate");
 const { toolMeta } = require("../src/tools/base");
@@ -120,9 +120,30 @@ test("qoder-cli provider: no projects dir → empty, no throw", () => {
   assert.strictEqual(out.records.length, 0);
 });
 
-test("collect: merges providers, every record has a tool field", () => {
+test("collect: merges providers, every record has a tool field", (t) => {
+  const home = tmpDir();
+  const projectDir = path.join(home, "projects", "-tmp-ci");
+  fs.mkdirSync(projectDir, { recursive: true });
+  const usage = (timestamp, input) => JSON.stringify({
+    type: "assistant",
+    timestamp,
+    message: { model: "qfmodel", usage: { input_tokens: input, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 0 } },
+  });
+  fs.writeFileSync(path.join(projectDir, "ci.jsonl"), [
+    usage("2026-10-31T00:00:00Z", 10),
+    usage("2026-10-31T00:01:00Z", 20),
+  ].join("\n"));
+  const previousHome = process.env.QODER_CLI_HOME;
+  process.env.QODER_CLI_HOME = home;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.QODER_CLI_HOME;
+    else process.env.QODER_CLI_HOME = previousHome;
+    invalidate();
+  });
+
   const { records, tools } = collect({ force: true });
   assert.ok(Array.isArray(tools) && tools.length >= 1);
+  assert.ok(records.some((item) => item.tool === "qoder-cn-cli" && item.session === "ci"));
   for (const r of records) {
     assert.ok(r.tool, "record missing tool");
     assert.ok(Number.isFinite(r.time));
