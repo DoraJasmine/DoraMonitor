@@ -46,9 +46,10 @@ function fromCwd(project) {
   return { workspaceKey: key, workspaceName: name };
 }
 
-/** Kimi `wd_*` id → real work dir, from state.json workDir of any session
- *  inside the workspace dir (sessions.js reads the same file, we keep this
- *  read local to avoid coupling the session manager into ingestion). */
+/** Kimi `wd_*` id → real work dir. Primary source: workspaces.json meta
+ *  (`root` — the authoritative workspace directory); fallback: the newest
+ *  session's state.json `cwd`. Kept local to ingestion to avoid coupling
+ *  the session manager into it. */
 function kimiWorkspaceLookup(home, workspaceId) {
   const now = Date.now();
   const cached = kimiCache.get(home);
@@ -56,11 +57,25 @@ function kimiWorkspaceLookup(home, workspaceId) {
     return cached.map.get(workspaceId) || null;
   }
   const map = new Map();
+  // 1) workspaces.json — id → { root, name }
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(home, "workspaces.json"), "utf8"));
+    for (const [id, entry] of Object.entries(meta.workspaces || {})) {
+      if (!entry || typeof entry.root !== "string" || !entry.root.trim()) continue;
+      const rootDir = entry.root.trim();
+      const name = (typeof entry.name === "string" && entry.name.trim()) || baseName(rootDir);
+      map.set(id, { workDir: rootDir, name: usableName(name) || id });
+    }
+  } catch {
+    /* no/invalid workspaces.json */
+  }
+  // 2) session dirs not covered by meta — probe state.json cwd
   const root = path.join(home, "sessions");
   try {
     for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
       if (!ent.isDirectory() || ent.name === ".kcd-archive") continue;
-      if (!/^wd_[A-Za-z0-9]+_[0-9a-f]+$/.test(ent.name)) continue;
+      if (!/^wd_[A-Za-z0-9-]+_[0-9a-f]+$/.test(ent.name)) continue;
+      if (map.has(ent.name)) continue;
       const info = probeKimiWorkspaceDir(path.join(root, ent.name));
       if (info) map.set(ent.name, info);
     }
@@ -69,6 +84,13 @@ function kimiWorkspaceLookup(home, workspaceId) {
   }
   kimiCache.set(home, { at: now, map });
   return map.get(workspaceId) || null;
+}
+
+/** Display-name sanitizer: drive roots ("C:") are not useful names. */
+function usableName(name) {
+  const n = String(name || "").trim();
+  if (!n || /^[a-zA-Z]:?$/.test(n)) return null;
+  return n;
 }
 
 /** Probe one wd_* dir: workDir from the newest session's state.json,
@@ -98,7 +120,8 @@ function probeKimiWorkspaceDir(dir) {
   if (newest) {
     try {
       const o = JSON.parse(fs.readFileSync(newest, "utf8"));
-      if (o && typeof o.workDir === "string" && o.workDir.trim()) workDir = o.workDir.trim();
+      const cwd = o && typeof o.cwd === "string" && o.cwd.trim() ? o.cwd.trim() : null;
+      if (cwd) workDir = cwd;
     } catch {
       /* corrupt state.json */
     }
@@ -115,9 +138,7 @@ function probeKimiWorkspaceDir(dir) {
     /* no/invalid workspaces.json */
   }
   if (!name && workDir) name = baseName(workDir);
-  // A drive root ("C:") or empty tail is not a useful display name — fall
-  // through to the decoded dir-id below.
-  if (name && /^[a-zA-Z]:?$/.test(name)) name = null;
+  name = usableName(name);
   if (!name) {
     // wd_<name>_<hash> → humanize the <name> part
     const m = path.basename(dir).match(/^wd_(.+)_[0-9a-f]+$/);
@@ -137,7 +158,7 @@ function normalizeWorkspace(toolId, record, home) {
     return { workspaceKey: UNKNOWN_KEY, workspaceName: UNKNOWN_NAME };
   }
   if (toolId === "kimi-code") {
-    if (/^wd_[A-Za-z0-9]+_[0-9a-f]+$/.test(project)) {
+    if (/^wd_[A-Za-z0-9-]+_[0-9a-f]+$/.test(project)) {
       const hit = home ? kimiWorkspaceLookup(home, project) : null;
       if (hit && hit.workDir) {
         return { workspaceKey: hit.workDir, workspaceName: hit.name || baseName(hit.workDir) };

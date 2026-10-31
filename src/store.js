@@ -245,7 +245,7 @@ function recordSig(rec) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  if (!force && getMeta(`fp:${tool}`) === fp) return { ok: true, skipped: true };
+  if (!force && getMeta(`fp2:${tool}`) === fp) return { ok: true, skipped: true };
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO usage_records
@@ -313,7 +313,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp:${tool}`, fp);
+    setMeta(`fp2:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {
@@ -366,8 +366,9 @@ function hitRateOf(t) {
   return denom > 0 ? t.inputCacheRead / denom : 0;
 }
 
-/** WHERE fragment for the shared filters. */
-function filterSql({ tool, workspace, model, resolved, startDay, endDay }) {
+/** WHERE fragment for the shared filters. `resolvedColumn` selects which
+ *  column the resolved filter matches — "pricing_key" for the legacy table. */
+function filterSql({ tool, workspace, model, resolved, startDay, endDay, resolvedColumn = "model_resolved" }) {
   const where = [];
   const params = [];
   if (tool && tool !== "all") {
@@ -391,7 +392,7 @@ function filterSql({ tool, workspace, model, resolved, startDay, endDay }) {
     params.push(model);
   }
   if (resolved && resolved !== "all") {
-    where.push("model_resolved = ?");
+    where.push(`${resolvedColumn} = ?`);
     params.push(resolved);
   }
   return { where, params };
@@ -412,14 +413,15 @@ function groupedCells(filters) {
     .all(...params);
   const legacyOk = !filters.workspace || filters.workspace === "all";
   if (legacyOk) {
+    const legacyFilter = filterSql({ ...filters, resolvedColumn: "pricing_key" });
     const legacyRows = db
       .prepare(
         `SELECT day, tool, model, MAX(display) AS model_display, MAX(pricing_key) AS model_resolved,
               rate_key, SUM(i) AS i, SUM(o) AS o, SUM(cr) AS cr, SUM(cc) AS cc,
               SUM(cs) AS cs, SUM(cl) AS cl, SUM(req) AS req, SUM(est_req) AS est_req, SUM(credits) AS credits
-       FROM usage_daily_legacy ${where.length ? "WHERE " + where.join(" AND ") : ""} ${group}`
+       FROM usage_daily_legacy ${legacyFilter.where.length ? "WHERE " + legacyFilter.where.join(" AND ") : ""} ${group}`
       )
-      .all(...params);
+      .all(...legacyFilter.params);
     rows.push(...legacyRows);
   }
   return rows;
