@@ -3,7 +3,9 @@
 
 export function downloadCsv(filename, rows, cols) {
   const esc = (v) => {
-    const s = v == null ? "" : String(v);
+    let s = v == null ? "" : String(v);
+    // 公式注入防护:电子表格会把 =/+/-/@ 开头的单元格当公式执行
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [

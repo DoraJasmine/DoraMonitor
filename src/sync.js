@@ -109,7 +109,7 @@ function writeWsSalt(salt) {
   try {
     fs.mkdirSync(path.dirname(WS_SALT_FILE), { recursive: true });
     const tmp = `${WS_SALT_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, salt, "utf8");
+    fs.writeFileSync(tmp, salt, { encoding: "utf8", mode: 0o600 });
     fs.renameSync(tmp, WS_SALT_FILE);
   } catch {
     /* best effort — next sync retries */
@@ -837,12 +837,25 @@ function peerWorkspaceSummaries(device = "all") {
     if (device !== "all" && String(peer.device || "") !== String(device)) continue;
     const peerDevice = String(peer.device || "peer");
     const nested = Number(peer.version) >= 4; // v4: day → tool → slot;v3: day → slot
-    for (const [day, buckets] of Object.entries(peer.wsDaily || {})) {
-      for (const [toolOrSlot, level] of Object.entries(buckets || {})) {
+    for (const [rawDay, buckets] of Object.entries(peer.wsDaily || {})) {
+      // 共享存储上的对端摘要不可信:保留前缀键(__proto__/constructor 等)一律跳过,
+      // 防止原型污染;数值统一 Number.isFinite 强转,字符串不参与累加。
+      if (String(rawDay).startsWith("__")) continue;
+      const day = rawDay;
+      for (const [rawToolOrSlot, level] of Object.entries(buckets || {})) {
+        if (String(rawToolOrSlot).startsWith("__")) continue;
+        const toolOrSlot = rawToolOrSlot;
         const entries = nested
           ? Object.entries(level || {}).map(([slot, cell]) => [slot, toolOrSlot, cell])
           : [["__peer__", toolOrSlot, level]];
-        for (const [slot, tool, cell] of entries) {
+        for (const [rawSlot, tool, rawCell] of entries) {
+          const slot = String(rawSlot);
+          if (slot.startsWith("__")) continue;
+          const cell = rawCell || {};
+          const num = (v) => {
+            const x = Number(v);
+            return Number.isFinite(x) ? x : 0;
+          };
           const key = `peer:${slot}`;
           if (!map.has(key)) {
             map.set(key, { key, workspaceKey: key, devices: new Set(), daily: {}, tools: new Map(), totalTokens: 0, requests: 0, credits: 0 });
@@ -851,20 +864,20 @@ function peerWorkspaceSummaries(device = "all") {
           row.devices.add(peerDevice);
           if (!row.wsName && peer.wsNames && peer.wsNames[slot]) row.wsName = peer.wsNames[slot];
           const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
-          d.i += cell.i || 0;
-          d.o += cell.o || 0;
-          d.cr += cell.cr || 0;
-          d.cc += cell.cc || 0;
-          d.req += cell.req || 0;
-          d.credits += cell.credits || 0;
-          const tk = (cell.i || 0) + (cell.o || 0) + (cell.cr || 0) + (cell.cc || 0);
+          d.i += num(cell.i);
+          d.o += num(cell.o);
+          d.cr += num(cell.cr);
+          d.cc += num(cell.cc);
+          d.req += num(cell.req);
+          d.credits += num(cell.credits);
+          const tk = num(cell.i) + num(cell.o) + num(cell.cr) + num(cell.cc);
           const t = row.tools.get(tool) || { tool, totalTokens: 0, requests: 0 };
           t.totalTokens += tk;
-          t.requests += cell.req || 0;
+          t.requests += num(cell.req);
           row.tools.set(tool, t);
           row.totalTokens += tk;
-          row.requests += cell.req || 0;
-          row.credits += cell.credits || 0;
+          row.requests += num(cell.req);
+          row.credits += num(cell.credits);
         }
       }
     }

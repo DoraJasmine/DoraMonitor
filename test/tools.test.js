@@ -49,11 +49,9 @@ test("kimi provider: missing sessions dir returns empty with error", () => {
   assert.strictEqual(kimiCode.isAvailable(home), false);
 });
 
-test("zcode provider: missing db returns empty without throwing", () => {
+test("zcode provider: missing db throws so collect keeps previous data", () => {
   const home = tmpDir();
-  const out = zcode.scan(home);
-  assert.strictEqual(out.records.length, 0);
-  assert.ok(out.meta.errors.length >= 1);
+  assert.throws(() => zcode.scan(home), /unable to open database file/);
 });
 
 test("zcode provider: session join attributes usage to workspace directories", () => {

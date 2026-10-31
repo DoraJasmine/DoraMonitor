@@ -168,7 +168,13 @@ function normalizeWorkspace(toolId, record, home) {
       }
       // Meta/session lookup missed — at least decode the human part of the id.
       const m = project.match(/^wd_(.+)_[0-9a-f]+$/);
-      return { workspaceKey: project, workspaceName: m ? decodeURIComponent(m[1]).replace(/_/g, " ") || project : project };
+      let decoded = m ? m[1] : "";
+      try {
+        decoded = decodeURIComponent(decoded);
+      } catch {
+        /* 非法百分号序列按原样使用 */
+      }
+      return { workspaceKey: project, workspaceName: m ? decoded.replace(/_/g, " ") || project : project };
     }
     const cwd = fromCwd(project);
     if (cwd) return cwd;

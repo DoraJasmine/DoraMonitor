@@ -1,6 +1,6 @@
 {
   "name": "doramonitor",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Local, privacy-first usage, pricing, quota and multi-device dashboard for multiple AI coding tools",
   "main": "src/server.js",
   "type": "commonjs",

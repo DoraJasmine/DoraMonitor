@@ -324,3 +324,25 @@ body：`{ "providerId", "apiKey", "baseUrl", "defaultModel }`。
 | 未捕获异常 | `500 { "error": "internal_error", "message": "..." }` |
 | 静态文件越界 | `403 Forbidden` |
 | SPA 回退 | `/quota`、`/sessions`、`/models` 及其子路径（不含 `.`）→ `index.html` |
+
+## 23. GET /api/usage/query（v1.1.0 新增）
+
+本地 SQLite 行存的多维聚合。参数（均可选）：`range`（today/7d/30d/90d/all，默认 30d）、`start`/`end`（`YYYY-MM-DD` 自定义区间，优先于 range）、`day`（单日下钻，等价 start=end 并填充 hourly）、`tool`、`workspace`（workspace_key 或 `peer:<hash>`）、`model`（原始模型名精确匹配）、`resolved`（计价身份匹配）、`perRange=1`（同时返回 today/7d/30d/all 四组 totals）。
+
+响应：`totals`、`perRange?`、`daily[]`、`hourly[]`（仅单日）、`models[]`（含 `cacheHitRate`、`cost`）、`workspaces[]`（含 `tools[]` 贡献工具拆分）。金额字段同时提供内部 `costCny` 与展示币种 `cost`。
+
+## 24. GET /api/usage/records（v1.1.0 新增）
+
+全历史逐请求分页明细。参数：`from`/`to`（epoch ms）、`tool`、`workspace`、`model`、`resolved`、`limit`（≤500）、`offset`。响应：`rows[]`、`total`、`limit`、`offset`。
+
+## 25. GET /api/usage/peer-workspaces（v1.1.0 新增）
+
+对端工作区日汇总（同步协议 v4 的 `wsDaily` 聚合）。参数：`device`（all 或对端设备名）。响应：`rows[]`，每行含 `key`（`peer:<hash>`）、`workspaceName`（对端真实目录名，v4 `wsNames`）、`daily`、`tools[]`、`totalTokens`、`requests`。
+
+## 26. GET/POST /api/workspace-aliases（v1.1.0 新增）
+
+工作区别名（仅本机展示，不同步）。GET 返回 `{aliases}`；POST 接收 `{workspaceKey, alias}`，`alias` 为空表示移除。
+
+## 27. GET /api/summary 的 v1.1.0 新增字段
+
+`storeEnabled`（行存是否可用）、`storeWorkspaces[]`（工作区筛选选项）、`rangeModels`（today/7d/30d/all 四组模型统计，供合并口径的模型筛选）。

@@ -83,7 +83,7 @@
 | `tools/qoder-cn.js` | ~200 | QoderCN IDE：SQLite `chat_message`、token_info JSON |
 | `tools/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
 | `aggregate.js` | ~420 | 范围过滤、模型分组、每日趋势（top6+others）、热力图、工具聚合 |
-| `store.js` | ~560 | SQLite 行存端口（`node:sqlite`）：入库、bucketView 适配、usage 查询、逐请求分页、legacy 导入、版本化迁移 |
+| `store.js` | ~880 | SQLite 行存端口（`node:sqlite`）：入库、bucketView 适配、usage 查询、逐请求分页、legacy 导入、版本化迁移 |
 | `workspaces.js` | ~150 | 工作区归一化：cwd / kimi `wd_*` → workDir / 未知时回退，别名展示 |
 | `pricing.js` | ~790 | 八张价目表、匹配、峰谷/节假日、长上下文、自定义价、CNY 账本、`cellCostCny` 单一费用计算 |
 | `model-map.js` | ~155 | Kimi 专属：config.toml 别名 + 环境变量模型 → 展示/计价身份 |
@@ -112,9 +112,11 @@
 | --- | --- |
 | `ingestTool({ tool, home, records, events })` | 一个工具的扫描产物整体入库(指纹未变则跳过);工作区归一化、rateKey、去重 sig 都发生在这里 |
 | `bucketView({ tool? })` | **防腐层**:把行存(含 legacy 导入)还原成 buckets.js 的 `usageDays/eventDays` 形状,使 `aggregateFromBuckets` 等既有聚合/计价代码零改动消费 |
-| `usageQuery({ startDay, endDay, tool, workspace, model, singleDay })` | 多维聚合(FR-10/11/12):日/小时/模型/工作区分项,费用按查询时价目计算 |
-| `recordsPage({ fromMs, toMs, tool, workspace, model, limit, offset })` | 全历史逐请求分页 |
+| `usageQuery({ startDay, endDay, tool, workspace, model, resolved, singleDay, perRange })` | 多维聚合(FR-10/11/12):日/小时/模型/工作区分项、四区间 totals,费用按查询时价目计算 |
+| `recordsPage({ fromMs, toMs, tool, workspace, model, resolved, limit, offset })` | 全历史逐请求分页 |
 | `workspaceOptions()` | 工作区下拉选项 |
+| `importLegacyBuckets(entries)` | 旧按日聚合桶一次性导入(仅源文件已删除的桶) |
+| `stats()` / `schemaVersion()` / `open()` / `close()` / `isAvailable()` | 生命周期与诊断 |
 
 配套纪律:
 

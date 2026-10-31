@@ -141,7 +141,12 @@ function collect({ force = false } = {}) {
     try {
       const out = scanTool(definition, tool.home, scanSince);
       if (storeOn) {
-        store.ingestTool({ tool: tool.id, home: tool.home, records: out.records, events: out.events });
+        const ingested = store.ingestTool({ tool: tool.id, home: tool.home, records: out.records, events: out.events });
+        if (ingested && ingested.ok === false) {
+          // 入库失败(典型:双进程写锁)时删除 stamps,强制下一次 collect 重扫重试。
+          cache.stamps.delete(tool.id);
+          console.warn(`[doramonitor] store ingest failed for ${tool.id}: ${ingested.error || "unknown"}`);
+        }
         // Bound resident memory to the recent window, as the pre-store path did.
         if (BUCKET_TOOLS.has(tool.id)) {
           out.records = (out.records || []).filter((r) => (r.time || 0) >= since);

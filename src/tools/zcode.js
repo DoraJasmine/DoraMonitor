@@ -107,20 +107,26 @@ const tool = {
         return null;
       }
     })();
+    let db;
     try {
-      const db = openReadOnly(dbPath);
-      try {
-        const rows = db.prepare(SQL_ALL).all();
-        rowCount = rows.length;
-        for (const row of rows) {
-          const rec = toolRowToRecord(row, settings);
-          if (rec) records.push(rec);
-        }
-      } finally {
-        db.close();
+      // 库打开失败(WAL 短暂不可读等)按异常上抛,由 collect 保留上次扫描
+      // 结果;若此处吞掉返回空记录,行存的空扫描守卫之外还会有一次真实清空。
+      db = openReadOnly(dbPath);
+    } catch (err) {
+      errors.push({ file: dbPath, message: String(err && err.message ? err.message : err) });
+      throw err;
+    }
+    try {
+      const rows = db.prepare(SQL_ALL).all();
+      rowCount = rows.length;
+      for (const row of rows) {
+        const rec = toolRowToRecord(row, settings);
+        if (rec) records.push(rec);
       }
     } catch (err) {
       errors.push({ file: dbPath, message: String(err && err.message ? err.message : err) });
+    } finally {
+      db.close();
     }
 
     records.sort((a, b) => b.time - a.time);

@@ -99,6 +99,7 @@ doramonitor --help                Show all options
 - Official-price links, custom prices, USD/CNY display, and a single internal CNY ledger.
 - Kimi and Codex quota cards with per-account home visibility controls and clearly marked equivalent-capacity estimates.
 - Cross-client model attribution, optional client-only estimation switches, and detailed history on `/quota`.
+- Workspace usage statistics and filtering (labeled by source machine and tools), date/model drill-down details, and CSV export of model stats.
 - Kimi session/workspace management with secret-redacting previews.
 - A `/sync` settings page for optional SSH/WebDAV/local-directory synchronization, with configuration and recent-result status, peer devices, and minute-level quota-usage buckets.
 

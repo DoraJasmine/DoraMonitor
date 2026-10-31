@@ -166,6 +166,9 @@ function open(dbPathOverride) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     db = new DatabaseSync(p);
     db.exec("PRAGMA journal_mode = WAL");
+    // daemon 与 web 两个进程并发写同一库;无 busy_timeout 时并发写会立即
+    // SQLITE_BUSY,表现为偶发"刷新无效"。
+    db.exec("PRAGMA busy_timeout = 5000");
     applyMigrations();
     dbPath = p;
     return true;
@@ -247,6 +250,12 @@ function ingestTool({ tool, home, records, events, force = false }) {
   const fp = fingerprintOf(records, events);
   if (!force && getMeta(`fp5:${tool}`) === fp) return { ok: true, skipped: true };
 
+  // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
+  // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
+  const beforeCount = db.prepare("SELECT COUNT(*) AS n FROM usage_records WHERE tool = ?").get(tool).n;
+  if (!(records || []).length && beforeCount > 0 && !force) {
+    return { ok: true, skipped: true, emptyGuard: true, rows: 0 };
+  }
   const insert = db.prepare(`
     INSERT OR IGNORE INTO usage_records
       (tool, time, day, hour, device, workspace_key, workspace_name, model, model_display,
@@ -260,7 +269,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
   `);
 
   try {
-    db.exec("BEGIN");
+    db.exec("BEGIN IMMEDIATE");
     db.prepare("DELETE FROM usage_records WHERE tool = ?").run(tool);
     let rows = 0;
     let invalid = 0;
@@ -287,7 +296,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
         rec.device || null,
         ws.workspaceKey,
         ws.workspaceName || null,
-        rec.model || null,
+        rec.model || "unknown",
         rec.modelDisplay || null,
         rec.modelResolved || null,
         rec.modelProvider || null,
@@ -825,7 +834,7 @@ function importLegacyBuckets(entries) {
     }
   }
   try {
-    db.exec("BEGIN");
+    db.exec("BEGIN IMMEDIATE");
     db.prepare("DELETE FROM usage_daily_legacy").run();
     const insert = db.prepare(`
       INSERT OR REPLACE INTO usage_daily_legacy
