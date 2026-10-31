@@ -166,7 +166,9 @@ function normalizeWorkspace(toolId, record, home) {
       if (hit && hit.name) {
         return { workspaceKey: project, workspaceName: hit.name };
       }
-      return { workspaceKey: project, workspaceName: project };
+      // Meta/session lookup missed — at least decode the human part of the id.
+      const m = project.match(/^wd_(.+)_[0-9a-f]+$/);
+      return { workspaceKey: project, workspaceName: m ? decodeURIComponent(m[1]).replace(/_/g, " ") || project : project };
     }
     const cwd = fromCwd(project);
     if (cwd) return cwd;
