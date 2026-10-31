@@ -92,4 +92,4 @@ DoraMonitor 自身**没有**遥测、上报、自动更新检查。
 3. `src/model-map.js:40-51` — 密钥行剥离；
 4. `src/config-store.js:246-307` — 掩码视图；
 5. `src/sessions.js:437-509` — 预览脱敏与净化；
-6. `grep -rn "http" src/ --include="*.js"` — 全部出站请求就这两处。
+6. 出站实现位于 `quota.js`、`codex-quota.js`、`catalog.js` 和显式启用后的 `sync.js`。

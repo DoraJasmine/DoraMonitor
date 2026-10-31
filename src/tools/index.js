@@ -83,7 +83,7 @@ function sourceFiles(tool, home) {
   if (tool.id === "omp") {
     return listFilesRecursive(tool.sessionsRoot(home), ".jsonl", true);
   }
-  return [];
+  return typeof tool.sourceFiles === "function" ? tool.sourceFiles(home) : [];
 }
 
 function listFilesRecursive(root, matchName, suffix = false) {

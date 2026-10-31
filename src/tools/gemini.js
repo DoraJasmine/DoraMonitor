@@ -215,6 +215,11 @@ const tool = {
     return isAvailable(home);
   },
 
+  sourceFiles(home) {
+    const outfile = telemetryOutfile(home);
+    return outfile ? [outfile] : [];
+  },
+
   /** No per-file caches: the OTel stream is a single append-only file that
    *  is fully re-parsed (counter-diffed) on every scan. */
   clearCache() {

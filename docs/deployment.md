@@ -2,8 +2,8 @@
 
 ## 1. 环境要求
 
-- Node.js **18+**，推荐 **22.5+**。
-- Node 22.5+ 使用内置 `node:sqlite`；旧版 Node 的 ZCode/QoderCN 读取器需要 `sqlite3` CLI。
+- Node.js **18+**，推荐 **22.15+**。
+- Node 22.5+ 使用内置 `node:sqlite`；Node 22.15+ 还可使用原生 zstd。旧版 Node 的 ZCode/QoderCN 读取器需要 `sqlite3` CLI。
 - zstd 优先使用 Node 原生能力，旧版自动回退到运行时依赖 `fzstd`。
 - 不需要数据库服务、Rust 工具链或管理员权限。
 
@@ -51,7 +51,24 @@ powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 Unregister-ScheduledTask -TaskName doramonitor-daemon,doramonitor-web -Confirm:$false
 ```
 
-## 4. 源码更新
+## 4. 源码部署与更新
+
+首次克隆后可直接使用跨平台部署脚本：
+
+```bash
+npm run deploy
+```
+
+脚本检查 Node 18+，执行 `npm ci` 和前端构建，但不会自动启动或打开浏览器。常用选项：
+
+```bash
+npm run deploy -- --skip-install       # 复用 node_modules，仅构建
+npm run deploy -- --start              # 构建后前台启动
+npm run deploy -- --background         # 构建后后台启动
+npm run deploy -- --background --port 3848
+```
+
+日常更新建议同时运行质量门禁：
 
 ```bash
 git pull
@@ -60,7 +77,7 @@ npm test
 npm run build
 ```
 
-修改 `src/` 后必须重启 Web 服务。设置页中的汇率、自定义价格与同步配置保存后立即生效，不需要重启。
+修改 `src/` 后必须重启 Web 服务。所有设置保存后立即生效；daemon 每分钟读取最新同步配置。
 
 ## 5. 验证与日志
 
@@ -81,4 +98,4 @@ npm run build
 
 **前端是旧版本**：源码更新后重新 `npm run build` 并重启服务。静态资源使用内容哈希，正常刷新即可。
 
-**同步未启用**：多设备同步默认关闭。只在 `~/.doramonitor/config.json` 中显式配置后才会上传聚合用量。
+**同步未启用**：多设备同步默认关闭。在「同步」页显式启用并填写连接配置后才会上传聚合用量；也可直接编辑 `~/.doramonitor/config.json`。

@@ -135,7 +135,7 @@ async function detachWebServer(opts) {
     "--no-open",
   ];
 
-  const already = await isPortOpen(opts.host, opts.port);
+  const already = await isDoraMonitorHealthy(opts.host, opts.port);
   if (already) {
     console.log(`DoraMonitor 已在 http://${urlHostLocal(opts.host)}:${opts.port}/ 运行`);
     return;
@@ -143,7 +143,7 @@ async function detachWebServer(opts) {
 
   launchDetached(argv);
 
-  waitForPort(opts.host, opts.port, 12_000, (ok) => {
+  waitForHealth(opts.host, opts.port, 12_000, (ok) => {
     const url = `http://${urlHostLocal(opts.host)}:${opts.port}/`;
     if (ok) {
       console.log(`DoraMonitor v${pkg.version} 已在后台启动`);
@@ -180,14 +180,8 @@ function launchDetached(argv) {
       "ascii"
     );
     const wscript = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "wscript.exe");
-    // Detach through a throwaway cmd window that exits at once: `start /b`
-    // alone keeps the console attached, and spawn(detached) inherits a stdio
-    // pipe on some Windows shells. cmd + `start` gives wscript a clean parent.
-    require("child_process").spawn(
-      "cmd.exe",
-      ["/c", "start", "", "/b", wscript, `"${vbs}"`],
-      { detached: true, stdio: "ignore", windowsHide: true }
-    ).unref();
+    spawn(wscript, [vbs], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    setTimeout(() => fs.unlink(vbs, () => {}), 5000).unref();
     return;
   }
   const child = spawn(process.execPath, argv, { detached: true, stdio: "ignore" });
@@ -200,33 +194,33 @@ function urlHostLocal(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
-function isPortOpen(host, port) {
+function isDoraMonitorHealthy(host, port) {
   const target = !host || host === "::" || host === "0.0.0.0" ? "127.0.0.1" : host;
   return new Promise((resolve) => {
-    const sock = require("net").connect({ host: target, port });
-    sock.setTimeout(1000, () => sock.destroy(new Error("timeout")));
-    sock.once("connect", () => {
-      sock.destroy();
-      resolve(true);
+    const req = require("http").get({ host: target, port, path: "/api/health", timeout: 1000 }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        if (body.length < 1024) body += chunk;
+      });
+      res.on("end", () => {
+        try {
+          resolve(res.statusCode === 200 && JSON.parse(body).ok === true);
+        } catch {
+          resolve(false);
+        }
+      });
     });
-    sock.once("error", () => {
-      sock.destroy();
-      resolve(false);
-    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(false));
   });
 }
 
-function waitForPort(host, port, timeoutMs, done) {
-  const target = !host || host === "::" || host === "0.0.0.0" ? "127.0.0.1" : host;
+function waitForHealth(host, port, timeoutMs, done) {
   const started = Date.now();
   const attempt = () => {
-    const sock = require("net").connect({ host: target, port });
-    sock.once("connect", () => {
-      sock.destroy();
-      done(true);
-    });
-    sock.once("error", () => {
-      sock.destroy();
+    isDoraMonitorHealthy(host, port).then((ok) => {
+      if (ok) return done(true);
       if (Date.now() - started >= timeoutMs) return done(false);
       setTimeout(attempt, 250);
     });
@@ -317,4 +311,6 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { isDoraMonitorHealthy };

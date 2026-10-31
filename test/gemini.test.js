@@ -66,6 +66,16 @@ test("gemini provider: unavailable without settings/telemetry", () => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+test("gemini provider: telemetry outfile invalidates the collector snapshot", () => {
+  const home = tmpHome("gemini-source-");
+  const outfile = path.join(home, "otel.jsonl");
+  enableTelemetry(home, outfile);
+  const { sourceFiles } = require("../src/tools");
+  assert.deepEqual(gemini.sourceFiles(home), [outfile]);
+  assert.deepEqual(sourceFiles(gemini, home), [outfile]);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 test("gemini provider: diffs cumulative counters into records", () => {
   const home = tmpHome("gemini-diff-");
   const outfile = path.join(home, "otel.jsonl");

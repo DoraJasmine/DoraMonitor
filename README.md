@@ -28,7 +28,7 @@ Missing tools are reported as unavailable without preventing other tools from lo
 
 ## Requirements
 
-- Node.js **18 or newer**. Node.js **22.5+** is recommended for the built-in SQLite and zstd support.
+- Node.js **18 or newer**. Node.js **22.15+** is recommended for built-in SQLite and zstd support (`node:sqlite` needs 22.5+).
 - On older Node versions, ZCode/QoderCN SQLite readers require the `sqlite3` CLI in `PATH`; compressed transcripts use the bundled pure-JS `fzstd` fallback.
 - No database server, Rust toolchain, or administrator account is required.
 
@@ -46,12 +46,11 @@ From source:
 ```bash
 git clone https://github.com/DoraJasmine/DoraMonitor.git
 cd DoraMonitor
-npm ci
-npm run build
+npm run deploy
 npm start
 ```
 
-For development with Vite hot reload, run `npm run dev`.
+`npm run deploy` checks Node, installs the locked dependencies, and builds the Web UI. Use `npm run deploy -- --background` to deploy and start detached, or `--skip-install` to rebuild without reinstalling. For development with Vite hot reload, run `npm run dev`.
 
 ## Background and Windows startup
 
@@ -90,14 +89,13 @@ doramonitor --help                Show all options
 
 ## Features
 
-- Today, 7-day, 30-day, and all-time usage, model statistics, trends, and an annual heatmap.
+- Today, 7-day, 30-day, and all-time usage, model statistics, 7/30-day trends, and 7/30-day or annual heatmaps.
 - Input, output, cache-read, and cache-write tokens with per-model cache hit rates.
 - Official-price links, custom prices, USD/CNY display, and a single internal CNY ledger.
-- Kimi and Codex quota cards plus clearly marked, non-official equivalent-capacity estimates.
-- Cross-client model attribution: GPT usage in omp can count toward OpenAI quota estimation; unrelated models are excluded.
-- Optional client-only estimation switches and detailed estimation history on the `/quota` page.
+- Kimi and Codex quota cards with per-account home visibility controls and clearly marked equivalent-capacity estimates.
+- Cross-client model attribution, optional client-only estimation switches, and detailed history on `/quota`.
 - Kimi session/workspace management with secret-redacting previews.
-- Optional SSH/WebDAV/local-directory multi-device synchronization, including minute-level quota-usage buckets.
+- A `/sync` settings page for optional SSH/WebDAV/local-directory synchronization, including minute-level quota-usage buckets.
 
 Equivalent capacity and API-price costs are estimates, not vendor bills or guaranteed subscription limits.
 
@@ -108,11 +106,13 @@ DoraMonitor reads usage metadata, not prompts, replies, source code, or provider
 ## Documentation
 
 - [Documentation index](./docs/README.md)
+- [Features and calculations](./docs/features.md)
 - [Architecture](./docs/architecture.md)
-- [Tool data sources](./docs/tools.md)
+- [Usage statistics and tool data sources](./docs/tools.md)
 - [Configuration](./docs/configuration.md)
-- [Pricing](./docs/pricing.md)
+- [Pricing and price tables](./docs/pricing.md)
 - [Quota estimation](./docs/quota-capacity-estimation.md)
+- [Known limitations](./docs/limitations.md)
 - [Deployment](./docs/deployment.md)
 - [npm release checklist](./docs/release.md)
 - [Development](./docs/development.md)

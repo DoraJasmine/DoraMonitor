@@ -121,10 +121,8 @@ daemon 与 web 在 Windows 上的常驻（隐藏窗口、计划任务自启、�
   非零码退出，供计划任务的 RestartCount 感知并重启）。
 - 两者均由 `scripts/register-autostart.ps1` / `install-windows.ps1` 现场生成。
 
-## 6. 已知文案偏差（文档勘误）
+## 6. 后台健康检查
 
-`src/doramonitor.js` 的两处帮助文案把目录写成了 `~/.doramonitor-monitor/`，
-实际路径是 `~/.doramonitor/`（以 `settings.js` / `cli.js` 实现为准）：
-
-- `printHelp` 中 status-file 默认值文案；
-- `sync` 未启用时的提示文案。
+`web --background` 启动前和启动后都请求 `/api/health`，而不是只检查端口是否能连接。
+端口被其他程序占用时不会误报为 DoraMonitor 已运行；只有健康接口返回 `{ "ok": true }`
+才会复用现有实例或报告启动成功。

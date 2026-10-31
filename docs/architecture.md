@@ -212,13 +212,13 @@ DoraMonitor/
 │  └─ tools/                 # 九个工具的数据采集器
 ├─ web/                      # 前端源码（Vite root）
 │  ├─ src/App.jsx            # 用量页（SPA 主壳）
-│  ├─ src/pages/             # QuotaDetailsPage / PricesPage
+│  ├─ src/pages/             # QuotaDetailsPage / PricesPage / SyncSettingsPage
 │  ├─ src/components/        # DailyBars / Heatmap / QuotaCard + ui/
 │  ├─ src/lib/backend.js     # HTTP ↔ Tauri 双通道数据层
 │  └─ public-assets/         # favicon
 ├─ dist/                     # 构建产物（随 npm 包分发）
 ├─ test/                     # Node 内置测试
-├─ scripts/                  # Windows 安装器 / 静默启动 / 自启注册
+├─ scripts/                  # 跨平台部署、Windows 安装器 / 静默启动 / 自启注册
 ├─ docs/                     # 本文档集
 ├─ start-doramonitor.bat     # （生成物）后台启动
 ├─ daemon-hidden.vbs         # （生成物）隐藏启动 daemon

@@ -56,6 +56,7 @@ DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器�
 | `codex` | Codex | `#10a37f` | `CODEX_HOME` → `~/.codex` | `sessions/` 存在 | JSONL（可 zstd 压缩） | Token |
 | `claude-code` | Claude Code | `#d97757` | `CLAUDE_CONFIG_DIR` → `~/.claude` | `projects/` 存在 | JSONL | Token |
 | `dsh` | dsh | `#4D6BFE` | `DSH_HOME` → `~/.dsh` | `sessions/` 存在 | JSONL（多帧 zstd） | Token |
+| `gemini` | Gemini CLI | `#4285f4` | `GEMINI_CLI_HOME` → `~/.gemini` | `settings.json` 启用 telemetry 且配置 outfile | OpenTelemetry NDJSON | Token |
 | `omp` | Oh My Pi | `#d946ef` | `PI_CODING_AGENT_DIR` → `~/.omp/agent`（回退 `~/.pi/agent`） | `sessions/` 存在（XDG 迁移时 `$XDG_DATA_HOME/omp/sessions`） | JSONL | Token |
 
 ---
@@ -285,7 +286,24 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.j
 
 ---
 
-## 9. QoderCN 路由码 / 通用模型身份（model-identity.js）
+## 9. Gemini CLI（tools/gemini.js）
+
+**前提**：在 `~/.gemini/settings.json` 中启用 telemetry，并配置本地 `outfile`。
+采集器只读取该 OpenTelemetry NDJSON 文件；没有文件导出时工具显示不可用。
+
+- `gemini_cli.token.usage`：按 `(model, type)` 读取累计计数，相邻数据点做差得到本次用量；
+  计数下降视为新 CLI 进程并重新起算。`input` 归普通输入，`output/thought` 归输出，
+  `cache` 归缓存读取，`tool` 归普通输入。
+- `gemini_cli.tool.call.count`：同样按累计差值生成工具事件，不计请求 Token。
+- 数据没有项目维度，会话统一为 `gemini-cli`；时间戳来自导出点，短会话可能落在最后一次导出时间。
+- 文件最多读取前 32 MiB，应在 Gemini 侧轮换。遥测 outfile 同时纳入 `sourceFiles()` 的文件戳探测，
+  文件增长会触发增量采集，不会长期停留在首次快照。
+
+**无配额**。
+
+---
+
+## 10. QoderCN 路由码 / 通用模型身份（model-identity.js）
 
 多个工具记录的是**内部路由码**而非真实模型 id。`model-identity.js` 是唯一映射点：
 
@@ -304,7 +322,7 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.j
 - 解析规则：大小写不敏感；`provider:code`、`vendor/code` 取尾段；
   **未映射码原样透传**（`known: false`），绝不消失或抛错。
 
-## 10. 增量缓存与探测（collect.js / tools/index.js）
+## 11. 增量缓存与探测（collect.js / tools/index.js）
 
 每个工具采集器声明自己的"源文件集"用于 stat 探测：
 
@@ -317,6 +335,8 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.j
 | codex | `sessions/` + `archived_sessions/` 下 rollout 后缀文件 |
 | claude-code | `projects/` 递归 `*.jsonl` |
 | dsh | `sessions/` 下 `.jsonl.zstd` + `.jsonl` |
+| gemini | telemetry 配置的实际 `outfile` |
+| omp | `sessionsRoot(home)` 下递归 `*.jsonl` |
 
 文件戳 = 路径 + mtimeMs + size；数量、路径、存在性任一变化即触发该 provider
 重扫，其余 provider 完全跳过。

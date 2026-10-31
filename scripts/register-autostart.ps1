@@ -10,17 +10,21 @@
 $ErrorActionPreference = "Stop"
 
 $InstallDir = Split-Path -Parent $PSScriptRoot
-$Node = @(
+$Node = $null
+$Candidates = @(
     "$env:LOCALAPPDATA\doramonitor-node\node.exe",
     "$env:LOCALAPPDATA\ai-usage-node\node.exe",
     "$env:ProgramFiles\nodejs\node.exe",
     "${env:ProgramFiles(x86)}\nodejs\node.exe"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $Node) {
-  $cmd = Get-Command node -ErrorAction SilentlyContinue
-  if ($cmd) { $Node = $cmd.Source }
+)
+$PathNode = Get-Command node -ErrorAction SilentlyContinue
+if ($PathNode) { $Candidates += $PathNode.Source }
+foreach ($Candidate in $Candidates) {
+  if (-not (Test-Path $Candidate)) { continue }
+  $Major = & $Candidate -p "Number(process.versions.node.split('.')[0])"
+  if ([int]$Major -ge 18) { $Node = $Candidate; break }
 }
-if (-not $Node) { throw "未找到 node.exe，请先安装 Node.js 22.5+" }
+if (-not $Node) { throw "未找到 Node.js 18+，请先安装支持版本的 Node.js" }
 
 # --- 生成隐藏窗口启动器（ASCII + CRLF，与 install-windows.ps1 同款） ---
 $launchers = @(

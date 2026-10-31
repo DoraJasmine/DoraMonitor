@@ -196,7 +196,7 @@ Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h
 
 ## 4. 自定义价格（settings.customPrices）
 
-在界面「模型 → 定价与货币」中编辑，存储于 `~/.doramonitor/config.json`：
+在界面「价目」页编辑，存储于 `~/.doramonitor/config.json`：
 
 ```json
 { "model": "my-proxy-model", "currency": "USD", "input": 2, "cacheHit": 0.2, "output": 10, "label": "可选备注" }

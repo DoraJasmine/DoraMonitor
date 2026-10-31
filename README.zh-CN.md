@@ -27,7 +27,7 @@
 
 ## 环境要求
 
-- Node.js **18+**，推荐 **22.5+** 以获得内置 SQLite 和 zstd 支持。
+- Node.js **18+**，推荐 **22.15+** 以获得内置 SQLite 和 zstd 支持（`node:sqlite` 需要 22.5+）。
 - 旧版 Node 读取 ZCode/QoderCN 时需要 `sqlite3` CLI；压缩会话使用包内 `fzstd` 回退。
 - 不需要数据库服务、Rust 工具链或管理员权限。
 
@@ -45,12 +45,11 @@ doramonitor
 ```bash
 git clone https://github.com/DoraJasmine/DoraMonitor.git
 cd DoraMonitor
-npm ci
-npm run build
+npm run deploy
 npm start
 ```
 
-前端开发使用 `npm run dev`，会同时启动 API 和 Vite 热更新。
+`npm run deploy` 会检查 Node、安装锁定依赖并构建前端；也可使用 `npm run deploy -- --background` 在部署后后台启动，或用 `--skip-install` 只重新构建。前端开发使用 `npm run dev`，会同时启动 API 和 Vite 热更新。
 
 ## 静默启动与 Windows 自启
 
@@ -89,14 +88,13 @@ doramonitor --help                查看全部参数
 
 ## 主要功能
 
-- 今天、近 7 天、近 30 天和全部用量，模型统计、趋势图与年度热力图。
+- 今天、近 7 天、近 30 天和全部用量，模型统计、7/30 天趋势与 7/30 天或年度热力图。
 - 普通输入、输出、缓存读取、缓存写入 Token 及各模型缓存命中率。
 - 官方定价链接、自定义价格、USD/CNY 展示与内部统一人民币账本。
-- Kimi/Codex 官方额度窗口，以及明确标注为推测值的等效额度估算。
-- 跨客户端模型归属：omp 中的 GPT/Kimi 用量可参与对应额度估算，其他模型不会混入。
-- `/quota` 页提供客户端限定开关、手动测算、区间实际用量和完整历史。
+- Kimi/Codex 官方额度窗口、按账号控制首页卡片显示，以及明确标注为推测值的等效额度估算。
+- 跨客户端模型归属、客户端限定开关、手动测算、区间实际用量和完整历史。
 - Kimi 会话与工作区管理，安全预览会脱敏疑似凭据。
-- 可选 SSH/WebDAV/本地目录多设备同步，包含用于额度估算的一分钟 Token 桶。
+- `/sync` 设置页支持可选 SSH/WebDAV/本地目录同步，包含用于额度估算的一分钟 Token 桶。
 
 等效额度与 API 刊例价金额都不是厂商账单，也不代表官方承诺的套餐上限。
 
@@ -107,13 +105,15 @@ doramonitor --help                查看全部参数
 ## 文档
 
 - [文档中心](./docs/README.md)
+- [功能与计算方式](./docs/features.md)
 - [项目需求（PRD）](./docs/product-requirements.md)
 - [架构重构方案](./docs/architecture-refactor-plan.md)与[数据迁移方案](./docs/data-migration-plan.md)
 - [当前架构](./docs/architecture.md)
-- [工具数据源](./docs/tools.md)
+- [用量统计与工具数据源](./docs/tools.md)
 - [配置](./docs/configuration.md)
-- [计价](./docs/pricing.md)
+- [计价与价目表](./docs/pricing.md)
 - [额度估算](./docs/quota-capacity-estimation.md)
+- [已知限制与注意事项](./docs/limitations.md)
 - [部署](./docs/deployment.md)
 - [npm 发布检查](./docs/release.md)
 - [开发指南](./docs/development.md)
