@@ -16,7 +16,7 @@ const COLLAPSED_COUNT = 6;
  * FR-10 工作区用量(全历史口径):彩色圆点行 + 占比条,点击行设置全局工作区
  * 筛选,行内可编辑本机别名(仅本地展示,不同步)。工作区多时默认收缩。
  */
-export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onAliasesChanged, aliases, note }) {
+export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onAliasesChanged, aliases, note, toolById, deviceView }) {
   const [editing, setEditing] = useState(null); // { key, name, value }
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -27,6 +27,12 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onA
   const hiddenCount = workspaces.length - rows.length;
   const colorFor = (i) => WS_COLORS[i % WS_COLORS.length];
   const nameOf = (w) => aliases?.[w.workspaceKey] || w.workspaceName || w.workspaceKey;
+  const machineOf = (w) => (w.scope === "peer" ? `${t("peerScope")}（${(w.devices || []).join("/") || "?"}）` : t("wsScopeLocal"));
+  const toolNamesOf = (w) => {
+    const list = w.tools || [];
+    if (!list.length) return "";
+    return list.slice(0, 3).map((x) => toolById?.get(x.tool)?.label || x.tool).join("、") + (list.length > 3 ? ` +${list.length - 3}` : "");
+  };
 
   const save = async () => {
     if (!editing) return;
@@ -93,9 +99,14 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onA
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
                   <div className="h-full rounded-full" style={{ width: `${Math.max(1, share * 100)}%`, backgroundColor: colorFor(i) }} />
                 </div>
-                <div className="mt-1 flex justify-between text-[10px] text-muted-foreground num">
-                  <span>{fmtInt(w.requests || 0, locale)} {t("requestsUnit")}</span>
-                  <span>{(share * 100).toFixed(1)}%</span>
+                <div className="mt-1 flex justify-between gap-2 text-[10px] text-muted-foreground">
+                  <span className="min-w-0 truncate">
+                    {machineOf(w)}
+                    {toolNamesOf(w) ? ` · ${toolNamesOf(w)}` : ""}
+                  </span>
+                  <span className="shrink-0 num">
+                    {fmtInt(w.requests || 0, locale)} {t("requestsCount")} · {(share * 100).toFixed(1)}%
+                  </span>
                 </div>
               </div>
             );

@@ -13,17 +13,17 @@ test("sync v3: wsDaily hashes workspace keys deterministically and reserves __-s
     { tool: "zcode", time: Date.now(), model: "m", inputOther: 7, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 0, project: null },
   ];
   const summary = buildSummary("dev", records, null, [], null, SALT);
-  assert.strictEqual(summary.version, 3);
+  assert.strictEqual(summary.version, 4);
   assert.strictEqual(summary.wsSalt, SALT);
   assert.ok(summary.wsDaily, "wsDaily present");
 
   const day = Object.keys(summary.wsDaily)[0];
-  const slots = summary.wsDaily[day];
-  // Same project → one hashed slot with folded tokens; reserved null-project → "unknown" literal.
+  // v4: day → tool → hashed slot;reserved null-project → "unknown" literal slot.
+  const slots = summary.wsDaily[day]["claude-code"];
   const hashedSlots = Object.keys(slots).filter((k) => k !== "unknown");
   assert.strictEqual(hashedSlots.length, 1, "one hashed slot");
   assert.strictEqual(slots[hashedSlots[0]].i, 15);
-  assert.strictEqual(slots.unknown.i, 7, "reserved key travels as literal slot");
+  assert.strictEqual(summary.wsDaily[day]["zcode"].unknown.i, 7, "reserved key travels as literal slot");
 
   // Hash is deterministic under the same salt and differs under another salt.
   const summary2 = buildSummary("dev", records, null, [], null, SALT);

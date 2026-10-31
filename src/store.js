@@ -520,24 +520,38 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
     const { where, params } = filterSql(wf);
     const rows = db
       .prepare(
-        `SELECT workspace_key, MAX(workspace_name) AS workspace_name,
+        `SELECT workspace_key, MAX(workspace_name) AS workspace_name, tool,
                 SUM(i) AS i, SUM(o) AS o, SUM(cr) AS cr, SUM(cc) AS cc, SUM(req) AS req, SUM(credits) AS credits
          FROM usage_records ${where.length ? "WHERE " + where.join(" AND ") : ""}
-         GROUP BY workspace_key`
+         GROUP BY workspace_key, tool`
       )
       .all(...params);
     for (const row of rows) {
-      byWorkspace.set(row.workspace_key, {
-        workspaceKey: row.workspace_key,
-        workspaceName: row.workspace_name || row.workspace_key,
-        requests: row.req || 0,
-        totalTokens: (row.i || 0) + (row.o || 0) + (row.cr || 0) + (row.cc || 0),
-        inputOther: row.i || 0,
-        output: row.o || 0,
-        inputCacheRead: row.cr || 0,
-        inputCacheCreation: row.cc || 0,
-        credits: row.credits || 0,
-      });
+      let w = byWorkspace.get(row.workspace_key);
+      if (!w) {
+        w = {
+          workspaceKey: row.workspace_key,
+          workspaceName: row.workspace_name || row.workspace_key,
+          requests: 0,
+          totalTokens: 0,
+          inputOther: 0,
+          output: 0,
+          inputCacheRead: 0,
+          inputCacheCreation: 0,
+          credits: 0,
+          tools: [],
+        };
+        byWorkspace.set(row.workspace_key, w);
+      }
+      const toolTokens = (row.i || 0) + (row.o || 0) + (row.cr || 0) + (row.cc || 0);
+      w.tools.push({ tool: row.tool, totalTokens: toolTokens, requests: row.req || 0 });
+      w.requests += row.req || 0;
+      w.inputOther += row.i || 0;
+      w.output += row.o || 0;
+      w.inputCacheRead += row.cr || 0;
+      w.inputCacheCreation += row.cc || 0;
+      w.totalTokens += toolTokens;
+      w.credits += row.credits || 0;
     }
   }
 

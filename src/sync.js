@@ -27,7 +27,7 @@ const { normalizeWorkspace } = require("./workspaces");
  * working offline; a failed sync degrades to cached data with a status note.
  */
 
-const SUMMARY_VERSION = 3; // v3: adds wsDaily (hashed workspace daily totals) + wsSalt
+const SUMMARY_VERSION = 4; // v4: wsDaily gains a tool level (day → tool → hashed ws → cell)
 const REMOTE_DIR = "ai-usage-monitor"; // keep: remote sync dir shared with other devices
 const CACHE_DIR = path.join(".doramonitor", "remote-cache");
 
@@ -140,7 +140,8 @@ function buildWsDaily(records, salt) {
     const slot = wsHash(ws.workspaceKey, salt);
     const day = dayKey(r.time);
     if (!wsDaily[day]) wsDaily[day] = {};
-    const cell = wsDaily[day][slot] || (wsDaily[day][slot] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+    if (!wsDaily[day][r.tool]) wsDaily[day][r.tool] = {};
+    const cell = wsDaily[day][r.tool][slot] || (wsDaily[day][r.tool][slot] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
     cell.i += r.inputOther || 0;
     cell.o += r.output || 0;
     cell.cr += r.inputCacheRead || 0;
@@ -832,24 +833,35 @@ function peerWorkspaceSummaries(device = "all") {
     if (!peer || !peer.wsDaily) continue;
     if (device !== "all" && String(peer.device || "") !== String(device)) continue;
     const peerDevice = String(peer.device || "peer");
-    for (const [day, slots] of Object.entries(peer.wsDaily || {})) {
-      for (const [slot, cell] of Object.entries(slots || {})) {
-        const key = `peer:${slot}`;
-        if (!map.has(key)) {
-          map.set(key, { key, workspaceKey: key, workspaceName: slot.startsWith("__") ? null : null, devices: new Set(), daily: {}, totalTokens: 0, requests: 0, credits: 0 });
+    const nested = Number(peer.version) >= 4; // v4: day → tool → slot;v3: day → slot
+    for (const [day, buckets] of Object.entries(peer.wsDaily || {})) {
+      for (const [toolOrSlot, level] of Object.entries(buckets || {})) {
+        const entries = nested
+          ? Object.entries(level || {}).map(([slot, cell]) => [slot, toolOrSlot, cell])
+          : [["__peer__", toolOrSlot, level]];
+        for (const [slot, tool, cell] of entries) {
+          const key = `peer:${slot}`;
+          if (!map.has(key)) {
+            map.set(key, { key, workspaceKey: key, devices: new Set(), daily: {}, tools: new Map(), totalTokens: 0, requests: 0, credits: 0 });
+          }
+          const row = map.get(key);
+          row.devices.add(peerDevice);
+          const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+          d.i += cell.i || 0;
+          d.o += cell.o || 0;
+          d.cr += cell.cr || 0;
+          d.cc += cell.cc || 0;
+          d.req += cell.req || 0;
+          d.credits += cell.credits || 0;
+          const tk = (cell.i || 0) + (cell.o || 0) + (cell.cr || 0) + (cell.cc || 0);
+          const t = row.tools.get(tool) || { tool, totalTokens: 0, requests: 0 };
+          t.totalTokens += tk;
+          t.requests += cell.req || 0;
+          row.tools.set(tool, t);
+          row.totalTokens += tk;
+          row.requests += cell.req || 0;
+          row.credits += cell.credits || 0;
         }
-        const row = map.get(key);
-        row.devices.add(peerDevice);
-        const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
-        d.i += cell.i || 0;
-        d.o += cell.o || 0;
-        d.cr += cell.cr || 0;
-        d.cc += cell.cc || 0;
-        d.req += cell.req || 0;
-        d.credits += cell.credits || 0;
-        row.totalTokens += (cell.i || 0) + (cell.o || 0) + (cell.cr || 0) + (cell.cc || 0);
-        row.requests += cell.req || 0;
-        row.credits += cell.credits || 0;
       }
     }
   }
@@ -858,6 +870,7 @@ function peerWorkspaceSummaries(device = "all") {
     workspaceKey: row.workspaceKey,
     devices: [...row.devices],
     daily: row.daily,
+    tools: [...row.tools.values()].sort((a, b) => b.totalTokens - a.totalTokens),
     totalTokens: row.totalTokens,
     requests: row.requests,
     credits: row.credits,

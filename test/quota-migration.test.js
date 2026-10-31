@@ -126,7 +126,7 @@ test("peer sync accepts v2-only samples and emits both compatibility fields", ()
   assert.equal(synced[0].provider, "kimi");
   assert.equal(synced[0].quotaProvider, "kimi");
   assert.equal(synced[0].accountKey, "kimi:work");
-  assert.equal(buildSummary("device-a", [], null, synced).version, 3); // v3: + wsDaily/wsSalt, days 兼容 v2 读取
+  assert.equal(buildSummary("device-a", [], null, synced).version, 4); // v4: + wsDaily(带工具维度)/wsSalt, days 兼容旧版读取
 });
 
 test("a tampered backup is rejected before restoring any files", () => {

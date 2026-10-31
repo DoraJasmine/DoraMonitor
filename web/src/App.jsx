@@ -441,9 +441,9 @@ export default function App() {
   // 对端工作区行(合并视图 = 本机 + 对端;单对端设备 = 仅对端)
   const peerRows = useMemo(() => (peerWs || []).map((r) => ({
     workspaceKey: r.key,
-    workspaceName: r.key === "peer:unknown"
-      ? t("peerUnknownWs")
-      : `${t("peerWs")}（${(r.devices || []).join("/") || "?"}）· ${r.key.slice(5, 13)}`,
+    workspaceName: r.key === "peer:unknown" ? t("peerUnknownWs") : `${t("peerWs")} · ${r.key.slice(5, 13)}`,
+    devices: r.devices || [],
+    tools: r.tools || [],
     totalTokens: r.totalTokens,
     requests: r.requests,
     scope: "peer",
@@ -1127,6 +1127,8 @@ export default function App() {
           locale={locale}
           aliases={aliases}
           onAliasesChanged={setAliases}
+          toolById={toolById}
+          deviceView={device}
         />
       ) : null}
 
