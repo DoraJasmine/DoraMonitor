@@ -221,11 +221,14 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
                     {Number.isFinite(observed.cacheHit) && <span><span className="mx-1.5">·</span>{t("capacityCache")} {Math.round(observed.cacheHit * 1000) / 10}%</span>}
                   </div>
                   {observed.models.length > 0 && <div className="t-caption">
-                    {t("capacityModelBreakdown")}: {observed.models.map(([name, model]) => (
-                      <span key={name} className="num whitespace-nowrap">
-                        <span className="text-foreground/80" title={name}>{name}</span> {fmtTokens(model.totalTokens)} · {model.input > 0 ? Math.round(model.cacheRead / model.input * 1000) / 10 : 0}%
-                      </span>
-                    )).reduce((nodes, node, index) => index === 0 ? [node] : [...nodes, <span key={`sep-${index}`} className="mx-1.5">|</span>, node], [])}
+                    <div>{t("capacityModelBreakdown")}:</div>
+                    <div className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                      {observed.models.map(([name, model]) => (
+                        <span key={name} className="num whitespace-nowrap">
+                          <span className="text-foreground/80" title={name}>{name}</span> {fmtTokens(model.totalTokens)} · {model.input > 0 ? Math.round(model.cacheRead / model.input * 1000) / 10 : 0}%
+                        </span>
+                      ))}
+                    </div>
                   </div>}
                 </>
               ) : <div className="t-caption">{t("capacityNoObservations")}</div>}
