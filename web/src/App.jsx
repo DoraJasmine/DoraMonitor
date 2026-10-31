@@ -443,7 +443,7 @@ export default function App() {
     workspaceKey: r.key,
     workspaceName: r.key === "peer:unknown"
       ? t("peerUnknownWs")
-      : r.workspaceName || `${t("peerWs")} · ${r.key.slice(5, 13)}`,
+      : r.workspaceName || r.key.slice(5, 13),
     devices: r.devices || [],
     tools: r.tools || [],
     totalTokens: r.totalTokens,

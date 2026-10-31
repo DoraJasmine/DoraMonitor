@@ -27,7 +27,7 @@ export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onA
   const hiddenCount = workspaces.length - rows.length;
   const colorFor = (i) => WS_COLORS[i % WS_COLORS.length];
   const nameOf = (w) => aliases?.[w.workspaceKey] || w.workspaceName || w.workspaceKey;
-  const machineOf = (w) => (w.scope === "peer" ? `${t("peerScope")}（${(w.devices || []).join("/") || "?"}）` : t("wsScopeLocal"));
+  const machineOf = (w) => (w.scope === "peer" ? (w.devices || []).join("/") || "?" : t("wsScopeLocal"));
   const toolNamesOf = (w) => {
     const list = w.tools || [];
     if (!list.length) return "";
