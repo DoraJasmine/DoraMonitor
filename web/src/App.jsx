@@ -45,7 +45,7 @@ import { Heatmap } from "@/components/Heatmap";
 import { QuotaToolCards } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchSummary, fetchSettings, fetchUsageQuery, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
+import { fetchPaths, fetchPeerWorkspaces, fetchSummary, fetchSettings, fetchUsageQuery, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { HeroCard } from "@/components/insights/HeroCard";
 import { WorkspacePanel } from "@/components/insights/WorkspacePanel";
@@ -361,6 +361,7 @@ export default function App() {
   }, [insightsActive, peerSelected, range, tool, wsFilter, modelFilter, data?.scannedAt]);
 
   // FP-06:对端工作区日汇总(哈希键),驱动工作区面板与对端筛选口径。
+  const [wsAllData, setWsAllData] = useState(null);
   const [peerWs, setPeerWs] = useState(null);
   useEffect(() => {
     if (!storeEnabled) {
@@ -454,7 +455,6 @@ export default function App() {
   }, [wsAllData, peerRows, device]);
 
   // 工作区面板始终展示全历史口径的所有工作区(与当前时间范围解耦)。
-  const [wsAllData, setWsAllData] = useState(null);
   useEffect(() => {
     if (!storeEnabled) {
       setWsAllData(null);
