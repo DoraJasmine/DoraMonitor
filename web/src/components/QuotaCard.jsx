@@ -547,6 +547,7 @@ function HomeCapacityGroup({ title, targets, locale, t }) {
 
 function HomeCapacity({ capacity, locale, t }) {
   const standardTargets = capacity?.targets || [];
+  const highConfidenceTargets = standardTargets.filter((target) => Number(target.confidenceScore) >= 95 && Number.isFinite(target.fullWindowTokens));
   if (!standardTargets.length) return null;
   return (
     <section className="mt-4 space-y-3 border-t border-border/60 pt-3">
@@ -554,20 +555,21 @@ function HomeCapacity({ capacity, locale, t }) {
         <h3 className="text-sm font-semibold">{t("capacityTitle")}</h3>
         <a href="/quota" className="rounded-sm text-[11px] text-muted-foreground underline-offset-4 outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring">{t("capacityDetails")}</a>
       </div>
-      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-        {["session", "weekly"].map((window) => {
-          const targets = standardTargets.filter((target) => target.window === window);
-          const hasData = targets.some((target) => Number.isFinite(target.fullWindowTokens));
-          return hasData ? (
-            <HomeCapacityGroup key={window} title={window === "session" ? t("quota5h") : t("quotaWeekly")} targets={targets} locale={locale} t={t} />
-          ) : (
-            <div key={window} className="text-[11px] text-muted-foreground">
-              <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
-              {t("capacityInsufficient")}
-            </div>
-          );
-        })}
-      </div>
+      {highConfidenceTargets.length ? (
+        <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+          {["session", "weekly"].map((window) => {
+            const targets = highConfidenceTargets.filter((target) => target.window === window);
+            return targets.length ? (
+              <HomeCapacityGroup key={window} title={window === "session" ? t("quota5h") : t("quotaWeekly")} targets={targets} locale={locale} t={t} />
+            ) : (
+              <div key={window} className="text-[11px] text-muted-foreground">
+                <div className="mb-1 text-xs font-medium">{window === "session" ? t("quota5h") : t("quotaWeekly")}</div>
+                {t("capacityHighInsufficient")}
+              </div>
+            );
+          })}
+        </div>
+      ) : <p className="text-xs text-muted-foreground">{t("capacityHighInsufficient")}</p>}
     </section>
   );
 }

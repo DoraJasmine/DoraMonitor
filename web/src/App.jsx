@@ -9,6 +9,7 @@ import {
   Moon,
   RefreshCw,
   Sun,
+  Tags,
 } from "lucide-react";
 import AppLogo from "@/components/AppLogo";
 import { PricesPage } from "@/pages/PricesPage";
@@ -477,34 +478,38 @@ export default function App() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-secondary/50 p-1">
+          <div className="flex items-center rounded-lg border border-border bg-secondary/50 p-1">
             <Button
               size="sm"
               variant={page === "usage" ? "default" : "ghost"}
+              className="gap-1.5"
               onClick={() => goPage("usage")}
             >
-              <LayoutDashboard className="h-3.5 w-3.5" />
+              <LayoutDashboard className="h-3.5 w-3.5" aria-hidden />
               {t("navUsage")}
             </Button>
             <Button
               size="sm"
               variant={page === "quota" ? "default" : "ghost"}
+              className="gap-1.5"
               onClick={() => goPage("quota")}
             >
-              <Gauge className="h-3.5 w-3.5" />
+              <Gauge className="h-3.5 w-3.5" aria-hidden />
               {t("navQuota")}
             </Button>
             <Button
+              size="sm"
               variant={page === "prices" ? "default" : "ghost"}
-              onClick={() => goPage("prices")}
               className="gap-1.5"
+              onClick={() => goPage("prices")}
             >
+              <Tags className="h-3.5 w-3.5" aria-hidden />
               {t("navPrices")}
             </Button>
           </div>
           <Select value={locale} onValueChange={changeLocale}>
-            <SelectTrigger className="w-[120px]" aria-label={t("language")}>
-              <Languages className="mr-1 h-3.5 w-3.5 opacity-70" />
+            <SelectTrigger className="w-[120px] text-xs font-medium" aria-label={t("language")}>
+              <Languages className="mr-1 h-3.5 w-3.5 opacity-70" aria-hidden />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -513,8 +518,8 @@ export default function App() {
             </SelectContent>
           </Select>
           <Select value={theme} onValueChange={changeTheme}>
-            <SelectTrigger className="w-[128px]" aria-label={t("appearance")}>
-              <ThemeIcon className="mr-1 h-3.5 w-3.5 opacity-70" />
+            <SelectTrigger className="w-[128px] text-xs font-medium" aria-label={t("appearance")}>
+              <ThemeIcon className="mr-1 h-3.5 w-3.5 opacity-70" aria-hidden />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -541,6 +546,7 @@ export default function App() {
               disabled={loading}
               aria-busy={loading}
               className={cn(
+                "gap-1.5 text-xs font-medium",
                 refreshFlash &&
                   !loading &&
                   "ring-1 ring-white/35 bg-primary/90"
