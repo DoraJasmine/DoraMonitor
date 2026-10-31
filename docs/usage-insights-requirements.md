@@ -1,5 +1,6 @@
 # 需求文档:用量洞察增强(工作区维度 · 趋势下钻 · 模型明细)
 
+> 版本:v1.1(2026-10-31)——R1-R4 已实施并通过浏览器视觉验收;各验收清单状态见 [实施方案](./usage-insights-improvement-plan.md) 头部实施记录。
 > 版本:v1.0(2026-10-31)
 > 对标项目:[ParticleLight/dsh-all-usage](https://github.com/ParticleLight/dsh-all-usage)(DSH 全量用量看板插件)
 > 关联文档:[改进方案](./usage-insights-improvement-plan.md) · [产品需求 PRD](./product-requirements.md) · [功能总览](./features.md)

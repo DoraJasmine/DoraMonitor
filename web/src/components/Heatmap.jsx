@@ -21,7 +21,7 @@ const DOW_LABELS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * scroll jank, so cells are plain divs with a native `title` tooltip and a
  * CSS hover scale. Visual behaviour stays the same; mount cost drops ~50×.
  */
-export function Heatmap({ heatmap, locale = "zh", t, moneyCfg }) {
+export function Heatmap({ heatmap, locale = "zh", t, moneyCfg, onDayClick }) {
   const cells = heatmap?.cells || [];
   const weekCount = useMemo(() => {
     if (!cells.length) return 0;
@@ -106,13 +106,29 @@ export function Heatmap({ heatmap, locale = "zh", t, moneyCfg }) {
                     }
                     const level = cell.level ?? 0;
                     const title = `${cell.date} · ${fmtTokens(cell.totalTokens)} · ${cell.requests} ${t("requests")} · ${fmtMoney(cell.cost, moneyCfg)} · ${t("cacheHitRate")} ${fmtPct(cell.cacheHitRate)}`;
+                    const interactive = typeof onDayClick === "function";
                     return (
                       <div
                         key={cell.date}
                         title={title}
+                        role={interactive ? "button" : undefined}
+                        tabIndex={interactive ? 0 : undefined}
+                        aria-label={interactive ? title : undefined}
+                        onKeyDown={
+                          interactive
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  onDayClick(cell);
+                                }
+                              }
+                            : undefined
+                        }
+                        onClick={interactive ? () => onDayClick(cell) : undefined}
                         className={cn(
                           "h-3 w-3 rounded-[3px] ring-1 ring-inset ring-white/5",
                           "transition-transform duration-100 hover:scale-125",
+                          interactive && "cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary",
                           LEVEL_CLASS[level] || LEVEL_CLASS[0]
                         )}
                       />

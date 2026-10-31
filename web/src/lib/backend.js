@@ -132,6 +132,38 @@ export async function runQuotaCalibration(body) {
   });
 }
 
+/** GET /api/usage/query — workspace/model-dimension aggregates (SQLite store) */
+export async function fetchUsageQuery(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, v);
+  }
+  return httpJson(`/api/usage/query?${qs.toString()}`);
+}
+
+/** GET /api/usage/records — paginated per-request rows (full history) */
+export async function fetchUsageRecords(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  return httpJson(`/api/usage/records?${qs.toString()}`);
+}
+
+/** GET /api/workspace-aliases */
+export async function fetchWorkspaceAliases() {
+  return httpJson("/api/workspace-aliases");
+}
+
+/** POST /api/workspace-aliases — set (alias non-empty) or clear (empty) */
+export async function saveWorkspaceAlias(workspaceKey, alias) {
+  return httpJson("/api/workspace-aliases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceKey, alias }),
+  });
+}
+
 /** GET /api/settings — display, dashboard, quota and sync preferences */
 export async function fetchSettings() {
   return httpJson("/api/settings");

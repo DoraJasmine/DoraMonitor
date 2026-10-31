@@ -516,6 +516,7 @@ async function handleApi(req, res, url, cliHome) {
       allModels,
       allModelCount: allModels.length,
       rangeTotals: displayRangeTotals,
+      storeEnabled,
       storeWorkspaces: storeEnabled ? store.workspaceOptions() : [],
     });
   }

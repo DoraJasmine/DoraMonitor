@@ -56,7 +56,7 @@ function areaPath(points, baselineY) {
  * Prefers stats.dailyByModel (continuous days + per-model series);
  * falls back to stats.daily totals only.
  */
-export function DailyBars({ daily, dailyByModel, t, moneyCfg }) {
+export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null); // index
   const [hidden, setHidden] = useState(() => new Set());
@@ -165,8 +165,23 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg }) {
     } else if (e.key === "End") {
       e.preventDefault();
       setHover(n - 1);
-    } else if (e.key === "Escape" || e.key === "Enter") {
+    } else if (e.key === "Enter") {
+      // Enter opens the day detail when a drill-down handler is wired (FR-11).
+      if (typeof onDayClick === "function" && hi != null && totals[hi]) {
+        e.preventDefault();
+        onDayClick(totals[hi]);
+        return;
+      }
       setHover(null);
+    } else if (e.key === "Escape") {
+      setHover(null);
+    }
+  };
+
+  // Click (after the pointer settled on a day) opens the day detail too.
+  const onClick = () => {
+    if (typeof onDayClick === "function" && hi != null && totals[hi]) {
+      onDayClick(totals[hi]);
     }
   };
 
@@ -246,6 +261,10 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg }) {
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
         onKeyDown={onKeyDown}
+        onClick={typeof onDayClick === "function" ? onClick : undefined}
+        onDoubleClick={() => {
+          if (typeof onDayClick === "function" && hi != null && totals[hi]) onDayClick(totals[hi]);
+        }}
       >
         <svg
           viewBox={`0 0 ${W} ${H}`}

@@ -45,8 +45,14 @@ import { Heatmap } from "@/components/Heatmap";
 import { QuotaToolCards } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchSummary, fetchSettings, openExternal, saveSettings, syncNow } from "@/lib/backend";
+import { fetchPaths, fetchSummary, fetchSettings, fetchUsageQuery, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
 import { cn } from "@/lib/utils";
+import { HeroCard } from "@/components/insights/HeroCard";
+import { WorkspacePanel } from "@/components/insights/WorkspacePanel";
+import { ModelInsights } from "@/components/insights/ModelInsights";
+import { DayDetailDialog } from "@/components/insights/DayDetailDialog";
+import { ModelDetailDialog } from "@/components/insights/ModelDetailDialog";
+import { downloadCsv } from "@/components/insights/csv";
 
 const GITHUB_URL = "https://github.com/DoraJasmine/DoraMonitor";
 const DEFAULT_DASHBOARD = { hiddenQuotaCards: [], heatmapRange: "1y", dailyRange: "30d" };
@@ -172,6 +178,12 @@ export default function App() {
   const [recentPage, setRecentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState("all");
+  const [wsFilter, setWsFilter] = useState(() => localStorage.getItem("kcd_ws") || "all");
+  const [aliases, setAliases] = useState({});
+  const [usageData, setUsageData] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [dayDetail, setDayDetail] = useState(null); // "YYYY-MM-DD"
+  const [modelDetail, setModelDetail] = useState(null); // { model, modelDisplay, ... }
   const [page, setPage] = useState(() => {
     if (typeof window !== "undefined") {
       const p = window.location.pathname;
@@ -300,6 +312,46 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [device]);
 
+  useEffect(() => {
+    localStorage.setItem("kcd_ws", wsFilter);
+  }, [wsFilter]);
+
+  const storeEnabled = !!data?.storeEnabled;
+
+  // Workspace aliases are display-only and never synced; load once when the
+  // store is confirmed available (FR-10).
+  useEffect(() => {
+    if (!storeEnabled) return;
+    fetchWorkspaceAliases()
+      .then((d) => setAliases(d.aliases || {}))
+      .catch(() => {});
+  }, [storeEnabled]);
+
+  // Usage-insight aggregates for the current range × tool × workspace × model
+  // filter (FR-10/FR-12). Rides the same scan generation as the summary so
+  // both refresh together; failures degrade to "sections hidden".
+  const usageSeq = useRef(0);
+  useEffect(() => {
+    if (!storeEnabled) {
+      setUsageData(null);
+      return undefined;
+    }
+    const seq = ++usageSeq.current;
+    setUsageLoading(true);
+    fetchUsageQuery({ range, tool, workspace: wsFilter, model: modelFilter })
+      .then((d) => {
+        if (seq === usageSeq.current) setUsageData(d);
+      })
+      .catch(() => {
+        if (seq === usageSeq.current) setUsageData(null);
+      })
+      .finally(() => {
+        if (seq === usageSeq.current) setUsageLoading(false);
+      });
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeEnabled, range, tool, wsFilter, modelFilter, data?.scannedAt]);
+
   const switchTool = (next) => {
     setTool(next);
   };
@@ -403,9 +455,54 @@ export default function App() {
   }, [allModels, stats.models, stats.recent]);
 
   const openModelHistory = (modelId) => {
+    // FR-12: with the row store available a model click opens the dedicated
+    // detail dialog (full history); the legacy fallback narrows the recent table.
+    if (storeEnabled && modelId) {
+      setModelDetail({ model: modelId });
+      return;
+    }
     setRange("all");
     setModelFilter(modelId || "all");
     setRecentPage(1);
+  };
+
+  const wsOptions = data?.storeWorkspaces || [];
+  const wsName = (key) => aliases[key] || wsOptions.find((w) => w.workspaceKey === key)?.workspaceName || key;
+
+  const exportModelsCsv = () => {
+    const rows = usageData?.models || [];
+    if (!rows.length) return;
+    downloadCsv(
+      `doramonitor-models-${range}${wsFilter !== "all" ? "-ws" : ""}.csv`,
+      rows.map((m) => ({
+        model: m.model,
+        display: m.modelDisplay || m.model,
+        resolved: m.modelResolved || "",
+        provider: m.modelProvider || "",
+        tool: m.tool,
+        requests: m.requests || 0,
+        totalTokens: m.totalTokens || 0,
+        inputOther: m.inputOther || 0,
+        output: m.output || 0,
+        cacheRead: m.inputCacheRead || 0,
+        cacheCreate: m.inputCacheCreation || 0,
+        cost: m.cost ?? m.costCny ?? 0,
+      })),
+      [
+        { key: "model", label: "model" },
+        { key: "display", label: "display" },
+        { key: "resolved", label: "resolved" },
+        { key: "provider", label: "provider" },
+        { key: "tool", label: "tool" },
+        { key: "requests", label: "requests" },
+        { key: "totalTokens", label: "total_tokens" },
+        { key: "inputOther", label: "input" },
+        { key: "output", label: "output" },
+        { key: "cacheRead", label: "cache_read" },
+        { key: "cacheCreate", label: "cache_write" },
+        { key: "cost", label: `cost_${(settings.currency || "CNY").toLowerCase()}` },
+      ]
+    );
   };
 
   const filteredRecent = useMemo(() => {
@@ -427,7 +524,6 @@ export default function App() {
 
   const kpiItems = useMemo(() => {
     const items = [
-      { title: t("requests"), value: fmtInt(totals.requests, locale) },
       {
         title: t("inputOther"),
         value: fmtTokens(totals.inputOther),
@@ -448,13 +544,6 @@ export default function App() {
         value: fmtTokens(totals.inputCacheCreation),
         sub: fmtInt(totals.inputCacheCreation, locale),
       },
-      { title: t("cacheHitRate"), value: fmtPct(totals.cacheHitRate) },
-      {
-        title: t("totalTokens"),
-        value: fmtTokens(totals.totalTokens),
-        sub: fmtInt(totals.totalTokens, locale),
-      },
-      { title: `${t("estCost")} (${settings.currencySymbol})`, value: fmtMoney(totals.cost, moneyCfg) },
     ];
     if ((totals.credits || 0) > 0) {
       items.push({
@@ -711,7 +800,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Range tabs */}
+      {/* Range tabs + unified filter bar (R1) */}
       <div className="mb-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={range} onValueChange={setRange}>
@@ -734,6 +823,65 @@ export default function App() {
             </Button>
           ) : null}
         </div>
+        {storeEnabled ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Select
+              value={wsFilter}
+              onValueChange={setWsFilter}
+            >
+              <SelectTrigger className="w-[220px]" aria-label={t("filterWorkspace")}>
+                <SelectValue placeholder={t("filterWorkspace")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("wsAll")}</SelectItem>
+                {wsOptions.map((w) => (
+                  <SelectItem key={w.workspaceKey} value={w.workspaceKey}>
+                    {wsName(w.workspaceKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={modelFilter}
+              onValueChange={setModelFilter}
+            >
+              <SelectTrigger className="w-[220px]" aria-label={t("filterModel")}>
+                <SelectValue placeholder={t("filterModel")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("allModels")}</SelectItem>
+                {modelOptions.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {wsFilter !== "all" || modelFilter !== "all" ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => {
+                  setWsFilter("all");
+                  setModelFilter("all");
+                }}
+              >
+                {t("clearFilters")}
+              </Button>
+            ) : null}
+            <div className="flex-1" />
+            <Button
+              variant="secondary"
+              size="sm"
+              className="text-xs"
+              disabled={!usageData?.models?.length}
+              onClick={exportModelsCsv}
+            >
+              {t("exportCsv")}
+            </Button>
+          </div>
+        ) : null}
         {range !== "all" ? (
           <p className="mt-2 text-xs text-muted-foreground">
             {t("rangeScopedHint")}{" "}
@@ -775,8 +923,9 @@ export default function App() {
         })}
       </div>
 
-      {/* KPI strip — first screen before heatmap */}
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+      {/* Hero summary (R1) + token breakdown KPI strip */}
+      <HeroCard totals={totals} moneyCfg={moneyCfg} locale={locale} t={t} loading={loading} />
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {kpiItems.map((item) => (
           <div key={item.title}>
             <Card className="h-full">
@@ -817,7 +966,20 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Heatmap */}
+      {/* Workspace usage (FR-10, store-backed) */}
+      {storeEnabled ? (
+        <WorkspacePanel
+          workspaces={usageData?.workspaces || []}
+          activeKey={wsFilter}
+          onSelect={setWsFilter}
+          t={t}
+          locale={locale}
+          aliases={aliases}
+          onAliasesChanged={setAliases}
+        />
+      ) : null}
+
+      {/* Heatmap — click a cell for the day detail (FR-11) */}
       <div className="mb-5">
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -834,13 +996,19 @@ export default function App() {
             </Tabs>
           </CardHeader>
           <CardContent>
-            <Heatmap heatmap={heatmap} locale={locale} t={t} moneyCfg={moneyCfg} />
+            <Heatmap
+              heatmap={heatmap}
+              locale={locale}
+              t={t}
+              moneyCfg={moneyCfg}
+              onDayClick={storeEnabled ? (cell) => setDayDetail(cell.date) : undefined}
+            />
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts + models */}
-      <div className="mb-5 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+      {/* Charts + models (model card is replaced by ModelInsights when the row store is on) */}
+      <div className={storeEnabled ? "mb-5" : "mb-5 grid gap-4 lg:grid-cols-[1.2fr_1fr]"}>
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -860,10 +1028,12 @@ export default function App() {
               dailyByModel={dailyTrend.dailyByModel}
               t={t}
               moneyCfg={moneyCfg}
+              onDayClick={storeEnabled ? (d) => setDayDetail(d.date) : undefined}
             />
           </CardContent>
         </Card>
 
+        {!storeEnabled ? (
         <Card>
           <CardHeader className="space-y-2">
             <div className="flex flex-row items-start justify-between gap-2">
@@ -987,10 +1157,25 @@ export default function App() {
             </div>
           </CardContent>
         </Card>
+        ) : null}
       </div>
 
-      {/* All-time model roster (always visible when more models exist outside range) */}
-      {allModels.length > 0 && range !== "all" ? (
+      {/* Model usage detail (FR-12, store-backed) */}
+      {storeEnabled ? (
+        <ModelInsights
+          models={usageData?.models || []}
+          t={t}
+          locale={locale}
+          moneyCfg={moneyCfg}
+          showToolColumn={showToolColumn}
+          toolById={toolById}
+          loading={usageLoading}
+          onSelectModel={(m) => setModelDetail(m)}
+        />
+      ) : null}
+
+      {/* All-time model roster (only on the legacy no-store path) */}
+      {!storeEnabled && allModels.length > 0 && range !== "all" ? (
         <Card className="mb-5">
           <CardHeader>
             <CardTitle>{t("allModelsTitle")}</CardTitle>
@@ -1252,6 +1437,34 @@ export default function App() {
           </div>
         </CardContent>
       </Card>
+
+      {/* FR-11 day drill-down + FR-12 model detail dialogs */}
+      <DayDetailDialog
+        day={dayDetail}
+        open={!!dayDetail}
+        onOpenChange={(v) => !v && setDayDetail(null)}
+        tool={tool}
+        workspace={wsFilter}
+        model={modelFilter}
+        t={t}
+        locale={locale}
+        moneyCfg={moneyCfg}
+        toolById={toolById}
+        showToolColumn={showToolColumn}
+      />
+      <ModelDetailDialog
+        model={modelDetail?.model || null}
+        range={range}
+        tool={tool}
+        workspace={wsFilter}
+        open={!!modelDetail}
+        onOpenChange={(v) => !v && setModelDetail(null)}
+        t={t}
+        locale={locale}
+        moneyCfg={moneyCfg}
+        showToolColumn={showToolColumn}
+        toolById={toolById}
+      />
 
       <footer className="text-xs text-muted-foreground">
         {[
