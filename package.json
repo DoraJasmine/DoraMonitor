@@ -26,7 +26,7 @@
     "dev:api": "node src/server.js --port 3847 --no-open",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test",
+    "test": "node scripts/run-tests.js",
     "status": "node src/cli.js",
     "daemon": "node src/cli.js daemon",
     "prepack": "npm test && npm run build"

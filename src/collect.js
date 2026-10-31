@@ -3,6 +3,7 @@
 const { listTools, getTool, sourceFiles, fileStamp } = require("./tools");
 const { loadModelMap } = require("./model-map");
 const { bucketFromRecords } = require("./buckets");
+const store = require("./store");
 
 /**
  * Incremental, cached collector.
@@ -26,6 +27,13 @@ const RECORD_WINDOW_DAYS = 30;
 const RECORD_CAP = 20_000;
 /** Heavy tools whose scan() accepts the incremental-bucket opts. */
 const BUCKET_TOOLS = new Set(["kimi-code", "codex", "dsh"]);
+
+/** SQLite row store (docs/usage-insights-improvement-plan.md): when enabled,
+ *  heavy tools scan their FULL history once per generation so the store sees
+ *  complete records; the in-memory snapshot then trims to the recent window
+ *  exactly as before. Any store failure silently degrades to bucket-only. */
+const STORE_ENABLED = process.env.DORAMONITOR_DISABLE_STORE !== "1";
+let legacyImported = false;
 
 function recordSince(now) {
   return now - (RECORD_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000;
@@ -111,6 +119,8 @@ function collect({ force = false } = {}) {
 
   const tools = listTools();
   const since = recordSince(now);
+  const storeOn = STORE_ENABLED && store.open();
+  const scanSince = storeOn ? 0 : since; // full records for the store, trimmed after ingest
   let reused = 0;
   let rescanned = 0;
 
@@ -129,7 +139,15 @@ function collect({ force = false } = {}) {
       continue;
     }
     try {
-      cache.byTool.set(tool.id, scanTool(definition, tool.home, since));
+      const out = scanTool(definition, tool.home, scanSince);
+      if (storeOn) {
+        store.ingestTool({ tool: tool.id, home: tool.home, records: out.records, events: out.events });
+        // Bound resident memory to the recent window, as the pre-store path did.
+        if (BUCKET_TOOLS.has(tool.id)) {
+          out.records = (out.records || []).filter((r) => (r.time || 0) >= since);
+        }
+      }
+      cache.byTool.set(tool.id, out);
       cache.stamps.set(tool.id, files);
       rescanned += 1;
     } catch {
@@ -147,6 +165,20 @@ function collect({ force = false } = {}) {
 
   cache.scannedAt = now;
   cache.snapshot = null; // new scan generation → rebuild the sorted snapshot once
+  // One-time per process: import day-bucket cells whose source files are
+  // gone (deleted/archived sessions) so full-history aggregates keep them.
+  if (storeOn && !legacyImported) {
+    legacyImported = true;
+    try {
+      store.importLegacyBuckets(
+        tools
+          .filter((t) => t.available && BUCKET_TOOLS.has(t.id))
+          .map((t) => ({ toolId: t.id, home: t.home }))
+      );
+    } catch {
+      /* best-effort — the bucket files remain on disk for a re-import */
+    }
+  }
   return { ...cachedSnapshot(), fromCache: false, reused, rescanned };
 }
 

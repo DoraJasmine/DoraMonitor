@@ -24,6 +24,8 @@ const {
   recentFromRecords,
 } = require("./aggregate");
 const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
+const store = require("./store");
+const { dayKey } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { startQuotaSampler } = require("./quota-sampler");
 const { resolveQuotaTool } = require("./quota-tool");
@@ -408,11 +410,17 @@ async function handleApi(req, res, url, cliHome) {
         ? peerRecords.filter((r) => r.device === deviceParam)
         : [...localRecords, ...peerRecords];
 
-    // Day-buckets per device: local buckets come from the scan snapshot;
-    // peer summaries are folded on the fly (a few hundred cells, µs).
-    const localBuckets = BUCKETS_DISABLED
-      ? []
-      : [...(collected.bucketsByTool?.values() || [])].flat();
+    // Day-buckets per device: local aggregates come from the SQLite row
+    // store's bucketView when available (full history incl. legacy import);
+    // otherwise from the scan snapshot. Peer summaries are folded on the fly
+    // (a few hundred cells, µs).
+    const storeEnabled = !BUCKETS_DISABLED && store.isAvailable();
+    const storeView = storeEnabled ? store.bucketView() : null;
+    const localBuckets = storeView
+      ? [storeView]
+      : BUCKETS_DISABLED
+        ? []
+        : [...(collected.bucketsByTool?.values() || [])].flat();
     const peerBucketsByDevice = new Map();
     if (!BUCKETS_DISABLED) {
       for (const rec of peerRecords) {
@@ -508,7 +516,119 @@ async function handleApi(req, res, url, cliHome) {
       allModels,
       allModelCount: allModels.length,
       rangeTotals: displayRangeTotals,
+      storeWorkspaces: storeEnabled ? store.workspaceOptions() : [],
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Usage insights (FR-10/11/12) — SQLite row store backed queries.
+  // ---------------------------------------------------------------------------
+
+  /** Calendar start day for the usage-query ranges (day-granular windows). */
+  function usageStartDay(range, nowMs) {
+    if (range === "all") return null;
+    if (range === "today") return dayKey(nowMs);
+    const days = { "7d": 7, "30d": 30, "90d": 90 }[range];
+    return days ? dayKey(nowMs - (days - 1) * 24 * 3600_000) : null;
+  }
+
+  /** Attach display-currency `cost` next to each internal `costCny`. */
+  function displayUsageCosts(result, settings) {
+    const conv = (row) => ({ ...row, cost: toDisplay(row.costCny, settings) });
+    return {
+      ...result,
+      totals: conv(result.totals),
+      daily: (result.daily || []).map(conv),
+      hourly: (result.hourly || []).map(conv),
+      models: (result.models || []).map(conv),
+      workspaces: (result.workspaces || []).map((w) => ({ ...w })),
+    };
+  }
+
+  if (url.pathname === "/api/usage/query") {
+    if (!store.isAvailable()) return json(res, 503, { error: "store_unavailable" });
+    const settings = loadSettings();
+    const nowMs = Date.now();
+    const toolParam = url.searchParams.get("tool") || "all";
+    const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
+    const workspace = url.searchParams.get("workspace") || "all";
+    const model = url.searchParams.get("model") || "all";
+    const day = url.searchParams.get("day"); // FR-11: single-day drill-down
+    const start = url.searchParams.get("start"); // custom range (YYYY-MM-DD)
+    const end = url.searchParams.get("end");
+    let startDay = null;
+    let endDay = null;
+    let singleDay = null;
+    if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      singleDay = day;
+      startDay = day;
+      endDay = day;
+    } else if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      startDay = start;
+      endDay = end && /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : dayKey(nowMs);
+    } else {
+      const range = url.searchParams.get("range") || "30d";
+      startDay = usageStartDay(range, nowMs);
+    }
+    const result = store.usageQuery({
+      startDay,
+      endDay,
+      tool,
+      workspace,
+      model,
+      singleDay,
+      fxRate: settings.fxRate,
+      customPrices: settings.customPrices,
+    });
+    if (!result) return json(res, 503, { error: "store_unavailable" });
+    return json(res, 200, displayUsageCosts(result, settings));
+  }
+
+  if (url.pathname === "/api/usage/records") {
+    if (!store.isAvailable()) return json(res, 503, { error: "store_unavailable" });
+    const num = (key, dflt) => {
+      const n = Number(url.searchParams.get(key));
+      return Number.isFinite(n) ? n : dflt;
+    };
+    const toolParam = url.searchParams.get("tool") || "all";
+    const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
+    const page = store.recordsPage({
+      fromMs: num("from", 0),
+      toMs: num("to", 0) || null,
+      tool,
+      workspace: url.searchParams.get("workspace") || "all",
+      model: url.searchParams.get("model") || "all",
+      limit: num("limit", 50),
+      offset: num("offset", 0),
+    });
+    if (!page) return json(res, 503, { error: "store_unavailable" });
+    return json(res, 200, page);
+  }
+
+  if (url.pathname === "/api/workspace-aliases" && req.method === "GET") {
+    return json(res, 200, { aliases: loadSettings().workspaceAliases || {} });
+  }
+
+  if (url.pathname === "/api/workspace-aliases" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const key = String(body.workspaceKey || "").trim();
+      if (!key || key.startsWith("__")) {
+        return json(res, 400, { error: "invalid_workspace_key" });
+      }
+      const settings = loadSettings();
+      const aliases = { ...(settings.workspaceAliases || {}) };
+      const alias = String(body.alias || "").trim().slice(0, 120);
+      if (alias) aliases[key] = alias;
+      else delete aliases[key];
+      const saved = saveSettings({ ...settings, workspaceAliases: aliases });
+      return json(res, 200, { aliases: saved.workspaceAliases || {} });
+    } catch (err) {
+      return json(res, 400, {
+        error: "invalid_alias",
+        message: String((err && err.message) || err),
+      });
+    }
   }
 
   if (url.pathname === "/api/settings" && req.method === "GET") {
