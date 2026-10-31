@@ -8,11 +8,11 @@ const { spawnSync } = require("node:child_process");
 const root = path.join(__dirname, "..");
 
 test("Linux installer parses and documents its options", (t) => {
-  const script = path.join(root, "scripts", "install-linux.sh");
-  const syntax = spawnSync("bash", ["-n", script], { encoding: "utf8" });
+  const script = path.join("scripts", "install-linux.sh");
+  const syntax = spawnSync("bash", ["-n", script], { cwd: root, encoding: "utf8" });
   if (syntax.error && syntax.error.code === "ENOENT") return t.skip("bash is unavailable");
   assert.equal(syntax.status, 0, syntax.stderr);
-  const help = spawnSync("bash", [script, "--help"], { encoding: "utf8" });
+  const help = spawnSync("bash", [script, "--help"], { cwd: root, encoding: "utf8" });
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /--with-web/);
   assert.match(help.stdout, /--start/);
