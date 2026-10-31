@@ -179,6 +179,17 @@ function json(res, status, body) {
   res.end(data);
 }
 
+function settingsView(settings) {
+  const webdav = settings.sync?.webdav || {};
+  return {
+    ...settings,
+    sync: {
+      ...settings.sync,
+      webdav: { ...webdav, password: undefined, hasPassword: Boolean(webdav.password) },
+    },
+  };
+}
+
 function readBody(req, limit = 1_000_000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -466,7 +477,7 @@ async function handleApi(req, res, url, cliHome) {
   }
 
   if (url.pathname === "/api/settings" && req.method === "GET") {
-    return json(res, 200, loadSettings());
+    return json(res, 200, settingsView(loadSettings()));
   }
 
   if (url.pathname === "/api/settings" && req.method === "POST") {
@@ -491,7 +502,7 @@ async function handleApi(req, res, url, cliHome) {
       // custom prices take effect immediately.
       invalidateCollect();
       collect({ force: true });
-      return json(res, 200, saved);
+      return json(res, 200, settingsView(saved));
     } catch (err) {
       return json(res, 400, {
         error: "invalid_settings",
@@ -948,4 +959,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createServer, parseArgs, urlHost, DEFAULT_HOST };
+module.exports = { createServer, parseArgs, urlHost, settingsView, DEFAULT_HOST };

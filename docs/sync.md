@@ -106,7 +106,7 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 ### 5.1 本地目录后端
 
 - `backend: "local"`，`local.path` 必须是两端都能访问的**绝对路径**，实际摘要写入其下的 `ai-usage-monitor/`；
-- 上传使用随机临时文件加 `rename`，读取只接收完整 `.json` 文件；单个坏文件会被隔离；
+- 上传使用设备级写入锁、随机临时文件加 `rename`，读取只接收完整 `.json` 文件；单个坏文件会被隔离，异常遗留的锁一分钟后可恢复；
 - 上传前检查共享目录内的 `device + deviceId`。同名但安装 ID 不同的摘要返回 `duplicate_device_name`，不覆盖、不自动合并；
 - 适用于同一机器的 Windows/WSL、共享挂载盘或已同步到各机器的文件夹；它不是 P2P，也不负责让两台机器自动发现彼此；
 - 共享目录不可用时沿用 `remote-cache`，不会清空已有对端数据。

@@ -472,13 +472,29 @@ function hasDuplicateLocalDevice(dir, summary) {
   return false;
 }
 
+function acquireLocalLock(file) {
+  try {
+    return fs.openSync(file, "wx");
+  } catch (err) {
+    if (!err || err.code !== "EEXIST") throw err;
+    const age = Date.now() - fs.statSync(file).mtimeMs;
+    if (age < 60_000) return null;
+    fs.rmSync(file, { force: true });
+    return fs.openSync(file, "wx");
+  }
+}
+
 function syncViaLocal(summary, cfg) {
   const target = localDirectory(cfg);
   if (target.error) return { ok: false, reason: target.error };
   if (!summary.deviceId) return { ok: false, reason: "device identity unavailable" };
   const tmp = path.join(target.dir, `.${summary.deviceId}.${process.pid}.${randomUUID()}.tmp`);
+  const lock = path.join(target.dir, `.${localDeviceFile(summary.device)}.lock`);
+  let lockHandle;
   try {
     fs.mkdirSync(target.dir, { recursive: true });
+    lockHandle = acquireLocalLock(lock);
+    if (lockHandle === null) return { ok: false, reason: "device_sync_in_progress" };
     if (hasDuplicateLocalDevice(target.dir, summary)) return { ok: false, reason: "duplicate_device_name" };
     fs.writeFileSync(tmp, JSON.stringify(summary, null, 1), "utf8");
     fs.renameSync(tmp, path.join(target.dir, localDeviceFile(summary.device)));
@@ -486,6 +502,14 @@ function syncViaLocal(summary, cfg) {
   } catch (err) {
     return { ok: false, reason: String((err && err.message) || err).slice(0, 200) };
   } finally {
+    if (lockHandle !== undefined && lockHandle !== null) {
+      try {
+        fs.closeSync(lockHandle);
+        fs.rmSync(lock, { force: true });
+      } catch {
+        // lock cleanup best-effort; stale locks expire after one minute
+      }
+    }
     try {
       fs.rmSync(tmp, { force: true });
     } catch {

@@ -110,7 +110,10 @@ function persistQuota(quota, provider, source, root) {
   if (persisted.get(key)) return 0;
   const samples = samplesFromQuota(quota, provider, source, Date.parse(quota.fetchedAt || "") || Date.now());
   const count = appendSamples(samples, root);
-  if (count) persisted.set(key, true);
+  if (count) {
+    if (persisted.size >= 2048) persisted.delete(persisted.keys().next().value);
+    persisted.set(key, true);
+  }
   return count;
 }
 

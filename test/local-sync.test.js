@@ -108,3 +108,21 @@ test("local sync rejects ambiguous relative paths", async (t) => {
   assert.equal(result.uploadError, "local path must be absolute");
   assert.equal(result.downloaded, false);
 });
+
+test("local sync serializes writers and recovers an abandoned lock", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dora-local-lock-"));
+  const shared = path.join(root, "shared");
+  const remoteDir = path.join(shared, "ai-usage-monitor");
+  const lock = path.join(remoteDir, ".desktop-win.json.lock");
+  fs.mkdirSync(remoteDir, { recursive: true });
+  fs.writeFileSync(lock, "busy");
+  t.mock.method(os, "homedir", () => path.join(root, "home"));
+
+  const busy = await runSync([], settings(shared, "desktop-win"));
+  assert.equal(busy.uploadError, "device_sync_in_progress");
+  const old = new Date(Date.now() - 61_000);
+  fs.utimesSync(lock, old, old);
+  const recovered = await runSync([], settings(shared, "desktop-win"));
+  assert.equal(recovered.uploaded, true);
+  assert.equal(fs.existsSync(lock), false);
+});

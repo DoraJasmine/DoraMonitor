@@ -172,10 +172,6 @@ function cachedSnapshot() {
   return cache.snapshot;
 }
 
-function snapshot() {
-  return { ...cachedSnapshot() };
-}
-
 /**
  * Drop all caches: the scan generation, the built snapshot, and every
  * tool's per-file parse cache. Must be called when pricing settings

@@ -108,6 +108,7 @@ function dirSizeApprox(dir) {
       }
     }
   }
+  if (sizeCache.size >= 1000) sizeCache.delete(sizeCache.keys().next().value);
   sizeCache.set(dir, { at: now, bytes: total, files });
   return { bytes: total, files };
 }
