@@ -245,7 +245,7 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
 function RateBasis({ rate, t }) {
   const parts = t("capacityBasis").split("{rate}");
   return (
-    <span className="whitespace-nowrap">
+    <span className="t-caption whitespace-nowrap">
       {parts[0]}<strong className="font-bold text-foreground">{rate}</strong>{parts[1] ?? ""}
     </span>
   );
