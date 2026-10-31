@@ -32,9 +32,12 @@ const DEFAULTS = {
   },
   sync: {
     enabled: false,
-    backend: "ssh", // "ssh" | "webdav"
+    backend: "ssh", // "ssh" | "webdav" | "local"
     deviceName: "", // defaults to hostname
     syncInterval: 300, // daemon sync interval seconds
+    local: {
+      path: "", // absolute shared directory; files live under ai-usage-monitor/
+    },
     ssh: {
       host: "",
       user: "",
@@ -104,10 +107,13 @@ function sanitizeSettings(raw) {
     const s = raw.sync;
     const outSync = { ...DEFAULTS.sync };
     outSync.enabled = s.enabled === true;
-    outSync.backend = s.backend === "webdav" ? "webdav" : "ssh";
+    outSync.backend = ["ssh", "webdav", "local"].includes(s.backend) ? s.backend : "ssh";
     outSync.deviceName = String(s.deviceName || "").trim().slice(0, 64);
     const interval = Number(s.syncInterval);
     if (Number.isFinite(interval) && interval >= 30) outSync.syncInterval = Math.floor(interval);
+    if (s.local && typeof s.local === "object") {
+      outSync.local = { path: String(s.local.path || "").trim().slice(0, 500) };
+    }
     if (s.ssh && typeof s.ssh === "object") {
       outSync.ssh = {
         host: String(s.ssh.host || "").trim().slice(0, 200),

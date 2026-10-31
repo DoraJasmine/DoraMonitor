@@ -4,13 +4,14 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { randomUUID } = require("crypto");
 const { normalizeQuotaRecord } = require("./quota-schema");
 
 /**
  * Cross-device usage sync.
  *
  * Each device maintains ONE summary file and uploads it to a shared backend
- * (SSH/SCP or WebDAV). Daily buckets power the dashboard; minute Token bins
+ * (SSH/SCP, WebDAV or a local shared directory). Daily buckets power the dashboard; minute Token bins
  * and quota milestones power capacity estimation:
  *
  *   {version, device, generatedAt, updatedRange, codexQuota, quotaUsage,
@@ -79,7 +80,7 @@ function quotaSamplesForSync(samples, now = Date.now()) {
 }
 
 /** Build the device summary from local usage records. */
-function buildSummary(deviceName, records, codexQuota = null, quotaSamples = []) {
+function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [], deviceId = null) {
   const days = {};
   let earliest = null;
   let latest = null;
@@ -112,6 +113,7 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [])
     quotaSamples: Array.isArray(quotaSamples) ? quotaSamples : [],
   };
   if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
+  if (deviceId) summary.deviceId = deviceId;
   return summary;
 }
 
@@ -417,6 +419,106 @@ async function listPeerSummariesViaWebdav(cfg) {
   return { ok: true, peers };
 }
 
+function localDirectory(cfg) {
+  const configured = String(cfg.local && cfg.local.path || "").trim();
+  if (!configured) return { error: "local path not configured" };
+  const expanded = configured === "~"
+    ? os.homedir()
+    : configured.replace(/^~[\\/]/, `${os.homedir()}${path.sep}`);
+  if (!path.isAbsolute(expanded)) return { error: "local path must be absolute" };
+  return { dir: path.join(path.resolve(expanded), REMOTE_DIR) };
+}
+
+function localDeviceId() {
+  const dir = path.join(os.homedir(), ".doramonitor");
+  const file = path.join(dir, "device-id");
+  try {
+    const id = fs.readFileSync(file, "utf8").trim();
+    if (id) return id;
+  } catch {
+    // Create this installation's identity below.
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  const id = randomUUID();
+  try {
+    fs.writeFileSync(file, id + "\n", { encoding: "utf8", flag: "wx" });
+    return id;
+  } catch (err) {
+    if (!err || err.code !== "EEXIST") throw err;
+    return fs.readFileSync(file, "utf8").trim();
+  }
+}
+
+function localDeviceFile(device) {
+  return String(device).replace(/[^a-zA-Z0-9_-]/g, "_") + ".json";
+}
+
+function hasDuplicateLocalDevice(dir, summary) {
+  const ownPath = path.join(dir, localDeviceFile(summary.device));
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const file = path.join(dir, name);
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      if (file === ownPath) return true;
+      continue;
+    }
+    if (!data || data.device !== summary.device) continue;
+    if (data.deviceId && summary.deviceId && data.deviceId === summary.deviceId) continue;
+    return true;
+  }
+  return false;
+}
+
+function syncViaLocal(summary, cfg) {
+  const target = localDirectory(cfg);
+  if (target.error) return { ok: false, reason: target.error };
+  if (!summary.deviceId) return { ok: false, reason: "device identity unavailable" };
+  const tmp = path.join(target.dir, `.${summary.deviceId}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    fs.mkdirSync(target.dir, { recursive: true });
+    if (hasDuplicateLocalDevice(target.dir, summary)) return { ok: false, reason: "duplicate_device_name" };
+    fs.writeFileSync(tmp, JSON.stringify(summary, null, 1), "utf8");
+    fs.renameSync(tmp, path.join(target.dir, localDeviceFile(summary.device)));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: String((err && err.message) || err).slice(0, 200) };
+  } finally {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // temp cleanup best-effort
+    }
+  }
+}
+
+function listPeerSummariesViaLocal(cfg, deviceId) {
+  const target = localDirectory(cfg);
+  if (target.error) return { ok: false, reason: target.error, peers: [] };
+  const device = cfg.deviceName || os.hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
+  try {
+    if (hasDuplicateLocalDevice(target.dir, { device, deviceId })) {
+      return { ok: false, reason: "duplicate_device_name", peers: [] };
+    }
+    const peers = [];
+    for (const name of fs.readdirSync(target.dir)) {
+      if (!name.endsWith(".json") || name === localDeviceFile(device)) continue;
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(target.dir, name), "utf8"));
+        if (data && data.device === device) continue;
+        if (data && typeof data === "object" && data.days) peers.push(normalizePeerSummary(data));
+      } catch {
+        // one broken peer file must not break the rest
+      }
+    }
+    return { ok: true, peers };
+  } catch (err) {
+    return { ok: false, reason: String((err && err.message) || err).slice(0, 200), peers: [] };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cache + orchestration
 // ---------------------------------------------------------------------------
@@ -467,8 +569,14 @@ async function runSync(records, settings, codexQuota = null) {
     return { enabled: false, peers: [], fromCache: false };
   }
   const deviceName = cfg.deviceName || os.hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
+  let deviceId = null;
+  try {
+    deviceId = localDeviceId();
+  } catch {
+    // Local sync reports the missing identity; existing backends stay compatible.
+  }
   const { readSamples } = require("./quota-estimator-store");
-  const summary = buildSummary(deviceName, records, codexQuota, quotaSamplesForSync(readSamples()));
+  const summary = buildSummary(deviceName, records, codexQuota, quotaSamplesForSync(readSamples()), deviceId);
 
   let uploaded = false;
   let uploadError = null;
@@ -486,6 +594,12 @@ async function runSync(records, settings, codexQuota = null) {
       uploaded = up;
       fetched = list;
       uploadError = up.ok ? null : up.reason;
+    } else if (cfg.backend === "local") {
+      uploaded = syncViaLocal(summary, cfg);
+      uploadError = uploaded.ok ? null : uploaded.reason;
+      fetched = uploadError === "duplicate_device_name"
+        ? { ok: false, peers: [], reason: uploadError }
+        : listPeerSummariesViaLocal(cfg, deviceId);
     } else {
       uploadError = `unknown backend: ${cfg.backend}`;
     }

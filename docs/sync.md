@@ -1,6 +1,6 @@
 # 多设备同步（Sync）
 
-DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务器或 WebDAV 网盘），
+DoraMonitor 支持把本机用量摘要同步到 SSH 服务器、WebDAV 网盘或本地共享目录，
 并拉取其他设备的摘要，在仪表盘上以"设备页签"合并展示。**同步的是聚合用量和额度
 元数据，不是原始会话数据**——不包含任何提示词、代码或凭据。看板使用日粒度汇总，
 等效额度测算另用一分钟 Token 桶和百分比样本。
@@ -8,16 +8,16 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 ## 1. 总览
 
 ```
-设备 A (windows-pc) ──上传 A.json──▶  中心目录 ~/.kimi-status-sync/
+设备 A (windows-pc) ──上传 A.json──▶  共享目录 .../ai-usage-monitor/
 设备 B (ubuntu)     ──上传 B.json──▶        ├─ A.json
                                             └─ B.json
-仪表盘（任一设备）──PROPFIND/ls + 下载 peers──▶ 合并展示「设备」页签
+仪表盘（任一设备）──列举 + 下载 peers──▶ 合并展示「设备」页签
 ```
 
 - 配置存于 `~/.doramonitor/config.json` 的 `sync` 段（默认关闭）。
   字段与校验见[配置与设置](./configuration.md)。
-- 后端二选一：`backend: "ssh"`（默认）或 `"webdav"`。
-- 远端目录名固定 `ai-usage-monitor`（`REMOTE_DIR`），位于 `remotePath` 之下。
+- 后端三选一：`backend: "ssh"`（默认）、`"webdav"` 或 `"local"`。
+- 共享摘要目录名固定 `ai-usage-monitor`（`REMOTE_DIR`），位于各后端的配置根路径之下。
 - 本地对端缓存：`~/.doramonitor/remote-cache/<设备名>.json`
   （设备名中 `[^a-zA-Z0-9_-]` 替换为 `_`）。
 
@@ -29,6 +29,7 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 {
   "version": 2,
   "device": "windows-pc",
+  "deviceId": "本机持久化的随机安装 ID",
   "generatedAt": 1761000000000,
   "updatedRange": { "start": "2026-10-01", "end": "2026-10-24" },
   "codexQuota": {
@@ -54,6 +55,7 @@ DoraMonitor 支持把本机用量摘要同步到一台中心节点（SSH 服务�
 要点：
 
 - `SUMMARY_VERSION = 2`；`buildSummary(device, records, codexQuota)` 生成。旧 v1 摘要仍可读取。
+- `deviceId` 是 `~/.doramonitor/device-id` 中持久化的随机安装 ID，用于区分同名安装；旧摘要没有该字段时仍可读取。
 - `kind === "event"` 的记录（tool.call 事件）**不进摘要**。
 - 桶内累加四类 token（i/o/cr/cc）、请求数、credits。
 - `codexQuota` 是可选的最新 Codex 额度快照；旧版本对端会忽略该字段。
@@ -101,6 +103,14 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 - 拉取：`PROPFIND`（200/207）→ 正则解析 `<href>` → 逐个 `GET`。
 - 适合无 SSH 的场景（坚果云、Nextcloud 等 WebDAV 网盘）。
 
+### 5.1 本地目录后端
+
+- `backend: "local"`，`local.path` 必须是两端都能访问的**绝对路径**，实际摘要写入其下的 `ai-usage-monitor/`；
+- 上传使用随机临时文件加 `rename`，读取只接收完整 `.json` 文件；单个坏文件会被隔离；
+- 上传前检查共享目录内的 `device + deviceId`。同名但安装 ID 不同的摘要返回 `duplicate_device_name`，不覆盖、不自动合并；
+- 适用于同一机器的 Windows/WSL、共享挂载盘或已同步到各机器的文件夹；它不是 P2P，也不负责让两台机器自动发现彼此；
+- 共享目录不可用时沿用 `remote-cache`，不会清空已有对端数据。
+
 ## 6. 触发时机与缓存策略
 
 | 触发方 | 行为 |
@@ -127,27 +137,54 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
   无提示词、代码、项目名、会话正文、凭据或文件路径。
 - SSH 走你的既有凭据体系（免密公钥）；WebDAV 密码存于本机 `config.json`
   （明文，受文件系统权限保护——与 kimi-code 自身存储凭据的方式同级）。
-- 上传前 `deviceName` 做清洗（非法字符 → `_`），防止路径拼接类问题。
+- Local 后端生成文件名时清洗 `deviceName`（非法字符 → `_`），并以 `deviceId` 防止同名安装互相覆盖。
 
 ## 9. 通信拓扑与 Windows/WSL
 
 ### 9.1 是否需要中转服务器
 
-当前版本**需要中转存储，但不是设备直连，也不需要部署 DoraMonitor 中心计算服务**：
+**需要共享存储，但不需要部署 DoraMonitor 中心计算服务；同机 Windows/WSL 也不需要服务器**：
 
 - SSH 模式：使用你可访问的 SSH 服务器上的目录，上传/下载通过 SCP；
 - WebDAV 模式：使用支持 WebDAV 的网盘或服务器目录；
+- Local 模式：使用两端都能访问的本地或挂载目录，不开放端口，也不需要公网服务器；
 - 每台设备上传自己的 `<deviceName>.json`，再下载其他设备摘要到本地 `remote-cache/`；
-- 看板合并和额度估算都在本机执行，中转载体不计算用量；
-- 普通看板请求不访问中转，只读本地缓存，因此中转暂时不可用不会清空已有页面。
+- 看板合并和额度估算都在本机执行，共享存储不计算用量；
+- 普通看板请求不访问共享存储，只读本地缓存，因此共享存储暂时不可用不会清空已有页面。
 
 设备之间不直接通信，不需要互相开放端口，也不是 P2P。
 
 ### 9.2 不同机器与同一机器 Windows/WSL
 
-- 不同 Windows/Linux/macOS 机器：双方都能访问同一 SSH 或 WebDAV 中转目录即可；
-- 同一机器 Windows 与 WSL：同样可以使用上述中转，但两端是独立设备身份；
-- 必须为 Windows 和 WSL 配置不同的 `sync.deviceName`，例如 `desktop-win` 与 `desktop-wsl`；若都使用相同 hostname，会争用并覆盖同一个远端 `<deviceName>.json`；
-- 两端还应使用各自实际产生的数据与独立 local/peer 视角，不能把同一设备文件重复上传成两个来源。
+- 不同 Windows/Linux/macOS 机器：使用共同可访问的 SSH、WebDAV 或挂载目录；
+- 同一机器 Windows 与 WSL：推荐 Local 模式，两端是独立设备身份；
+- 必须为 Windows 和 WSL 配置不同的 `sync.deviceName`，例如 `desktop-win` 与 `desktop-wsl`；同名且 `deviceId` 不同会被拒绝，返回 `duplicate_device_name`；
+- 不要把一端的 `~/.doramonitor/device-id` 复制到另一端，也不要把同一设备文件重复上传成两个来源。
 
-未来计划的本地目录传输和账号隔离增强见[未来功能计划](./future-roadmap.md)。
+例如 Windows 端配置：
+
+```json
+{
+  "sync": {
+    "enabled": true,
+    "backend": "local",
+    "deviceName": "desktop-win",
+    "local": { "path": "D:\\DoraSync" }
+  }
+}
+```
+
+WSL 端指向同一个实际目录：
+
+```json
+{
+  "sync": {
+    "enabled": true,
+    "backend": "local",
+    "deviceName": "desktop-wsl",
+    "local": { "path": "/mnt/d/DoraSync" }
+  }
+}
+```
+
+两端都会读写 `D:\DoraSync\ai-usage-monitor`，其他工具、账号和额度页面的结构不变。

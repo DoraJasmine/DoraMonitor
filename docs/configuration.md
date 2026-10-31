@@ -33,9 +33,12 @@ ZCode 官方额度不从私有 OAuth 读取。需要时显式设置 `BIGMODEL_AP
   },
   "sync": {                     // 多设备同步，详见 docs/sync.md
     "enabled": false,
-    "backend": "ssh",           // "ssh" | "webdav"
-    "deviceName": "",           // 空则取 hostname（≤64 字符）
+    "backend": "ssh",           // "ssh" | "webdav" | "local"
+    "deviceName": "",           // 空则取 hostname（≤64 字符）；不同安装必须唯一
     "syncInterval": 300,        // 秒，daemon 同步周期，必须 ≥30
+    "local": {
+      "path": ""                // local 后端的共享绝对路径（≤500），见 docs/sync.md
+    },
     "ssh": {
       "host": "",               // ≤200
       "user": "",               // ≤64
@@ -164,6 +167,7 @@ capabilities、thinking efforts、默认 effort=high），可选设置 default_m
 | `~/.doramonitor/status.cache` | CLI/daemon 状态行缓存 | `daemon` 每 30s（默认）原子覆盖 |
 | `~/.doramonitor/daemon.pid` | daemon pid | 单实例守卫 + `stop` 子命令用 |
 | `~/.doramonitor/sync.state` | 最近同步结果 `{lastSync, peers}` | daemon 同步成功后写 |
+| `~/.doramonitor/device-id` | 随机安装 ID | 同步摘要的设备身份；不要在 Windows/WSL 或不同机器间复制 |
 | `~/.doramonitor/remote-cache/` | 对端设备摘要缓存 | 日汇总、一分钟测算桶和额度样本；dashboard 请求只读此缓存 |
 | `~/.doramonitor/quota-estimator/` | 等效额度测算数据 | 90 天额度样本、6 小时测算缓存、追加式完整历史和最高有效纪录 |
 | `~/.kimicode-dashboard/catalog-cache.json` | models.dev 目录缓存 | 兼容 Tauri 的 `fetched_at` 蛇形命名 |

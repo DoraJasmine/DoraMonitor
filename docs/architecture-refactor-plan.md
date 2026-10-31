@@ -3,7 +3,7 @@
 > 状态：v1.0 设计草案，依据 [项目需求文档](./product-requirements.md)。
 > 数据字段、迁移与回滚详见 [数据兼容迁移方案](./data-migration-plan.md)。
 > 本文描述目标边界和分阶段路径，不表示目录已经调整，也不要求一次性完成所有移动。
-> 实施进度：P1–P5 核心重构、多 Kimi 官方额度与 ZCode 客户端已落地；旧 API 兼容层保留。本地目录传输和额外账号用量归属映射见未来计划。
+> 实施进度：P1–P5 核心重构、多 Kimi 官方额度、ZCode 客户端、设备身份保护与本地目录传输已落地；旧 API 兼容层保留。额外账号用量归属映射见未来计划。
 
 ## 1. 设计目标与核心决策
 
@@ -108,7 +108,7 @@ flowchart TB
     subgraph Infrastructure[基础设施层]
         TOOLS[Tool collectors]
         REPO[QuotaRepository]
-        SYNC[SSH / WebDAV sync]
+        SYNC[SSH / WebDAV / Local Directory sync]
         API[Kimi / Codex quota clients]
         FS[File system]
     end

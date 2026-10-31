@@ -1,6 +1,6 @@
 # DoraMonitor 未来功能计划
 
-> 状态：扩展基础、ZCode 官方额度与多 Kimi 官方额度已落地。额外 Kimi 账号在用量归属可靠前不启用估算；本地目录传输与归属映射增强仍属未来工作。
+> 状态：扩展基础、ZCode 官方额度、多 Kimi 官方额度、设备身份保护与本地目录传输已落地。额外 Kimi 账号在用量归属可靠前不启用估算；归属映射增强仍属未来工作。
 > 实施必须遵循 [PRD](./product-requirements.md)、[目标架构](./architecture-refactor-plan.md) 和 [数据迁移方案](./data-migration-plan.md)。
 
 ## 1. 规划原则
@@ -89,46 +89,34 @@ flowchart LR
 
 ## 5. FP-04：多设备同步能力保持与增强
 
-### 当前能力必须保留
+### 已实现能力
 
-- SSH/SCP 与 WebDAV 两种中转方式；
+- SSH/SCP、WebDAV 与 Local Directory 三种共享存储方式；
 - 日粒度用量、一分钟额度用量桶、额度样本和覆盖水位；
 - 对端摘要缓存与离线降级；
 - Windows ↔ Windows、Windows ↔ Linux、Windows ↔ WSL 等跨环境同步；
 - 普通看板请求不联网，只读取本地 remote-cache；
-- 不同步提示词、代码、项目名、会话正文或凭据。
+- 不同步提示词、代码、项目名、会话正文或凭据；
+- v1/v2 摘要混合读取、字段规范化和单文件错误隔离；
+- 多账号样本按 device + tool + accountKey + window 保留身份；
+- 随机持久化 `deviceId` 与同名冲突拒绝，避免 Windows/WSL 覆盖同一摘要。
 
-### 新架构下的增强
+### Local Directory Transport
 
-1. `SyncTransport` 只负责上传、列举和下载，不理解额度算法；
-2. `PeerSummaryCodec` 负责 v1/v2 编解码、字段规范化和错误隔离；
-3. `DeviceIdentity` 检查 deviceName 冲突，避免 Windows/WSL 默认同名覆盖；
-4. 多账号样本按 device + tool + accountKey + window 保留身份；
-5. 账号未知的用量不能被 peer 合并机制“自动认领”；
-6. 同步状态展示最近成功时间、peer、缓存状态和可理解的错误；
-7. 新旧版本设备在兼容期内继续混合工作。
-
-### 可选后续：同一机器 Windows/WSL 本地目录传输
-
-当前 Windows/WSL 仍通过 SSH 或 WebDAV 中转。未来可以增加 `LocalDirectoryTransport`：
-
-- 两端都能访问一个明确的本地共享目录；
+- 两端配置同一个实际共享目录的各自绝对路径；
 - 复用现有摘要、codec、去重、缓存和安全约束；
-- 不开放端口，不需要公网服务器；
-- 只作为 SyncTransport 的新实现，不改变领域和页面；
-- 必须处理 Windows/WSL 路径映射、原子写入和 deviceName 唯一性。
-
-该选项是规划项，不是当前已实现的直连或 P2P 功能。
+- 不开放端口，不需要公网服务器，但不是直连或 P2P；
+- 只新增传输后端，不改变领域和页面；
+- 已处理原子写入、坏文件隔离和 `deviceName + deviceId` 唯一性检查。
 
 ## 6. FP-05：同步拓扑与运维体验
 
-### 计划改进
+### 后续改进
 
-- 配置页明确选择 SSH、WebDAV 或未来的 Local Directory；
-- 启动时检查 deviceName 是否为空或与已知 peer 冲突；
-- 提供连接测试和最近一次成功同步状态，但不自动操纵用户浏览器验收；
-- 文档给出不同机器、同一机器 Windows/WSL 的配置示例；
-- 中转不可用时继续读取本地缓存，并明确数据可能过期。
+- 配置页明确选择 SSH、WebDAV 或 Local Directory；
+- 启动时主动检查 deviceName 是否为空或与已知 peer 冲突（当前在同步时检查）；
+- 提供独立连接测试和更完整的最近成功状态，但不自动操纵用户浏览器验收；
+- 账号未知的用量归属映射仍需增强，不能被 peer 合并机制“自动认领”。
 
 ### 非目标
 
@@ -139,13 +127,13 @@ flowchart LR
 
 ## 7. 建议优先级
 
-| 优先级 | 项目 | 原因 |
-| --- | --- | --- |
-| P0 | 架构边界、存储契约与同步 codec | 所有后续能力的基础 |
-| P1 | 多 Kimi 账号 | 直接验证 accountKey 和归属隔离设计 |
-| P1 | ZCode 额度调研与集成 | 验证新工具无需复制架构 |
-| P1 | deviceName 冲突检测与同步状态 | 避免 Windows/WSL 数据覆盖 |
-| P2 | 其他工具/账号额度 | 在两类集成验证后推广 |
-| P2 | Local Directory Transport | 优化同机 Windows/WSL，不是跨机器同步的前提 |
+| 优先级 | 项目 | 状态 | 原因 |
+| --- | --- | --- | --- |
+| P0 | 架构边界、存储契约与同步 codec | 已完成 | 所有后续能力的基础 |
+| P1 | 多 Kimi 账号官方额度 | 已完成 | 验证 accountKey 和归属隔离设计 |
+| P1 | ZCode 额度调研与集成 | 已完成 | 验证新工具无需复制架构 |
+| P1 | deviceName 冲突检测 | 已完成 | 避免 Windows/WSL 数据覆盖 |
+| P2 | Local Directory Transport | 已完成 | 同机 Windows/WSL 无需服务器 |
+| P2 | 其他工具/账号额度与归属映射 | 待实施 | 在两类集成验证后推广 |
 
 每个优先级项独立提交和验收；调研确认数据源不可用时，应明确停止对应集成，而不是用不可靠数据补 UI。
