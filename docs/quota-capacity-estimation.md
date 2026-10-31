@@ -10,8 +10,8 @@
 | 概念 | 取值 | 用在哪 | 代码/存储里的字段名 |
 | --- | --- | --- | --- |
 | **工具** (tool) | `kimi-code`、`codex`、`claude-code`、`omp`、`gemini`、`zcode`、`qoder-cn`、`qoder-cn-cli`、`dsh` | 页面页签、用量采集、`/api/tools`、`/api/summary` 的 `tool` 参数 | `tool` |
-| **配额账户族** (quota provider) | `kimi`、`openai` | 额度窗口归属、测算、样本/历史存储 | `quotaProvider`（v2）；`provider`（v1/兼容） |
-| **模型供应商** (model vendor) | `kimi`、`openai`、`qodercn`、`alibaba` 等 | 定价表、模型识别 | `modelProvider` |
+| **额度账户族** (quota provider) | `kimi`、`openai` | 额度窗口归属、测算、样本/历史存储 | `quotaProvider`（v2）；`provider`（v1/兼容） |
+| **模型厂商** (model vendor) | `kimi`、`openai`、`qodercn`、`alibaba` 等 | 定价表、模型识别 | `modelProvider` |
 
 公开 API 和前端统一使用 `tool`，映射集中在 [quota-tool.js](../src/quota-tool.js)。
 样本、历史和状态由 [quota-schema.js](../src/quota-schema.js) 双读规范化，[quota-migration.js](../src/quota-migration.js)
@@ -22,7 +22,7 @@
 ## 1. 数据来源
 
 - **额度采样**：daemon 每 60 秒（[quota-sampler.js](../src/quota-sampler.js)）拉取
-  Kimi 官方额度接口和 Codex rate-limit 快照；daemon 未运行时 Web 自动兜底。daemon 的 PID 文件每 15 秒刷新心跳，
+  Kimi 官方额度接口和 Codex rate-limit 快照；daemon 未运行时由 Web 自动回退承担。daemon 的 PID 文件每 15 秒刷新心跳，
   Web 仅在心跳健康时让出采样，心跳过期约两分钟后恢复，避免重复采样和进程退出后的永久停采。按窗口（`session` 5 小时 / `weekly` 7 天）
   写入 `~/.doramonitor/quota-estimator/samples.jsonl`，去重键为
   `[provider, accountKey, window, sampledAt, source]`，保留 **90 天**。`usedPercent` 以 JSON 数值
@@ -52,7 +52,7 @@
 先排除非有限数值、非正额度增量/时长和负成本区间；有效样本 = 覆盖率为
 complete/provisional 且 token>0 的区间。至少 5 个有效费用样本时，对 `log(成本 / dp)` 计算中位数和
 MAD（中位数绝对偏差），偏离中位数超过 `3.5 × max(1.4826 × MAD, 0.25)` 的区间会被剔除。
-这只检测**每 1% 额度对应费用**的异常，不按 Token 总量删样本；最小尺度避免 MAD 为 0 时误杀正常波动。
+这只检测**每 1% 额度对应费用**的异常，不按 Token 总量删样本；最小尺度避免 MAD 为 0 时误剔除正常波动。
 拟合、局部估算和观测历史统一使用剔除后的区间，并通过 `outlierCount`、`outliers_excluded` 公开处理结果。
 
 按缓存命中档 85/90/95/98% 各出一行，方法与置信度：
@@ -69,8 +69,8 @@ MAD（中位数绝对偏差），偏离中位数超过 `3.5 × max(1.4826 × MAD
    得到 **等效人民币**（`api-list-price` 口径）。先聚合再相除，避免新增短区间时中位数跳档；
    同一批次四个缓存档共用这一金额基准，局部命中率样本只调整 Token 换算结构，不再各自计算金额；
    各区间"烧完 100% 额度所需金额"的 25%/75% 加权分位数仅用于波动范围；
-2. `tokensFromCost`：对指定命中率构造 1000-token 输入批次（缓存读按该命中率、缓存写入
-   与输出比取自实际用量结构、按模型结构 mix 加权），用刊例价算出**每 token 综合单价**，
+2. `tokensFromCost`：对指定命中率构造 1000-token 输入批次（缓存读取按该命中率、缓存创建
+   与模型输出占比取自实际用量结构、按模型结构 mix 加权），用刊例价算出**每 token 综合单价**，
    金额 ÷ 单价 = **估算Token总量**。UI 上"估算模型"标注的就是这个结构。双档缓存写入按
    `docs/pricing.md` 的规则处理：TTL 已知时精确计价，未知时对未分类部分使用两档简单平均。
 
@@ -99,7 +99,7 @@ provisional 只降分，不隐藏结果；剔除区间的详情会显示数量�
 避免短区间的模型组合或少量高价请求造成数倍跳变。区间结果不覆盖看板缓存。历史以
 `[provider, accountKey, usageScope, estimateKind, window, cacheHitRate]` 为键链式去重；没有新观测终点的定期目标
 不会重复写空批次。容量估算仍使用截至终点的历史样本，但历史记录只保存本次区间的 `observations`，
-用于展示实际 token、成本、增量、分模型 token 和缓存命中，避免四个缓存档重复写入整段历史造成内存和磁盘膨胀；
+用于展示实际 token、成本、增量、分模型 token 和缓存命中，避免四个缓存档重复写入整段历史导致内存和磁盘占用增长失控；
 旧记录明细为空时按本次区间重建。`calculationStartAt` / `calculationEndAt` 是连续测算区间；`dataRange` 是截至终点
 参与估算的有效观测范围，可能早于本次起点，不能替代测算区间。
 
@@ -123,4 +123,4 @@ provisional 只降分，不隐藏结果；剔除区间的详情会显示数量�
 7. **样本保留 90 天**：读取时过滤并每天原子压缩一次磁盘文件；更早的明细无法重建。
 8. **跨客户端归属靠模型名识别**：新模型或改名模型在映射更新前可能被归为 unknown。
 9. **本地原始记录有 30 天窗口和 20,000 条驻留上限**：极高用量下，较早区间可能只有部分
-    原始记录；聚合日桶不能还原分钟级区间，不能把这类结果当作完整覆盖。
+    原始记录；按日聚合桶不能还原分钟级区间，不能把这类结果当作完整覆盖。

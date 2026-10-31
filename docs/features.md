@@ -11,7 +11,7 @@
 - 工具页签来自 `src/tools/index.js` 的注册表；某个工具目录不存在或解析失败，不影响其他工具。
 - 顶部“今天 / 近 7 天 / 近 30 天 / 全部”控制统计卡、模型列表和最近请求，不会重置图表自己的范围偏好。
 - 多设备同步启用后，可按合并、本机或单个对端设备查看。普通页面请求只读本机和对端缓存，不访问共享存储。
-- 总 Token = 普通输入 + 输出 + 缓存读取 + 缓存创建。缓存命中率 = 缓存读取 ÷
+- 总 Token = 普通输入 + 模型输出 + 缓存读取 + 缓存创建。缓存命中率 = 缓存读取 ÷
   （普通输入 + 缓存读取 + 缓存创建），没有输入时为 0。请求数来自有效用量记录；事件记录只用于工具次数统计。
 
 ### 热力图与每日趋势
@@ -61,7 +61,7 @@
 - `doramonitor`：前台启动 Web 看板。
 - `doramonitor web --background --no-open`：跨平台后台启动 Web，先检查 `/api/health`，避免把其他占用端口的程序误认为本服务。
 - `doramonitor daemon --background`：跨平台后台启动 daemon 并检查 PID 心跳；`scripts/start-windows.bat` 同时启动 Web 和 daemon。
-- `doramonitor status`：输出一行状态；`daemon` 维护状态缓存、额度采样、定期测算和周期同步，Web 仅在 daemon 未运行时兜底采样；`sync` 立即同步；`tools` 检查数据目录。
+- `doramonitor status`：输出一行状态；`daemon` 维护状态缓存、额度采样、定期测算和周期同步，Web 仅在 daemon 未运行时回退采样；`sync` 立即同步；`tools` 检查数据目录。
 - 源码部署：`npm run deploy` 安装锁定依赖并构建；`--skip-install` 复用依赖，`--start` 或 `--background` 可在构建后启动。
 
 详见[CLI](./cli.md)与[部署](./deployment.md)。

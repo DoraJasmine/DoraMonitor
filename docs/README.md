@@ -6,6 +6,7 @@
 
 | 文档 | 内容 | 适合谁读 |
 | --- | --- | --- |
+| [统一术语表](./terminology.md) | 领域术语与规范译法对照、写作约定 | 所有读者与写作者 |
 | [项目需求（PRD）](./product-requirements.md) | 产品范围、领域术语、兼容约束与验收基线 | 产品、设计与开发共同评审 |
 | [架构重构方案](./architecture-refactor-plan.md) | 领域边界、分层依赖、DTO、调用链与实施阶段 | 评审和实施架构重构的人 |
 | [数据迁移方案](./data-migration-plan.md) | v1/v2 schema、键稳定、备份、锁、peer 兼容与回滚 | 评审和实施数据迁移的人 |

@@ -36,7 +36,7 @@ DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器�
 - 记录按 `time` 降序输出；`meta.errors` 截断为 20 条。
 - 递归遍历时跳过 `blobs/`、`tasks/`、`node_modules/` 目录。
 - **按文件增量缓存**（kimi-code / codex / dsh）：解析结果按 (路径 + mtimeMs +
-  size) 缓存，重扫只重读变化的文件；跨文件去重与配额挑选跑在廉价的后处理里。
+  size) 缓存，重扫只重读变化的文件；跨文件去重与配额挑选在低成本的后处理中执行。
   `meta.filesReread` 表示本次实际重读的文件数。`collect.invalidate()`（设置
   变更、会话移动）会清空这些缓存以保证费用重算。
 - home 展开：支持 `~`、`~/`、`~\` 与 Windows `%VAR%` 环境变量。
@@ -188,8 +188,8 @@ cache_read_input_tokens, cache_creation_input_tokens, credits}`（Claude 风格�
 | `event_msg` + `payload.rate_limits` | 云配额快照：文件内取最新，跨文件取 `ts >= best.ts`；输出为 `scan()` 返回值上的 `quota` 字段 |
 
 **去重**：`payload.response_id` 集合——同一线程归档后会同时出现在 `sessions/`
-与 `archived_sessions/`。**全零占位行在去重之前丢弃**，防止占位行先占住
-response_id、吞掉同 id 的真实记录（这是 data-accuracy 测试专门回归的坑）。
+与 `archived_sessions/`。**全零占位行在去重之前丢弃**，防止占位行先占用
+response_id、使同 id 的真实记录被误去重（这是 data-accuracy 测试专门回归的已知问题）。
 
 **配额窗口**（`quotaWindows`）：`primary` → `{kind:"session", label:"5-hour"}`，
 `secondary` → `{kind:"weekly", label:"Weekly"}`；`used_percent` 必须为有限数否则
@@ -280,7 +280,7 @@ title 槽（`{type:"title",...,pad}`，合法 JSON 但非 header）；其后为
 | `toolResult`（含 task 子代理聚合 `details.usage`） | **跳过**——子代理会话有自己的 .jsonl，计入会双算 |
 
 pi 口径 `input` **不含**缓存（`totalTokens` 为四项之和），`inputOther` 原样。
-omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.js` 人民币表。
+omp 自记的 `usage.cost` 是美元，不采用——费用统一经由 `pricing.js` 人民币表计算。
 
 **去重**：`/fork` 会把全部历史（entry id 与 timestamp 原样）复制进新文件，
 按 `id|timestamp` 全局去重（entry id 是短 hex，单用 id 可能跨会话碰撞）。
@@ -322,7 +322,7 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一走 `pricing.j
   `kimi-for-coding-highspeed`→"K2.7 Code Highspeed"。
 - `PRICING_KEYS`：路由码 → 计费 id（如 `qfmodel`→`qwen3.8-flash`、
   `kimi-for-coding`→`kimi-k2.7-code`）。**每个有显示名的模型码必须有计价键**
-  （否则会回落 Kimi K2.6 兜底价——这是测试强制守护的回归）。
+  （否则会回退到 Kimi K2.6 回退价——这是测试强制守护的回归）。
 - 解析规则：大小写不敏感；`provider:code`、`vendor/code` 取尾段；
   **未映射码原样透传**（`known: false`），绝不消失或抛错。
 

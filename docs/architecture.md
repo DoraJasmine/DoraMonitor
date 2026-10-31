@@ -84,12 +84,12 @@
 | `tools/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
 | `aggregate.js` | ~420 | 范围过滤、模型分组、每日趋势（top6+others）、热力图、工具聚合 |
 | `store.js` | ~560 | SQLite 行存端口（`node:sqlite`）：入库、bucketView 适配、usage 查询、逐请求分页、legacy 导入、版本化迁移 |
-| `workspaces.js` | ~150 | 工作区归一化：cwd / kimi `wd_*` → workDir / 未知兜底，别名展示 |
+| `workspaces.js` | ~150 | 工作区归一化：cwd / kimi `wd_*` → workDir / 未知时回退，别名展示 |
 | `pricing.js` | ~790 | 八张价目表、匹配、峰谷/节假日、长上下文、自定义价、CNY 账本、`cellCostCny` 单一费用计算 |
 | `model-map.js` | ~155 | Kimi 专属：config.toml 别名 + 环境变量模型 → 展示/计价身份 |
 | `model-identity.js` | ~175 | 通用模型身份：QoderCN 路由码/dsh 插件码 → 显示名 + 计价键 |
 | `sessions.js` | ~710 | 会话枚举、归档/恢复/删除、安全预览（重建 + 脱敏） |
-| `config-store.js` | ~550 | Kimi `config.toml` 读写（smol-toml）、掩码视图、目录导入落盘 |
+| `config-store.js` | ~550 | Kimi `config.toml` 读写（smol-toml）、掩码视图、目录导入持久化 |
 | `catalog.js` | ~450 | models.dev 目录：在线 → 磁盘缓存 → 内置快照三级回退 |
 | `settings.js` | ~175 | 全局设置 `~/.doramonitor/config.json`：默认值、校验、原子写 |
 | `sync.js` | ~460 | 多设备同步：SSH / WebDAV 后端、摘要构建/还原、对端缓存 |
@@ -98,7 +98,7 @@
 | `doramonitor.js` | ~190 | 统一 CLI 入口（web/status/daemon/stop/tools/sync） |
 | `paths.js` | ~75 | Kimi 数据目录解析（override → env → 默认） |
 | `i18n.js` | ~120 | 后端侧 zh/en 文案与语言探测（Accept-Language → env → Intl） |
-| `data/builtin-catalog.json` | 2.0MB | models.dev 完整镜像（193 provider / 7243 模型），离线兜底 |
+| `data/builtin-catalog.json` | 2.0MB | models.dev 完整镜像（193 provider / 7243 模型），离线回退 |
 
 ## 4. 数据流详解
 
@@ -118,12 +118,10 @@
 
 配套纪律:
 
-1. **schema 演进只走迁移**:`MIGRATIONS` 数组 + `PRAGMA user_version`,启动时自动应用;禁止编辑已发布的迁移,只允许追加;
-2. **费用不落库**:行存只存 token 与 rate_key,费用查询时经 `pricing.cellCostCny` 现算——调价回溯全部历史,零失效;
-3. **旧桶目录**(`~/.doramonitor/buckets/`)只有两个合法读者:`store.importLegacyBuckets`(仅导入源文件已删除的桶)和 store 不可用时的回退聚合路径;其余功能一律走 store;
+1. **schema 演进只经由迁移**:`MIGRATIONS` 数组 + `PRAGMA user_version`,启动时自动应用;禁止编辑已发布的迁移,只允许追加;
+2. **费用不持久化**:行存只存 token 与 rate_key,费用查询时经 `pricing.cellCostCny` 现算——调价回溯全部历史,零失效;
+3. **旧桶目录**(`~/.doramonitor/buckets/`)只有两个合法读者:`store.importLegacyBuckets`(仅导入源文件已删除的桶)和 store 不可用时的回退聚合路径;其余功能一律经由 store;
 4. 存储不可用(模块缺失/DB 损坏)时系统整体降级回桶路径,不允许半工作状态。
-
-### 4.1 采集（collect.js）
 
 ### 4.1 采集（collect.js）
 
@@ -133,11 +131,11 @@
     戳未变 → 复用上次 records（不重扫）；变了 → 重扫。
 - **按文件增量缓存**（kimi-code / codex / dsh 三个大头 provider）：解析结果按
   文件缓存（key = 路径 + mtimeMs + size）。JSONL/rollout 是追加型文件，重扫时
-  只有真正变化的文件会被重读重解析，跨文件去重与配额挑选在廉价的后处理里跑
+  只有真正变化的文件会被重读重解析，跨文件去重与配额挑选在低成本的后处理中执行
   （对已解析记录做一次哈希 + 排序）。缓存按 home 命名空间隔离；
   `collect.invalidate()` 会同时清空 provider 的文件缓存——费用设置变更后
   成本必须重算。
-- **日聚合桶（阶段 3，已实施）**：每个源文件折算为 `日期×工具×模型×计价档`
+- **按日聚合桶（简称日桶；阶段 3，已实施）**：每个源文件折算为 `日期×工具×模型×计价档`
   的整数 token 计数并持久化到 `~/.doramonitor/buckets/<toolId>/`（原子写，
   stamp/tzOffset/version 三重校验）。桶**不存费用**——聚合时用当前价目表
   现算（`priceForCell`），厂商调价零失效。窗口内文件的"去重后贡献明细"
@@ -150,9 +148,9 @@
   `calendarStartDay`），与 §4.2 聚合层的**滚动窗口**口径不同，前端范围切换
   以聚合层为准。
   估算标记分两层：折算只记**时间性**估算（无时间戳 DeepSeek，桶 v2 起），
-  表行级估算（无价格行的兜底）由查询时 `priceForCell` 现算——因此**价格表
+  表行级估算（无价格行时的回退）由查询时 `priceForCell` 现算——因此**价格表
   新增行后，新价格与"官方价"标记自动回溯全部历史，无需清桶**。
-  - 单个 provider 抛异常 → 用空结果占位（`meta.errors`），**绝不拖垮其他工具**。
+  - 单个 provider 抛异常 → 用空结果占位（`meta.errors`），**绝不影响其他工具**。
 - 快照（records 合并 + 全局排序）按扫描代数缓存一次，TTL 命中路径零重排。
 - 快照形状：`{ byTool, records, events, tools, scannedAt }`；`records` 全局按
   `time` 降序。`events` 目前只有 kimi-code 的 `tool.call` 事件（WebSearch、
@@ -195,7 +193,7 @@
 
 - `tool-quota-service.js` 接收公开 `tool`，通过 `quota-tool.js` 映射内部额度账户族，统一编排官方额度、
   估算、历史、采样与校准；`server.js` 不再直接依赖估算仓储或校准实现。
-- `quota-sampler.js` 在 daemon 内每 60 秒采样 Kimi/Codex 双窗口百分比，daemon 未运行时由 Web 兜底；
+- `quota-sampler.js` 在 daemon 内每 60 秒采样 Kimi/Codex 双窗口百分比，daemon 未运行时由 Web 回退承担；
   daemon PID 心跳用于避免两个进程同时采样。Codex 首次启动时回补 rollout 中的全部历史 `rate_limits`。5h/7d 标准调度分别按 1 小时 +4% 或 +10% 触发；
   每次结算上次锚点到本次样本的连续区间，成功后推进锚点；容量估算使用截至终点的历史有效样本以降低短区间波动，
   历史只保留本段展示明细，不把全量观测重复写入四个缓存档，且定期结果不覆盖看板缓存。

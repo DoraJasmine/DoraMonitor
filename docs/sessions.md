@@ -57,7 +57,7 @@
 
 **路径安全**：所有路径先经两个正则校验（工作区/会话 id 形状），再
 `path.resolve` 后强制 `startsWith(root + sep)`，越界抛 `path_escape`（HTTP 400）。
-`workspaces.json` 的删除记录（`deleted_workspace_ids`）让 Kimi Code 侧不再复活
+`workspaces.json` 的删除记录（`deleted_workspace_ids`）让 Kimi Code 侧不再重新创建
 已删工作区。
 
 ## 4. 安全文本预览（getSessionPreview）

@@ -200,7 +200,7 @@ web/src/
   lib/
 ```
 
-约束：目录迁移是 P4 的结果，不是起点。每次只移动一组内聚模块，并保留测试验证；不为追求树形整齐制造转发文件坟场。
+约束：目录迁移是 P4 的结果，不是起点。每次只移动一组内聚模块，并保留测试验证；不为追求目录树整齐而遗留大量转发文件。
 
 ## 7. 应用服务、额度集成与 DTO 契约
 
@@ -233,7 +233,7 @@ runCalibration({ tool, action, accountKey, scope, window })
 | `GET /api/quota/samples` | `tool` | `accountKey` | 旧 `provider`，兼容期有效 | 样本 DTO 带 `tool` |
 | `POST /api/quota/capacity/calibration` | body.tool | body.accountKey | 旧 body.provider，兼容期有效 | 顶层 `tool` |
 
-冲突规则：`tool=codex` 与 `provider=kimi` 同时出现时返回 `400 conflicting_tool_provider`，不得按优先级静默吞掉错误。多账号工具缺少 `accountKey` 时返回 `400 account_required`，不能任意选择一个账号。
+冲突规则：`tool=codex` 与 `provider=kimi` 同时出现时返回 `400 conflicting_tool_provider`，不得按优先级静默忽略错误。多账号工具缺少 `accountKey` 时返回 `400 account_required`，不能任意选择一个账号。
 
 ### 7.3 QuotaIntegrationRegistry：工具与账号的扩展点
 
@@ -453,7 +453,7 @@ flowchart TB
 | 状态冲突 | calibration_exists、calibration_reset | HTTP 409，保留状态 |
 | 数据不可用 | no_data、token_expired、quota_unavailable | 明确原因，不伪造零值 |
 | 迁移失败 | backup_failed、migration_conflict、lock_busy | 只读降级，原数据不动 |
-| 基础设施失败 | peer timeout、单个坏文件 | 局部降级，不拖垮全局 |
+| 基础设施失败 | peer timeout、单个坏文件 | 局部降级，不影响全局 |
 
 日志记录迁移版本、数量、耗时和错误码，不记录凭据、会话正文或完整敏感路径。
 

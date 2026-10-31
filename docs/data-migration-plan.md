@@ -37,7 +37,7 @@ flowchart LR
 | 额度样本 | `samples.jsonl`，每行一个 JSON | `provider → quotaProvider`，`version: 2` | 重复样本、坏行、90 天保留 |
 | 测算历史 | `history.jsonl` | 字段与版本规范化，其他内容原样保留 | 历史链断裂、重复批次 |
 | 状态 | `state.json` | 顶层 version、cache、estimates、calibrations 字段规范化 | 锚点丢失、重复调度 |
-| peer 摘要 | 远端 `<device>.json` 与 remote-cache | codec 双读 v1/v2，兼容期双字段输出 | 新旧设备无法互读 |
+| peer 摘要 | 对端 `<device>.json` 与 remote-cache | codec 双读 v1/v2，兼容期双字段输出 | 新旧设备无法互读 |
 | API 请求 | query/body 中的 provider | 新参数 tool，旧参数适配 | 旧客户端兼容、参数冲突 |
 | 浏览器偏好 | 以额度 provider 构造的展开键 | 读取时映射到 tool，保留旧值 | 用户展开状态丢失 |
 | 用量日桶与设置 | days、config.json 等 | 本次不改 | 不得被额度迁移触碰 |

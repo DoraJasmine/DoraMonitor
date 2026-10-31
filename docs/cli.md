@@ -1,7 +1,7 @@
 # CLI 与守护进程
 
-除 Web 仪表盘外，DoraMonitor 还提供一组 CLI 子命令，用于在终端里看状态、跑
-常驻守护进程、给 tmux/状态栏输出单行用量摘要。统一入口是
+除 Web 仪表盘外，DoraMonitor 还提供一组 CLI 子命令，用于在终端中查看状态、运行
+常驻守护进程，并向 tmux/状态栏输出单行用量摘要。统一入口是
 `src/doramonitor.js`（npm 全局安装后即 `doramonitor` 命令）。
 
 ## 1. 子命令总览
@@ -99,8 +99,8 @@ node src/cli.js daemon [--interval 30] [--tool all] [--style tmux] [--status-fil
 
 ### stop
 
-- 无 pid 文件 / pid 已死 → 提示并清理，退出码 0；
-- 活着 → SIGTERM，删除 pid 文件。
+- 无 pid 文件 / pid 已失效 → 提示并清理，退出码 0；
+- 进程存活 → SIGTERM，删除 pid 文件。
 
 ## 4. tmux 集成示例
 
@@ -112,7 +112,7 @@ set -g status-right '#(~/.doramonitor/status.cache 读不动时可直接 cat；�
 set -g status-right '#(cat ~/.doramonitor/status.cache)'
 ```
 
-要点：**不要在 tmux 里直接跑 `doramonitor status`**（每次渲染都是一次全量
+要点：**不要在 tmux 中直接运行 `doramonitor status`**（每次渲染都是一次全量
 扫描的成本）；让 daemon 维护缓存文件，状态栏只 cat。tmux 样式（`--style tmux`）
 的颜色转义序列已按上述杠杆阈值生成，缓存文件内容即最终显示行。
 

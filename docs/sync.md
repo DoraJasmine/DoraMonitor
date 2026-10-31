@@ -125,7 +125,7 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 | `doramonitor sync` 子命令 | 手动一次性同步（未启用配置时提示并退出码 1） |
 | **仪表盘普通请求** | **永不联网**——只读 `remote-cache/` 磁盘缓存（`peerRecordsCached()`），标注 `fromCache: true` |
 
-在线拉取失败时：`runSync` 返回 `fromCache: true` 并用磁盘缓存兜底；页脚与设备
+在线拉取失败时：`runSync` 返回 `fromCache: true` 并回退使用磁盘缓存；页脚与设备
 页签会体现缓存状态。
 
 ## 7. 界面呈现
@@ -143,7 +143,7 @@ Windows 免密配置（`scripts/install-windows.ps1` 自动做）：生成
 - 同步内容 = 每日 Token 汇总 + 一分钟测算 Token 桶 + 模型名 + 设备名 + 额度百分比样本。
   无提示词、代码、会话正文、凭据或文件路径；工作区目录名随 v4 `wsNames` 同步
   （2026-11-01 所有者修订：仅用于自建通道的合并视图展示）。
-- SSH 走你的既有凭据体系（免密公钥）；WebDAV 密码存于本机 `config.json`
+- SSH 经由你既有的凭据体系（免密公钥）；WebDAV 密码存于本机 `config.json`
   （明文，受文件系统权限保护——与 kimi-code 自身存储凭据的方式同级）。
 - Local 后端生成文件名时清洗 `deviceName`（非法字符 → `_`），并以 `deviceId` 防止同名安装互相覆盖。
 

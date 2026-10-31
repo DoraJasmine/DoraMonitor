@@ -95,7 +95,7 @@ CREATE TABLE usage_daily_legacy (
 
 1. **增量更新**:扫描时文件 stamp(mtime+size)变化 → `DELETE WHERE file_id = ?` 后重新折叠该文件,与现有桶的失效语义一致;未变化文件零成本跳过;
 2. **去重签名**:`files` 表增加 `signatures` 列(沿用桶的冷启动签名重建机制);
-3. **费用不落库**:行存只存 token 与 `price_id`/`cost_estimated`,费用查询时按当前价目计算——沿用桶层的正确设计,调价零失效;
+3. **费用不持久化**:行存只存 token 与 `price_id`/`cost_estimated`,费用查询时按当前价目计算——沿用桶层的正确设计,调价零失效;
 4. **旧历史保护**:`buckets/` 中的 cell 展开导入 `usage_daily_legacy`(已删除/归档源文件的历史只存在于桶里);聚合查询 UNION 两表;迁移期把 `buckets/` 目录改名保留,提供"从桶重新导入"命令,稳定期后删除;
 5. **写入性能**:逐文件事务批量 INSERT;记录写入量级(个人用量)远低于 SQLite 能力,无需额外优化。
 
@@ -158,7 +158,7 @@ CREATE TABLE usage_daily_legacy (
 ## 5. 测试与验收
 
 - 单测(`node --test`):
-  - workspaces.js 归一化:各工具样本 + kimi `wd_*` 映射 + unknown 兜底;
+  - workspaces.js 归一化:各工具样本 + kimi `wd_*` 映射 + unknown 时回退;
   - store.js:折叠等价性(同源文件 → 行 → SQL 聚合 ≡ 原 `aggregate()` 的 totals/daily/models,浮点容差);stamp 变更重折叠不产生重复行;
   - 旧桶导入:`usage_daily_legacy` 与原桶聚合一致;UNION 查询口径一致;
   - `/api/usage/query` 单日 hourly;records 分页与过滤;

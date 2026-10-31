@@ -9,8 +9,8 @@
 
 1. **文档基线与最新决策分叉**:PRD §5.2"不引入数据库"、Node 18+ 承诺,与已定的 SQLite 行存 + Node 22.5+ 路线冲突;
 2. **架构重构只做了一半**:refactor-plan 的 P4/P5 逻辑边界已抽出,但 server.js(约 730 行)/App.jsx(1296 行)物理单文件未拆,20 项验收清单全部未勾选;
-3. **数据能力落后于功能野心**:预聚合桶无法支撑工作区维度与全历史明细(usage-insights 已给出 SQLite 解法,未实施);价目硬编码带日历驱动的过期点(K2 系列 2026-12 下线);
-4. **工程与文档一致性欠账**:端点数三处对不上、旧路径残留、双写无删除期限、CI 矩阵未随 Node 决策收窄。
+3. **数据能力落后于功能规划**:预聚合桶无法支撑工作区维度与全历史明细(usage-insights 已给出 SQLite 解法,未实施);价目硬编码带日历驱动的过期点(K2 系列 2026-12 下线);
+4. **工程与文档一致性存在遗留问题**:端点数三处对不上、旧路径残留、双写无删除期限、CI 矩阵未随 Node 决策收窄。
 
 改进分五个里程碑(M0-M4),M1 存储层是最大杠杆——它同时解锁用量洞察 R1-R4、全历史明细、工作区维度三块能力,并消化 bucket 层退役。
 
@@ -80,7 +80,7 @@ R1 视觉升级 / R2 工作区维度 / R3 图表下钻当日明细 / R4 模型�
 
 ### F2 额度体系补全
 
-1. **FP-03 其他工具/账号额度扩展**(future-roadmap 唯一"待实施"项):Claude Code(Max/Pro 限额本地不可见,调研是否有可用数据源;不可用则明确停止,不做假 UI)、ZCode(维持"仅 Token"边界)、Codex 归档 rollout 的 wham/usage 轮询增强;每个集成走 QuotaIntegrationRegistry,带契约测试;
+1. **FP-03 其他工具/账号额度扩展**(future-roadmap 唯一"待实施"项):Claude Code(Max/Pro 限额本地不可见,调研是否有可用数据源;不可用则明确停止,不实现无数据支撑的 UI)、ZCode(维持"仅 Token"边界)、Codex 归档 rollout 的 wham/usage 轮询增强;每个集成经由 QuotaIntegrationRegistry 接入,带契约测试;
 2. **额外 Kimi 账号等效估算解禁**:前置是账号归属映射(FP-02 落点)——在 D1 行存中 `account` 列已预留,映射规则(会话→账号)确定后,放开 limitations §4.12 的禁用;
 3. **调度参数设置化**:1h 窗口/4% 触发/10% 上限/5min 采样从硬编码暴露到设置页(默认值不变),消除 quota §7.5;
 4. **额度页信息架构改版**:首页额度卡片只留官方窗口 + 最近一次等效估算摘要(等效人民币 + 95% 命中等效 Token);四档命中率对照、手动测算、历史记录全部收进 /quota 页——降低首页密度,也顺势删除长程兼容查询路径(A4)。
@@ -113,7 +113,7 @@ R1 视觉升级 / R2 工作区维度 / R3 图表下钻当日明细 / R4 模型�
 
 | # | 事项 | 说明 | 依据 |
 | --- | --- | --- | --- |
-| S1 | **可选访问令牌** | 现状零鉴权,`--host` 一改即裸奔。加 `DORAMONITOR_TOKEN`:设置后所有 `/api/*` 要求 `Authorization: Bearer`,部署到局域网时可用;默认不设置行为不变,文档给"公网暴露仍然不被支持"的红线 | privacy §3、limitations §1 |
+| S1 | **可选访问令牌** | 现状零鉴权,`--host` 一旦修改即无保护暴露。加 `DORAMONITOR_TOKEN`:设置后所有 `/api/*` 要求 `Authorization: Bearer`,部署到局域网时可用;默认不设置行为不变,文档给"公网暴露仍然不被支持"的红线 | privacy §3、limitations §1 |
 | S2 | macOS 安装器 | launchd plist 生成脚本,补齐三平台对齐(linux/windows 已有) | limitations §1 |
 | S3 | 后台运行日志 | daemon/web 后台启动时输出重定向到 `~/.doramonitor/logs/` + 简单轮转,替代"改前台定位"的现状 | deployment §6 |
 | S4 | WebDAV 加固 | PROPFIND 正则解析 XML 换为受控的 XML 提取(仍可无依赖,但处理转义/命名空间);Local 后端异常锁的主动清理 | sync.md §5 |
@@ -123,11 +123,11 @@ R1 视觉升级 / R2 工作区维度 / R3 图表下钻当日明细 / R4 模型�
 
 - O1:M0/B5 的文档清扫全部完成;
 - O2:api.md 补 `/api/usage/*` 三端点契约(improvement-plan P2 交付时强制同步,列为本方案的验收项);
-- O3:公开仓库前的最后一道审计:全量 Git 历史敏感信息扫描(gitleaks 类工具跑一遍)、`NOTICE`/`LICENSE` 复核(README 显示 npm 已发布,若仓库仍私密则此项在转公开前执行)。
+- O3:公开仓库前的最后一道审计:全量 Git 历史敏感信息扫描(用 gitleaks 类工具执行一遍)、`NOTICE`/`LICENSE` 复核(README 显示 npm 已发布,若仓库仍私密则此项在转公开前执行)。
 
 ## 9. 路线图与依赖
 
-> **M3.5 SQLite 扩展性加固(2026-10-31 已完成)**:① `PRAGMA user_version` 版本化迁移(MIGRATIONS 数组,追加式);② `src/record-schema.js` 记录契约(字段声明 + validateRecord 入库边界校验 + emptyRecord 单一实现);③ `pricing.cellCostCny` 单一费用计算(aggregate/store 去重);④ 存储端口成文(architecture.md §4.0:五方法唯一边界 + 四条纪律)。验证:272 项测试全绿,真实数据 13.6k 记录零校验误杀。
+> **M3.5 SQLite 扩展性加固(2026-10-31 已完成)**:① `PRAGMA user_version` 版本化迁移(MIGRATIONS 数组,追加式);② `src/record-schema.js` 记录契约(字段声明 + validateRecord 入库边界校验 + emptyRecord 单一实现);③ `pricing.cellCostCny` 单一费用计算(aggregate/store 去重);④ 存储端口成文(architecture.md §4.0:五方法唯一边界 + 四条纪律)。验证:272 项测试全绿,真实数据 13.6k 记录零校验误判。
 > 说明:曾评估"费用完全推迟到 DTO 组装"——因热力图需要逐日费用而放弃;③ 的"单一费用函数"达成同一目标(改价不动聚合)且无结构震荡。
 
 
@@ -159,14 +159,14 @@ flowchart LR
 | M5 | A2 + A4 退役 | 2 天 | server.js <100 行,兼容物删除,CHANGELOG 记录 |
 | M6 | Q1 + S1-S3 + O3 | 1-2 天 | CI 单矩阵 + lint 绿;token 可用;三平台安装器齐 |
 
-**建议节奏**:M0 → M1 → M2 → M3 为一条主线不间断执行(约 7-9 天);M4/M6 的独立项穿插在主线间歇;M5 收尾。D3 的 **K2 系列 2026-12 价目迁移是唯一的日历硬期限**,若主线拖过 12 月,先行为它开小灶。
+**建议节奏**:M0 → M1 → M2 → M3 为一条主线不间断执行(约 7-9 天);M4/M6 的独立项穿插在主线间歇;M5 收尾。D3 的 **K2 系列 2026-12 价目迁移是唯一的日历硬期限**,若主线进度拖过 12 月,应优先插入处理该项。
 
 ## 10. 风险与对策
 
 | 风险 | 对策 |
 | --- | --- |
-| M1 行存迁移丢历史 | `buckets/` 改名保留 + `usage_daily_legacy` 导入 + "从桶重新导入"命令;等价性测试守门 |
+| M1 行存迁移丢历史 | `buckets/` 改名保留 + `usage_daily_legacy` 导入 + "从桶重新导入"命令;等价性测试作为门禁 |
 | A2 拆分引入路由回归 | 三步各自提交;拆分前先补一组路由级冒烟测试(拆分本身也是测试加固) |
 | PRD 修订滞后导致方案失去"共同基线"地位 | M0 最先做,PRD v1.1 由本项目所有者(你)确认后合入 |
-| F2 的 Claude 额度调研无果 | 按 roadmap 原则"数据源不可用即明确停止",不做假 UI |
+| F2 的 Claude 额度调研无果 | 按 roadmap 原则"数据源不可用即明确停止",不实现无数据支撑的 UI |
 | 同步载荷新增维度破坏 peer 兼容 | 维持"workspace/account 不同步"边界(D1 明确),peer 协议本期不动 |

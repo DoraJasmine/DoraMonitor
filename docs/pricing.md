@@ -185,14 +185,14 @@ Codex rollout 的 `cache_write_input_tokens` 没有 30m/12h 类型，非零写�
 Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h_write_tokens`
 会分别保留并精确计价；只有旧记录缺少该分类时，才对未分类部分按两档简单平均。
 
-### 3.9 兜底价（`FALLBACK_PRICE`）
+### 3.9 回退价（`FALLBACK_PRICE`）
 
 ```js
 { id: "kimi-k2.6", cacheHit: 1.1, input: 6.5, output: 27.0, currency: "CNY", estimated: true }
 ```
 
-无法识别的模型按 K2.6 标价估算，界面显示「估算」徽标。**兜底只影响显示的估算
-费用**——QoderCN CLI 等 credits-only 工具完全不走费用路径。
+无法识别的模型按 K2.6 标价估算，界面显示「估算」徽标。**回退价只影响显示的估算
+费用**——QoderCN CLI 等 credits-only 工具完全不进入费用路径。
 
 ## 4. 自定义价格（settings.customPrices）
 
@@ -205,7 +205,7 @@ Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h
 - **匹配规则**：model 字段大小写不敏感，**先精确后子串，最长 pattern 优先**
   （如 `glm-5.3-flash` 会赢过 `glm-5.3`）。
 - **留空的分项沿用官方价**：例如只想改 DeepSeek 的输入价，cacheHit/output 留空
-  即可继续享受其峰谷分时价，而不是错误地继承 Kimi 兜底价（有专门测试守护）。
+  即可继续享受其峰谷分时价，而不是错误地继承 Kimi 回退价（有专门测试守护）。
 - 三个价格全为空的条目保存时被丢弃。
 - 保存后服务端会 `invalidate()` + 强制重扫，费用立即重算。
 
@@ -227,7 +227,7 @@ Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h
    官方行并在注释中写明依据与日期；不要发明价格。
 5. 在 `test/pricing.test.js` 加对应断言（精确价 + `estimated` 标记 +
    `listPrices` 完整性）。
-6. 跑 `npm test`，然后**重启服务**（Node 启动时加载价格表到内存，改代码不重启
+6. 执行 `npm test`，然后**重启服务**（Node 启动时加载价格表到内存，改代码不重启
    不生效）并刷新页面。
 
 历史依据举例（写在代码注释里）：K3.1 Pro 定价核实于 2026-10-24 Kimi 开放平台
