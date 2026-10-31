@@ -959,7 +959,8 @@ function createServer(cliHome, bindHost = DEFAULT_HOST) {
           rel.startsWith("/sessions/") ||
           rel === "/models" ||
           rel.startsWith("/models/") ||
-          rel === "/prices")
+          rel === "/prices" ||
+          rel === "/sync")
       ) {
         rel = "/index.html";
       }

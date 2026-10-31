@@ -45,6 +45,13 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
   const base = `http://127.0.0.1:${port}`;
   const health = await fetch(`${base}/api/health`);
   assert.equal(health.status, 200);
+  const syncPage = await fetch(`${base}/sync`);
+  assert.equal(syncPage.status, 200);
+  const syncStatus = await fetch(`${base}/api/sync`);
+  assert.equal(syncStatus.status, 200);
+  const syncBody = await syncStatus.json();
+  assert.equal(typeof syncBody.configured, "boolean");
+  assert.equal(Object.hasOwn(syncBody, "ssh"), false);
   const rejected = await fetch(`${base}/api/sync`, { method: "POST", headers: { Origin: "https://evil.example" } });
   assert.equal(rejected.status, 403);
   assert.equal((await rejected.json()).error, "forbidden_origin");
