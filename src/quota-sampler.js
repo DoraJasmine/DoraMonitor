@@ -4,7 +4,6 @@ const { collect } = require("./collect");
 const { getTool } = require("./tools");
 const { getCodexQuota } = require("./codex-quota");
 const { fetchQuota } = require("./quota");
-const { fetchZcodeQuota } = require("./zcode-quota");
 const { getQuotaIntegration, toolForQuotaProvider } = require("./quota-tool");
 const { listKimiQuotaAccounts } = require("./quota-accounts");
 const { loadSettings } = require("./settings");
@@ -156,7 +155,6 @@ function startQuotaSampler(cliHome, { intervalMs = 60_000, root } = {}) {
           // One account failure must not block sampling for the others.
         }
       }
-      persistQuota(await fetchZcodeQuota(), "zcode", "zcode-api", root);
       // Scheduled estimation: usage-duration and usage-amount triggers (OR).
       try {
         maybeRunScheduledEstimation(root, { calculate: (target) => runScheduledCalculation(target, root) });

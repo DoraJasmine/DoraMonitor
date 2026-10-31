@@ -12,7 +12,7 @@ test("quota tool mapping is explicit in both directions", () => {
   assert.equal(quotaProviderForTool("codex"), "openai");
   assert.equal(toolForQuotaProvider("kimi"), "kimi-code");
   assert.equal(toolForQuotaProvider("openai"), "codex");
-  assert.equal(quotaProviderForTool("zcode"), "zcode");
+  assert.equal(quotaProviderForTool("zcode"), null);
   assert.equal(quotaProviderForTool("unknown"), null);
 });
 

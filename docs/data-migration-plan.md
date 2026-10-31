@@ -138,14 +138,17 @@ flowchart TB
     C --> K[相同的 canonical key]
     K --> D{内容是否一致}
     D -->|是| ONE[保留一条]
-    D -->|否| ERR[报告冲突并停止替换]
+    D -->|否| CHECK{样本且重置时间相同?}
+    CHECK -->|是| HIGH[保留最高 usedPercent]
+    CHECK -->|否| ERR[报告冲突并停止替换]
 ```
 
 ### 4.3 冲突与重复
 
 - 完全相同的旧新记录：保留一条；
-- 同一 key、内容不同：不得靠文件顺序随机覆盖，写入冲突报告并中止对应文件替换；
-- samples 的重复时间戳排序规则仍由领域构建区间处理，迁移不改变其 usedPercent；
+- samples 的 key 相同且 `resetsAt` 相同：额度用量在该周期内应单调增加，保留最高的 `usedPercent`，不依赖文件顺序；
+- samples 的 key 相同但 `resetsAt` 不同：可能是跨周期身份冲突，必须中止，不得静默选择；
+- history 的 key 相同但内容不同：写入冲突报告并中止对应文件替换；
 - history 不去重“看起来相似”的不同批次，只使用 canonical key + createdAt + signature；
 - 去重前后数量必须写入迁移报告。
 
@@ -370,7 +373,9 @@ flowchart TB
 | 纯 v1 samples/history/state | 全部迁移为 v2，值与键不变 |
 | 纯 v2 | 返回 already_migrated，摘要不变化 |
 | v1/v2 混合且完全重复 | 只保留一条 |
-| 同 key 不同内容 | 冲突并中止，原文件不变 |
+| 样本同 key、同重置周期、百分比不同 | 保留最高 usedPercent |
+| 样本同 key、重置周期不同 | 冲突并中止，原文件不变 |
+| history 同 key 不同内容 | 冲突并中止，原文件不变 |
 | provider/quotaProvider 同值 | 接受并规范化 |
 | 两字段冲突 | 拒绝该记录并中止对应文件 |
 | 空文件、缺失文件 | 正常处理，不创建虚假历史 |

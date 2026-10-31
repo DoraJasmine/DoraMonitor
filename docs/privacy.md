@@ -58,10 +58,7 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
   2. `codex-quota.js` → `https://chatgpt.com/backend-api/wham/usage` 与 OpenAI
      OAuth 刷新端点（Codex 额度；使用本机 Codex 登录态，60 秒节流）；
   3. `catalog.js` → models.dev 在线目录镜像（模型目录导入功能；失败三级回退
-     到缓存/内置快照）；
-  4. `zcode-quota.js` → `https://api.z.ai/api/monitor/usage/quota/limit` 或
-     `https://open.bigmodel.cn/api/monitor/usage/quota/limit`（仅在用户显式配置
-     `Z_AI_API_KEY` / `BIGMODEL_API_KEY` 后读取 GLM Coding Plan 额度；不读取 ZCode 私有 OAuth）。
+     到缓存/内置快照）。
 - 多设备同步是**你显式配置后**才有的出站行为。除日粒度 token 汇总外，额度测算还会
   同步一分钟粒度的时间、工具、模型和 Token 元数据，以及额度百分比样本；不含提示词、
   回复、项目名、会话正文或凭证（见[同步文档 → 安全说明](./sync.md)）。

@@ -45,7 +45,6 @@ const CALIBRATION_ERROR_KEY = {
 const TOOL_I18N = {
   "kimi-code": { title: "quotaTitle", hint: "quotaHint" },
   codex: { title: "codexQuotaTitle", hint: "codexQuotaHint" },
-  zcode: { title: "zcodeQuotaTitle", hint: "zcodeQuotaHint" },
 };
 
 function formatDate(value, locale) {

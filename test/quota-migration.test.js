@@ -149,3 +149,25 @@ test("peer codec isolates conflicting samples without dropping valid accounts", 
   const legacy = { version: 1, days: {} };
   assert.equal(normalizePeerSummary(legacy), legacy);
 });
+
+test("migration keeps the highest usage from repeated snapshots in the same reset window", () => {
+  const root = tmpRoot();
+  const { sample } = writeV1(root);
+  fs.appendFileSync(path.join(root, "samples.jsonl"), JSON.stringify({ ...sample, usedPercent: 11.5 }) + "\n");
+  fs.appendFileSync(path.join(root, "samples.jsonl"), JSON.stringify({ ...sample, usedPercent: 13.5 }) + "\n");
+  const result = migrateQuotaStorage(root);
+  assert.equal(result.status, "migrated");
+  const rows = readSamples(root);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].usedPercent, 13.5);
+  assert.ok(fs.existsSync(path.join(result.backup, "samples.jsonl")));
+});
+
+test("migration still rejects duplicate snapshots from different reset windows", () => {
+  const root = tmpRoot();
+  const { sample } = writeV1(root);
+  fs.appendFileSync(path.join(root, "samples.jsonl"), JSON.stringify({ ...sample, resetsAt: "reset-b", usedPercent: 13.5 }) + "\n");
+  const original = fs.readFileSync(path.join(root, "samples.jsonl"), "utf8");
+  assert.throws(() => migrateQuotaStorage(root), (error) => error.code === "migration_conflict");
+  assert.equal(fs.readFileSync(path.join(root, "samples.jsonl"), "utf8"), original);
+});

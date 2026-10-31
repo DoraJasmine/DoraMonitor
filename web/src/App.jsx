@@ -780,13 +780,6 @@ export default function App() {
         </div>
       ) : null}
 
-      {(tool === "all" || tool === "zcode") &&
-      availableTools.some((x) => x.id === "zcode") ? (
-        <div className="mb-5">
-          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="zcode" />
-        </div>
-      ) : null}
-
       {/* Heatmap */}
       <div className="mb-5">
         <Card>

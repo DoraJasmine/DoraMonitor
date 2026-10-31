@@ -3,7 +3,7 @@
 > 状态：v1.0 设计草案，依据 [项目需求文档](./product-requirements.md)。
 > 数据字段、迁移与回滚详见 [数据兼容迁移方案](./data-migration-plan.md)。
 > 本文描述目标边界和分阶段路径，不表示目录已经调整，也不要求一次性完成所有移动。
-> 实施进度：P1–P5 核心重构、多 Kimi 官方额度、ZCode 客户端、设备身份保护与本地目录传输已落地；旧 API 兼容层保留。额外账号用量归属映射见未来计划。
+> 实施进度：P1–P5 核心重构、多 Kimi 官方额度、设备身份保护与本地目录传输已落地；旧 API 兼容层保留。额外账号用量归属映射见未来计划。
 
 ## 1. 设计目标与核心决策
 
@@ -423,23 +423,11 @@ flowchart TB
 
 只需新增采集器、注册工具、增加模型身份和测试；用量页面继续按 tool 工作，不进入额度集成注册表。
 
-### 11.2 为 ZCode 增加额度
-
-ZCode 已有用量采集器，因此新增额度不需要改动用量主架构：
-
-1. 新增 `ZCodeQuotaIntegration`，声明 `tool: "zcode"`、`quotaProvider: "zcode"` 和 capabilities；
-2. 实现账号发现、官方/本地额度快照读取与 normalizeSnapshot；
-3. 按真实产品能力声明窗口；若不是 5h/7d，不复用 session/weekly 伪装；
-4. 若要等效容量估算，再增加 ZCode 模型归属、usageScope 与区间规则；若只支持官方额度，则不启用估算；
-5. 注册集成并添加契约测试，前端通过已有 `tool=zcode&accountKey=...` 自动获得账号、窗口和历史能力。
-
-HTTP DTO、Kimi/Codex 集成、定价模块和其他工具页面不应需要修改。
-
-### 11.3 新增工具共享 Kimi 额度
+### 11.2 新增工具共享 Kimi 额度
 
 增加工具额度客户端与 `QuotaIntegrationRegistry` 注册项，并定义 usageScope；估算器、历史格式和其他页面不需要复制分类分支。两个工具可以映射到同一 quotaProvider，但账号和客户端范围必须明确。
 
-### 11.4 同时监控两个 Kimi 账号
+### 11.3 同时监控两个 Kimi 账号
 
 1. 本地配置两个账号 profile，分别生成稳定 accountKey，如保留 `kimi:default` 并新增 `kimi:work`；
 2. Kimi integration 的 listAccounts 返回两个 QuotaAccount，sourceRef 仅在本机指向各自 home/登录态；

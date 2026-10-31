@@ -76,10 +76,17 @@ function transformJsonl(text, keyFor, file) {
     }
     const normalized = normalizeQuotaRecord(parsed, { strict: true });
     const key = keyFor(normalized);
-    if (rows.has(key) && JSON.stringify(rows.get(key)) !== JSON.stringify(normalized)) {
-      migrationError("migration_conflict", `${file}:${index + 1} conflicts with an existing canonical key`);
+    if (!rows.has(key)) {
+      rows.set(key, normalized);
+      continue;
     }
-    rows.set(key, normalized);
+    const previous = rows.get(key);
+    if (JSON.stringify(previous) === JSON.stringify(normalized)) continue;
+    if (file === "samples.jsonl" && (previous.resetsAt || null) === (normalized.resetsAt || null)) {
+      rows.set(key, Number(normalized.usedPercent) > Number(previous.usedPercent) ? normalized : previous);
+      continue;
+    }
+    migrationError("migration_conflict", `${file}:${index + 1} conflicts with an existing canonical key`);
   }
   const records = [...rows.values()];
   return { records, warnings };

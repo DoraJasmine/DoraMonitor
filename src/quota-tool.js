@@ -21,7 +21,6 @@ function createQuotaIntegrationRegistry(initial = []) {
 const defaultRegistry = createQuotaIntegrationRegistry([
   { tool: "kimi-code", quotaProvider: "kimi", capabilities: { windows: ["session", "weekly"], estimation: true } },
   { tool: "codex", quotaProvider: "openai", capabilities: { windows: ["session", "weekly"], estimation: true } },
-  { tool: "zcode", quotaProvider: "zcode", capabilities: { windows: ["session", "weekly"], estimation: false } },
 ]);
 
 function getQuotaIntegration(tool) {

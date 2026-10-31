@@ -9,7 +9,6 @@ const { startCalibration, finishCalibration, cancelCalibration, listCalibrations
 const { loadSettings } = require("./settings");
 const { syncEnabled, loadCachedPeers, newestCodexQuota, quotaUsageRecords } = require("./sync");
 const { quotaProviderForTool, resolveQuotaAccount, getQuotaIntegration } = require("./quota-tool");
-const { fetchZcodeQuota } = require("./zcode-quota");
 const { listToolQuotaAccounts, resolveKimiQuotaAccount } = require("./quota-accounts");
 
 function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool, root) {
@@ -23,11 +22,6 @@ function withCalibrations(capacity, quotaProvider, accountKey, usageScope, tool,
 
 async function loadToolQuota(tool, cliHome, force = false, requestedAccountKey) {
   const quotaProvider = quotaProviderForTool(tool);
-  if (tool === "zcode") {
-    const quota = await fetchZcodeQuota({ force });
-    persistQuota(quota, quotaProvider, "zcode-api");
-    return { quota, accountKey: quota.accountKey, collected: null, peers: [] };
-  }
   if (quotaProvider === "openai") {
     const { getCodexQuota } = require("./codex-quota");
     const collected = collect({ force });
