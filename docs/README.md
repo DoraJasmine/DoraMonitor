@@ -10,6 +10,9 @@
 | [架构重构方案](./architecture-refactor-plan.md) | 领域边界、分层依赖、DTO、调用链与实施阶段 | 评审和实施架构重构的人 |
 | [数据迁移方案](./data-migration-plan.md) | v1/v2 schema、键稳定、备份、锁、peer 兼容与回滚 | 评审和实施数据迁移的人 |
 | [未来功能计划](./future-roadmap.md) | 多 Kimi 账号、其他额度集成与同步增强 | 了解后续需求与优先级的人 |
+| [用量洞察需求](./usage-insights-requirements.md) | 工作区维度、图表下钻明细与模型明细的需求定义 | 评审用量看板增强的人 |
+| [用量洞察实施方案](./usage-insights-improvement-plan.md) | SQLite 行存存储演进与 R1-R4 前端实施计划 | 实施用量看板增强的人 |
+| [综合改进方案](./comprehensive-improvement-plan.md) | 全项目改进总纲：基线、架构、数据、功能、工程、隐私与路线图 | 项目所有者与维护者 |
 | [功能与计算方式](./features.md) | 各页面、设置、CLI 与实现链路总览 | 想快速了解全部功能的人 |
 | [当前架构总览](./architecture.md) | 采集、聚合、计价、展示、缓存与模块边界 | 想理解项目如何运转的人 |
 | [用量统计与数据源](./tools.md) | 9 个工具采集器的数据目录、Token 口径与去重规则 | 关心数字准确性的用户与开发者 |

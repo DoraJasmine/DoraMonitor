@@ -167,7 +167,7 @@
 - 凭据失效：`reason: "token_expired" | "no_credentials" | "http_<status>"`。
 
 `capacity` 包含 `tool`、`accountKey`、`usageScope`、`generatedAt`、`targets`、`longTermTargets`、
-`maxima` 和 `calibrations`；`provider` 暂时保留为旧客户端兼容字段，新前端不得依赖。`targets` 固定覆盖
+`maxima` 和 `calibrations`；`provider` 为旧客户端兼容字段，新前端不得依赖。**删除计划：随 v2.0（配合本地存储大版本重构）逐步移除**，顺序为：① peer 摘要停止发送双字段 → ② 端点下线旧 `provider` 请求参数 → ③ 删除响应中的 `provider` 字段；每步独立发布（见 [综合改进方案](./comprehensive-improvement-plan.md) A4）。`targets` 固定覆盖
 `session` / `weekly` 与缓存命中率 `0.85 / 0.90 / 0.95 / 0.98` 的组合；每项包含 `fullWindowTokens`、
 `fullWindowCostCny`、`confidence`、`confidenceScore`、`confidenceReasons`、`method`、`sampleCount`、
 `outlierCount`、`dataRange`、`modelMix` 和 `observations`。
@@ -297,7 +297,7 @@ write_failed / catalog_missing`→500；其他 `invalid_*`→400。成功一律 
 ## 22. GET /api/catalog
 
 参数：`refresh=1` 强制拉取。三级回退：models.dev 在线镜像 → 磁盘缓存
-（`~/.kimicode-dashboard/catalog-cache.json`，兼容 `fetched_at` 蛇形命名）→
+（`~/.kimicode-dashboard/catalog-cache.json`，沿用上游项目历史路径，兼容 `fetched_at` 蛇形命名）→
 内置快照（`src/data/builtin-catalog.json`，193 provider / 7243 模型）。
 
 → `{ "source": "remote|cached|builtin", "fetchedAt": 0,

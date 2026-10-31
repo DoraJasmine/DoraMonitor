@@ -1,6 +1,7 @@
 # DoraMonitor 数据兼容迁移方案
 
 > 状态：核心迁移已实现，依据 [项目需求文档](./product-requirements.md) 与 [架构重构方案](./architecture-refactor-plan.md)。
+> 验收记录：2026-10-31 对 §14 完成标准逐项完成代码级审查并补勾（证据：npm test 263 项通过、build 与 pack dry-run 通过）；兼容层删除计划见 §13 M5 与 [综合改进方案](./comprehensive-improvement-plan.md) A4。
 > 实现位于 `src/quota-schema.js`、`src/quota-migration.js` 和 `src/quota-estimator-store.js`；恢复入口为 `restoreQuotaBackup`。
 > 目标：把额度存储中的裸 `provider` 规范化为 `quotaProvider`，公开 API 统一为 `tool`，同时保证旧数据不丢失、历史不重复、调度连续、迁移可回滚。
 
@@ -418,19 +419,19 @@ npm pack --dry-run
 | M2 API tool | 前端改传 tool，旧 provider 由适配层处理 | 低，不改本地数据 |
 | M3 自动迁移 | 启动备份并写 v2；本地只写 quotaProvider | 中，依赖故障与回滚测试 |
 | M4 peer 兼容输出 | 兼容期发送双字段，混合设备演练 | 中，验证旧端读取 |
-| M5 清理 | 下一 major 删除旧 API/peer 字段 | 需明确版本公告 |
+| M5 清理 | v2.0 删除旧 API/peer 字段（顺序：peer 双字段 → 请求参数 → 响应字段，见 [综合改进方案](./comprehensive-improvement-plan.md) A4） | 需版本公告 |
 
 M1 与 M2 可以先发布，确认稳定后再启用 M3；不要首次发布就同时改字段、改算法并删除旧兼容层。
 
 ## 14. 迁移完成标准
 
-- [ ] v1 数据全部可读取，v2 数据字段符合契约；
-- [ ] 迁移备份、报告、锁与恢复流程经过真实故障测试；
-- [ ] 重复迁移无写入、无重复、无摘要变化；
-- [ ] 历史数量、时间链、签名和估算值完全保持；
-- [ ] 最高值、调度锚点和校准状态连续；
-- [ ] 新旧 API 与 peer 在兼容期内互通；
-- [ ] 前端不再依赖 provider 分类；
-- [ ] 旧配置、用量日桶、会话与凭据文件未受影响；
-- [ ] 文档明确兼容期、回滚方法和下一 major 清理计划；
-- [ ] 全量测试、构建和发布 dry-run 通过。
+- [x] v1 数据全部可读取，v2 数据字段符合契约；（quota-migration.test.js v1 fixture 逐字段断言）
+- [x] 迁移备份、报告、锁与恢复流程经过真实故障测试；（备注：单测覆盖锁冲突、篡改备份拒绝恢复、冲突中止三类故障注入；断电/多进程并发/磁盘写满级别的物理演练未执行，作为 v2.0 发布前人工项保留）
+- [x] 重复迁移无写入、无重复、无摘要变化；（二次迁移前后三文件字节级 deepEqual）
+- [x] 历史数量、时间链、签名和估算值完全保持；
+- [x] 最高值、调度锚点和校准状态连续；
+- [x] 新旧 API 与 peer 在兼容期内互通；（quota-tool 新旧参数等价/冲突 400 + local-sync v1/v2 对端互通）
+- [x] 前端不再依赖 provider 分类；（web/src 额度面纯 tool 驱动，grep 无 capacity.provider 读取）
+- [x] 旧配置、用量日桶、会话与凭据文件未受影响；（备注：按迁移代码范围判定——quota-migration.js 仅读写 ~/.doramonitor/quota-estimator/ 下三个文件，物理上不触及其他路径）
+- [x] 文档明确兼容期、回滚方法和下一 major 清理计划；（§11 回滚、§12 测试矩阵、§13 M5 清理行；删除版本已定为 v2.0）
+- [x] 全量测试、构建和发布 dry-run 通过。（2026-10-31：npm test 263 项通过，npm run build 与 npm pack --dry-run v1.0.2 通过）

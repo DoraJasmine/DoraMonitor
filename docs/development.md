@@ -19,7 +19,7 @@ npm run build
 npm pack --dry-run
 ```
 
-`prepack` 自动执行测试和构建。GitHub Actions 在 Ubuntu/Windows、Node 18/22 矩阵上执行相同检查。测试使用 Node 内置 runner 和系统临时目录，不依赖本机真实会话。
+`prepack` 自动执行测试和构建。GitHub Actions 在 Ubuntu/Windows、Node 22/24 矩阵上执行相同检查。测试使用 Node 内置 runner 和系统临时目录，不依赖本机真实会话。
 
 ## 3. 术语与目录
 

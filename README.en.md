@@ -1,7 +1,7 @@
 # DoraMonitor
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node.js 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#requirements)
 
 **English** · [简体中文](./README.md)
@@ -28,8 +28,8 @@ Missing tools are reported as unavailable without preventing other tools from lo
 
 ## Requirements
 
-- Node.js **18 or newer**. Node.js **22.15+** is recommended for built-in SQLite and zstd support (`node:sqlite` needs 22.5+).
-- On older Node versions, ZCode/QoderCN SQLite readers require the `sqlite3` CLI in `PATH`; compressed transcripts use the bundled pure-JS `fzstd` fallback.
+- Node.js **22.13 or newer** (`node:sqlite` is flag-free from 22.13/23.4); Node.js **24.x** recommended; native zstd on 22.5+.
+- Older Node versions are unsupported; compressed transcripts use the bundled pure-JS `fzstd` fallback.
 - No database server, Rust toolchain, or administrator account is required.
 
 ## Install and run
@@ -130,7 +130,7 @@ npm run build
 npm pack --dry-run
 ```
 
-CI runs the same checks on Ubuntu and Windows with Node 18 and 22. See [the development guide](./docs/development.md) for tool-adapter conventions.
+CI runs the same checks on Ubuntu and Windows with Node 22 and 24. See [the development guide](./docs/development.md) for tool-adapter conventions.
 
 ## License and attribution
 

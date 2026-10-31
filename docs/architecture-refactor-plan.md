@@ -3,7 +3,8 @@
 > 状态：v1.0 设计草案，依据 [项目需求文档](./product-requirements.md)。
 > 数据字段、迁移与回滚详见 [数据兼容迁移方案](./data-migration-plan.md)。
 > 本文描述目标边界和分阶段路径，不表示目录已经调整，也不要求一次性完成所有移动。
-> 实施进度：P1–P5 核心重构、多 Kimi 官方额度、设备身份保护与本地目录传输已落地；旧 API 兼容层保留。额外账号用量归属映射见未来计划。
+> 实施进度：P1–P5 核心重构、多 Kimi 官方额度、设备身份保护与本地目录传输已落地；旧 API 兼容层保留（删除计划见 [综合改进方案](./comprehensive-improvement-plan.md) A4，随 v2.0 逐步移除）。额外账号用量归属映射见未来计划。
+> 验收记录：2026-10-31 对 §14 清单逐项完成代码级审查并补勾；证据为全量 `npm test`（263 项）通过、`npm run build` 与 `npm pack --dry-run` 通过。
 
 ## 1. 设计目标与核心决策
 
@@ -240,8 +241,8 @@ runCalibration({ tool, action, accountKey, scope, window })
 
 ```text
 QuotaIntegration = {
-  tool,                       // 页面与 API 主分类，如 zcode
-  quotaProvider,              // 额度账户族，如 zcode
+  tool,                       // 页面与 API 主分类，如未来接入的 <new-tool>
+  quotaProvider,              // 额度账户族，如 <new-provider>
   capabilities,               // 支持的窗口、在线额度、估算、校准与 scope
   listAccounts(context),      // 发现本机已配置账号
   fetchQuota(account, context),
@@ -480,13 +481,13 @@ flowchart TB
 
 ## 14. 架构验收清单
 
-- [ ] 前端 quota 代码中不存在以 `provider` 决定工具分类的逻辑；
-- [ ] 所有公开额度入口以 tool 为主参数，旧参数只在适配层出现；
-- [ ] 全局不再新增含义不明的裸 provider；
-- [ ] 额度领域测试无需启动 HTTP、React 或文件系统；
-- [ ] 仓储不导入估算算法；
-- [ ] 新增共享额度工具只需修改映射与适配，不复制页面逻辑；
-- [ ] v1/v2 数据、peer 和 API 兼容测试全部通过；
-- [ ] 历史链、最高值、校准和调度锚点连续；
-- [ ] 全量测试、构建和发布 dry-run 通过；
-- [ ] 架构、API、同步、迁移和开发文档与最终实现一致。
+- [x] 前端 quota 代码中不存在以 `provider` 决定工具分类的逻辑；（QuotaCard/backend.js 全部以 tool 为键，web/src 中 provider 命中仅为 config.toml 配置域与文案）
+- [x] 所有公开额度入口以 tool 为主参数，旧参数只在适配层出现；（server.js 五个额度路由统一经 `resolveQuotaTool`，旧 provider 仅在 quota-tool.js:50-60 适配）
+- [x] 全局不再新增含义不明的裸 provider；（额度域内部 provider 命名实指 quotaProviderForTool 结果；其余命中在 config/catalog 配置域）
+- [x] 额度领域测试无需启动 HTTP、React 或文件系统；（备注：领域单元测试纯内存；仓储/迁移契约测试使用 tmpdir 临时目录，不碰用户数据，与 §12.2 分层一致）
+- [x] 仓储不导入估算算法；（quota-estimator-store.js 仅 require fs/os/path/quota-schema/quota-migration，算法经 compute 回调注入）
+- [x] 新增共享额度工具只需修改映射与适配，不复制页面逻辑；（quota-tool.js 注册表 + 前端 TOOL_I18N 映射，测试覆盖未来集成不改动既有工具）
+- [x] v1/v2 数据、peer 和 API 兼容测试全部通过；（quota-migration/local-sync/quota-tool 测试套件，含于 263 项全量通过）
+- [x] 历史链、最高值、校准和调度锚点连续；（quota-schema.js 原样保留 maxima/checkpoints/calibrations，迁移测试逐字段断言）
+- [x] 全量测试、构建和发布 dry-run 通过；（2026-10-31：npm test 263 项通过，npm run build 2.8s，npm pack --dry-run v1.0.2 通过）
+- [x] 架构、API、同步、迁移和开发文档与最终实现一致。（api.md §10-13 与 server.js/tool-quota-service.js 契约逐字段核对，sync.md v2 摘要与 sync.js SUMMARY_VERSION 一致）

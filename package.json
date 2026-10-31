@@ -52,7 +52,7 @@
   "author": "DoraJasmine",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   },
   "dependencies": {
     "fzstd": "^0.1.1",

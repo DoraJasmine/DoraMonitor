@@ -37,7 +37,7 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
     "enabled": false,
     "backend": "ssh",           // "ssh" | "webdav" | "local"
     "deviceName": "",           // 空则取 hostname（≤64 字符）；不同安装必须唯一
-    "syncInterval": 300,        // 秒，daemon 同步周期，必须 ≥30
+    "syncInterval": 300,        // 秒，daemon 同步周期，低于 60 按 60 生效
     "local": {
       "path": ""                // local 后端的共享绝对路径（≤500），见 docs/sync.md
     },

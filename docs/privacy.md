@@ -78,7 +78,7 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 | 设置（含 WebDAV 密码、SSH 配置） | `~/.doramonitor/config.json`（本机明文，文件系统权限保护，与 kimi-code 自身凭据同级） |
 | 对端设备摘要缓存 | `~/.doramonitor/remote-cache/` |
 | 额度样本、测算历史和最高值 | `~/.doramonitor/quota-estimator/` |
-| 目录缓存 | `~/.kimicode-dashboard/catalog-cache.json` |
+| 目录缓存 | `~/.kimicode-dashboard/catalog-cache.json`（沿用上游项目的历史路径，迁移计划见[综合改进方案](./comprehensive-improvement-plan.md) A4） |
 | daemon 状态 | `~/.doramonitor/{status.cache,daemon.pid,sync.state}` |
 
 DoraMonitor 自身**没有**遥测、上报、自动更新检查。

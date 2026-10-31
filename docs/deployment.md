@@ -2,9 +2,8 @@
 
 ## 1. 环境要求
 
-- Node.js **18+**，推荐 **22.15+**。
-- Node 22.5+ 使用内置 `node:sqlite`；Node 22.15+ 还可使用原生 zstd。旧版 Node 的 ZCode/QoderCN 读取器需要 `sqlite3` CLI。
-- zstd 优先使用 Node 原生能力，旧版自动回退到运行时依赖 `fzstd`。
+- Node.js **22.13+**（`node:sqlite` 自 22.13/23.4 起免实验 flag），推荐 **24.x**。
+- Node 22.5+ 可使用原生 zstd，旧版自动回退到运行时依赖 `fzstd`；不支持 Node 22.13 以下的版本。
 - 不需要数据库服务、Rust 工具链或管理员权限。
 
 ## 2. 启动方式
@@ -37,7 +36,7 @@
 powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
 ```
 
-- 优先使用 PATH 中 Node 18+；没有可用 Node 时，从 nodejs.org 下载便携 Node 22。
+- 优先使用 PATH 中 Node 22.13+；没有可用 Node 时，从 nodejs.org 下载便携 Node 22。
 - 从公共 npm registry 安装 `doramonitor`，不包含私人服务器、SSH 或同步默认值。
 - `-WithWeb` 注册隐藏登录任务；`-Start` 安装后立即后台启动。两个开关都可省略。
 
@@ -60,7 +59,7 @@ bash scripts/install-linux.sh --with-web --start
 ```
 
 - 默认安装到 `~/.local`，命令位于 `~/.local/bin/doramonitor`，无需 sudo。
-- 优先使用 PATH 中 Node 18+；没有可用 Node 时，为当前用户下载便携 Node 22，支持 x64 和 arm64。
+- 优先使用 PATH 中 Node 22.13+；没有可用 Node 时，为当前用户下载便携 Node 22，支持 x64 和 arm64。
 - `--with-web` 注册 `doramonitor-web.service` 与 `doramonitor-daemon.service` 两个 systemd 用户服务；
   `--start` 安装后立即启动。两个开关均可省略。
 - PATH 写入 `~/.profile`；安装后重开终端，或执行 `export PATH="$HOME/.local/bin:$PATH"`。
@@ -82,7 +81,7 @@ systemctl --user daemon-reload
 npm run deploy
 ```
 
-脚本检查 Node 18+，执行 `npm ci` 和前端构建，但不会自动启动或打开浏览器。常用选项：
+脚本检查 Node 22.13+，执行 `npm ci` 和前端构建，但不会自动启动或打开浏览器。常用选项：
 
 ```bash
 npm run deploy -- --skip-install       # 复用 node_modules，仅构建

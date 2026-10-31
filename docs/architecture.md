@@ -13,6 +13,8 @@
  │  QoderCN CLI      ~/.qoder-cn/projects/**/*.jsonl                     │
  │  Codex            ~/.codex/sessions/** + archived_sessions/** (.zst)  │
  │  Claude Code      ~/.claude/projects/**/*.jsonl                       │
+ │  Oh My Pi (omp)   ~/.omp/agent/sessions/** (兼容旧 ~/.pi/agent)        │
+ │  Gemini CLI       Gemini 设置与 OpenTelemetry 导出                     │
  │  dsh              ~/.dsh/sessions/**  (.jsonl.zstd 多帧)               │
  └──────────────────────────────┬────────────────────────────────────────┘
                                 │ tools/*.scan(home)  只读元数据
@@ -40,7 +42,9 @@
                     浏览器 / Tauri 桌面壳（同一套前端）
 
  旁路：cli.js status/daemon → 写 ~/.doramonitor/status.cache（tmux 状态栏）
-      quota.js → Kimi 在线 usages API（额度，唯一的外网只读调用）
+      外网只读调用共三类：quota.js → Kimi 在线 usages API（额度）、
+      codex-quota.js → Codex 额度快照、catalog.js → models.dev 目录（仅查询/导入，
+      失败回退本地缓存）。均只读且不发送任何用量数据（见 privacy.md §4）。
 ```
 
 ## 2. 技术栈与运行形态
@@ -67,7 +71,7 @@
 
 | 模块 | 行数级 | 职责 |
 | --- | --- | --- |
-| `server.js` | ~730 | HTTP 服务：26 个 `/api/*` 端点、静态托管、SPA 回退、gzip、安全防护 |
+| `server.js` | ~730 | HTTP 服务：全部 `/api/*` 端点（契约清单见 [api.md](./api.md)）、静态托管、SPA 回退、gzip、安全防护 |
 | `collect.js` | ~130 | 采集调度：15s TTL 增量缓存、文件戳探测、单 provider 故障隔离 |
 | `tools/index.js` | ~140 | 工具注册表、可用性探测、增量缓存用的源文件清单 |
 | `tools/base.js` | ~170 | 共享基础：记录形状、工具元数据、home 展开、SQLite 后端 |
@@ -117,7 +121,9 @@
   first-wins 与传播窗口保证增量结果与全量一致。回滚开关：
   `DORAMONITOR_DISABLE_BUCKETS=1`。
   原始记录仅保留近 30 天（`RECORD_WINDOW_DAYS`，次级上限 2 万条）供
-  "最近请求"表使用；7d/30d 聚合为日历日窗口（与滚动窗口的差异见方案文档）。
+  "最近请求"表使用；桶层的 7d/30d 聚合按**日历日窗口**计算（见
+  `calendarStartDay`），与 §4.2 聚合层的**滚动窗口**口径不同，前端范围切换
+  以聚合层为准。
   估算标记分两层：折算只记**时间性**估算（无时间戳 DeepSeek，桶 v2 起），
   表行级估算（无价格行的兜底）由查询时 `priceForCell` 现算——因此**价格表
   新增行后，新价格与"官方价"标记自动回溯全部历史，无需清桶**。

@@ -1,7 +1,7 @@
 # DoraMonitor
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Node.js 22.13+](https://img.shields.io/badge/node-%3E%3D22.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![平台](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#环境要求)
 
 [English](./README.en.md) · **简体中文**
@@ -28,8 +28,8 @@
 
 ## 环境要求
 
-- Node.js **18+**，推荐 **22.15+** 以获得内置 SQLite 和 zstd 支持（`node:sqlite` 需要 22.5+）。
-- 旧版 Node 读取 ZCode/QoderCN 时需要 `sqlite3` CLI；压缩会话使用包内 `fzstd` 回退。
+- Node.js **22.13+**（22.13/23.4 起 `node:sqlite` 免实验 flag），推荐 **24.x**；22.5+ 原生 zstd。
+- 旧版 Node 不受支持；压缩会话使用包内 `fzstd` 回退。
 - 不需要数据库服务、Rust 工具链或管理员权限。
 
 ## 安装与启动
@@ -132,7 +132,7 @@ npm run build
 npm pack --dry-run
 ```
 
-CI 在 Ubuntu、Windows 和 Node 18/22 组合上执行相同检查。新增工具采集器的约定见[开发指南](./docs/development.md)。
+CI 在 Ubuntu、Windows 和 Node 22/24 组合上执行相同检查。新增工具采集器的约定见[开发指南](./docs/development.md)。
 
 ## 许可证与来源
 
