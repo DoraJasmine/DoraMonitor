@@ -40,7 +40,17 @@ function tryRequireSqlite() {
   }
 }
 
-const SCHEMA = `
+/**
+ * Ordered schema migrations, guarded by PRAGMA user_version. Every future
+ * schema change (new columns, indexes, backfills) appends ONE entry here;
+ * open() applies pending migrations once, inside a transaction. Never edit
+ * an already-shipped migration — always append.
+ */
+const MIGRATIONS = [
+  {
+    version: 1,
+    name: "initial-schema",
+    sql: `
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -102,7 +112,40 @@ CREATE TABLE IF NOT EXISTS usage_daily_legacy (
   credits REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (day, tool, model, rate_key)
 );
-`;
+`,
+  },
+];
+
+/** Apply pending migrations (idempotent — CREATE IF NOT EXISTS keeps
+ *  pre-migration databases created before this mechanism existed). */
+function applyMigrations() {
+  const row = db.prepare("PRAGMA user_version").get();
+  let current = Number(row && row.user_version) || 0;
+  for (const migration of MIGRATIONS) {
+    if (migration.version <= current) continue;
+    try {
+      db.exec("BEGIN");
+      db.exec(migration.sql);
+      db.exec(`PRAGMA user_version = ${migration.version}`);
+      db.exec("COMMIT");
+      current = migration.version;
+    } catch (err) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    }
+  }
+}
+
+/** Current applied schema version (0 when the store is closed). */
+function schemaVersion() {
+  if (!db) return 0;
+  const row = db.prepare("PRAGMA user_version").get();
+  return Number(row && row.user_version) || 0;
+}
 
 function defaultDbPath() {
   return path.join(os.homedir(), ".doramonitor", "doramonitor.db");
@@ -122,10 +165,10 @@ function open(dbPathOverride) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     db = new DatabaseSync(p);
     db.exec("PRAGMA journal_mode = WAL");
-    db.exec(SCHEMA);
+    applyMigrations();
     dbPath = p;
     return true;
-  } catch {
+  } catch (err) {
     db = null;
     dbPath = null;
     return false;
@@ -766,6 +809,8 @@ module.exports = {
   open,
   close,
   isAvailable,
+  schemaVersion,
+  MIGRATIONS,
   ingestTool,
   bucketView,
   usageQuery,

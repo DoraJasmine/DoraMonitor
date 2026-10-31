@@ -189,3 +189,12 @@ test("store: workspaceOptions lists distinct keys", () => {
   assert.ok(keys.has("D:\\code\\demo"));
   assert.ok(keys.has("__unknown__"));
 });
+
+test("store: migrations apply to the latest version and are idempotent", () => {
+  assert.ok(store.open());
+  assert.strictEqual(store.schemaVersion(), store.MIGRATIONS.length);
+  // Reopen (same process) must not re-run or corrupt anything.
+  assert.ok(store.open());
+  assert.strictEqual(store.schemaVersion(), store.MIGRATIONS.length);
+  assert.strictEqual(store.stats().records > 0, true);
+});
