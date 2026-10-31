@@ -83,7 +83,9 @@
 | `tools/qoder-cn.js` | ~200 | QoderCN IDE：SQLite `chat_message`、token_info JSON |
 | `tools/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
 | `aggregate.js` | ~420 | 范围过滤、模型分组、每日趋势（top6+others）、热力图、工具聚合 |
-| `pricing.js` | ~790 | 八张价目表、匹配、峰谷/节假日、长上下文、自定义价、CNY 账本 |
+| `store.js` | ~560 | SQLite 行存端口（`node:sqlite`）：入库、bucketView 适配、usage 查询、逐请求分页、legacy 导入、版本化迁移 |
+| `workspaces.js` | ~150 | 工作区归一化：cwd / kimi `wd_*` → workDir / 未知兜底，别名展示 |
+| `pricing.js` | ~790 | 八张价目表、匹配、峰谷/节假日、长上下文、自定义价、CNY 账本、`cellCostCny` 单一费用计算 |
 | `model-map.js` | ~155 | Kimi 专属：config.toml 别名 + 环境变量模型 → 展示/计价身份 |
 | `model-identity.js` | ~175 | 通用模型身份：QoderCN 路由码/dsh 插件码 → 显示名 + 计价键 |
 | `sessions.js` | ~710 | 会话枚举、归档/恢复/删除、安全预览（重建 + 脱敏） |
@@ -99,6 +101,29 @@
 | `data/builtin-catalog.json` | 2.0MB | models.dev 完整镜像（193 provider / 7243 模型），离线兜底 |
 
 ## 4. 数据流详解
+
+### 4.0 存储端口（store port）——唯一的存储边界
+
+`src/store.js` 是 SQLite 行存（`node:sqlite`,WAL,`~/.doramonitor/doramonitor.db`）的**唯一入口**。
+上层（server.js、collect.js、未来的任何功能）只允许通过以下五个方法访问存储,
+不允许绕过它直接写 SQL、直接读桶文件或复制它的内部逻辑:
+
+| 方法 | 职责 |
+| --- | --- |
+| `ingestTool({ tool, home, records, events })` | 一个工具的扫描产物整体入库(指纹未变则跳过);工作区归一化、rateKey、去重 sig 都发生在这里 |
+| `bucketView({ tool? })` | **防腐层**:把行存(含 legacy 导入)还原成 buckets.js 的 `usageDays/eventDays` 形状,使 `aggregateFromBuckets` 等既有聚合/计价代码零改动消费 |
+| `usageQuery({ startDay, endDay, tool, workspace, model, singleDay })` | 多维聚合(FR-10/11/12):日/小时/模型/工作区分项,费用按查询时价目计算 |
+| `recordsPage({ fromMs, toMs, tool, workspace, model, limit, offset })` | 全历史逐请求分页 |
+| `workspaceOptions()` | 工作区下拉选项 |
+
+配套纪律:
+
+1. **schema 演进只走迁移**:`MIGRATIONS` 数组 + `PRAGMA user_version`,启动时自动应用;禁止编辑已发布的迁移,只允许追加;
+2. **费用不落库**:行存只存 token 与 rate_key,费用查询时经 `pricing.cellCostCny` 现算——调价回溯全部历史,零失效;
+3. **旧桶目录**(`~/.doramonitor/buckets/`)只有两个合法读者:`store.importLegacyBuckets`(仅导入源文件已删除的桶)和 store 不可用时的回退聚合路径;其余功能一律走 store;
+4. 存储不可用(模块缺失/DB 损坏)时系统整体降级回桶路径,不允许半工作状态。
+
+### 4.1 采集（collect.js）
 
 ### 4.1 采集（collect.js）
 
