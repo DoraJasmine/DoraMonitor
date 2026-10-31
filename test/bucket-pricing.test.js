@@ -13,6 +13,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const {
   costForUsage,
+  costCacheCreation,
   rateKeyFor,
   priceForCell,
 } = require("../src/pricing");
@@ -103,7 +104,7 @@ function perRecordCostViaCell(model, usage, time, settings) {
   return (
     (usage.inputOther / 1e6) * p.input +
     (usage.inputCacheRead / 1e6) * p.cacheHit +
-    (usage.inputCacheCreation / 1e6) * (p.cacheWrite ?? p.input) +
+    costCacheCreation(usage, p) +
     (usage.output / 1e6) * p.output
   );
 }
@@ -181,7 +182,7 @@ test("bucket pricing: merged-cell equivalence (sum of records priced once)", () 
           cellSum +=
             (cell.i / 1e6) * p.input +
             (cell.cr / 1e6) * p.cacheHit +
-            (cell.cc / 1e6) * (p.cacheWrite ?? p.input) +
+            costCacheCreation({ inputCacheCreation: cell.cc }, p) +
             (cell.o / 1e6) * p.output;
         }
         assert.ok(
@@ -191,6 +192,29 @@ test("bucket pricing: merged-cell equivalence (sum of records priced once)", () 
       }
     }
   }
+});
+
+test("bucket pricing: preserves exact TTL tiers and averages only untyped cache writes", () => {
+  const { bucketFromRecords, mergeBuckets } = require("../src/buckets");
+  const { aggregateFromBuckets } = require("../src/aggregate");
+  const base = {
+    tool: "claude-code",
+    model: "claude-sonnet-5",
+    modelResolved: "claude-sonnet-5",
+    time: Date.UTC(2026, 9, 20, 2),
+    inputOther: 0,
+    output: 0,
+    inputCacheRead: 0,
+  };
+  const typed = { ...base, inputCacheCreation: 100_000, inputCacheCreationShort: 25_000, inputCacheCreationLong: 75_000 };
+  const untyped = { ...base, inputCacheCreation: 100_000 };
+  const bucket = bucketFromRecords([typed, untyped], [], "typed-ttl", null);
+  const stats = aggregateFromBuckets([mergeBuckets([bucket])], { range: "all", fxRate: 7.2, customPrices: [] });
+  const direct = costForUsage(base.model, typed, { settings: { fxRate: 7.2, customPrices: [] } }).total +
+    costForUsage(base.model, untyped, { settings: { fxRate: 7.2, customPrices: [] } }).total;
+  assert.ok(Math.abs(stats.totals.costCny - direct) < EPS);
+  assert.equal(stats.totals.inputCacheCreation, 200_000);
+  assert.equal(stats.models[0].costEstimated, true);
 });
 
 test("bucket pricing: rateKey classification sanity", () => {

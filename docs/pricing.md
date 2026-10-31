@@ -29,16 +29,20 @@ wire 记录 (model="kimi-code/kimi-for-coding", usage={...})
    │
    ├─② 官方价匹配 matchPrice()
    │    八张价目表顺序遍历，正则匹配裸 id / 全名，首个命中即用
-   │    → { input, cacheHit, cacheWrite, output, estimated, ... }
+   │    → { input, cacheHit, cacheWrite, cacheWriteLong, output, estimated, ... }
    │
    ├─③ 自定义价匹配 matchCustomPrice()
    │    settings.customPrices 命中则整体覆盖（缺省分项沿用官方价）
    │
    └─④ 成本计算 costForUsage()
         cost = inputOther×input + cacheRead×cacheHit
-             + cacheCreate×cacheWrite + output×output   （每 1M tokens）
+             + shortWrite×cacheWrite + longWrite×cacheWriteLong
+             + untypedWrite×(cacheWrite + cacheWriteLong) / 2
+             + output×output   （每 1M tokens）
         → costCny 入账
 ```
+
+缓存写入优先使用原始记录中的 TTL 分类：`inputCacheCreationShort` 为短档（Kimi/Claude 5min、OpenAI 30m），`inputCacheCreationLong` 为长档（Kimi/Claude 1h、OpenAI 12h）。只有无法分类的写入 Token 才按两档**简单算术平均**估算，并标记 `costEstimated: true`；已知分类部分不做平均。单档模型始终使用该档价格，官方未单列写入价的模型回退普通输入价，明确 `cacheWrite: 0` 的模型按免费计。
 
 匹配细节：
 
@@ -57,17 +61,19 @@ wire 记录 (model="kimi-code/kimi-for-coding", usage={...})
 
 来源：<https://platform.kimi.com/docs/pricing/chat>
 
-| id | 缓存命中 | 缓存写入(默认5min TTL) | 输入 | 输出 | 上下文 | 备注 |
+| id | 缓存命中 | 缓存写入(5min / 1h) | 输入 | 输出 | 上下文 | 备注 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `kimi-k3.1-pro-highspeed` | 1.30 | 26.00 | 26.00 | 136.00 | 1,048,576 | 高速版 = 标准版 2 倍价 |
-| `kimi-k3.1-pro` | 1.30 | 13.00 | 13.00 | 68.00 | 1,048,576 | 2026-10-24 官方挂牌 |
-| `kimi-k3` | 2.00 | 20.00 | 20.00 | 100.00 | 1,048,576 | 官方 1h TTL 为 ¥40；wire 无 TTL 字段，按默认 5min 档计 |
+| `kimi-k3.1-pro-highspeed` | 1.30 | 26.00 / 52.00 | 26.00 | 136.00 | 1,048,576 | 高速版 = 标准版 2 倍价 |
+| `kimi-k3.1-pro` | 1.30 | 13.00 / 26.00 | 13.00 | 68.00 | 1,048,576 | 2026-10-24 官方挂牌 |
+| `kimi-k3` | 2.00 | 20.00 / 40.00 | 20.00 | 100.00 | 1,048,576 | wire 无 TTL 字段，非零写入按两档平均估算 |
 | `kimi-k2.7-code-highspeed` | 2.60 | — | 13.00 | 54.00 | 262,144 | 高速版；不支持独立 Cache Write |
 | `kimi-k2.7-code` | 1.30 | — | 6.50 | 27.00 | 262,144 | 不支持独立 Cache Write；**`kimi-for-coding`（Coding Plan，现为 K2.8 Preview）暂按此计价**；K2 系列 2026-12 底下线 |
 | `kimi-k2.6` | 1.10 | — | 6.50 | 27.00 | 262,144 | 不支持独立 Cache Write |
 
-K3 系列官方缓存写入分 TTL 档：5min（默认）与 1h（价格为 5min 档的 2 倍）。
-由于 wire.jsonl 的 `inputCacheCreation` 不携带 TTL 信息，一律按默认 5min 档计。
+K3 系列官方缓存写入分 5min 与 1h 两档，1h 为 5min 的 2 倍。当前 Kimi Code wire.jsonl 只有
+`inputOther`、`output`、`inputCacheRead`、`inputCacheCreation` 四个字段，没有 TTL 类型；本机 3,720 条记录
+的 `inputCacheCreation` 也全部为 0，所以界面“缓存创建 0”是原始数据如此，不是聚合丢失。若以后出现
+非零写入，因无法区分 TTL，只能按两档简单平均并标记估算。
 K2.7 与 K2.6 不支持独立 Cache Write，详见[官方上下文缓存说明](https://platform.kimi.com/docs/guide/context-caching)。
 
 ### 3.2 DeepSeek（`DEEPSEEK_PRICES`，CNY，峰谷分时）
@@ -138,41 +144,46 @@ M3 使用官方中国 CNY 价，M2.7 保留国际 USD 价；未单列缓存写�
 所有带 `longContextThreshold: 272_000` 的模型：**单请求输入总量超过 272K** 时，
 输入与缓存价格 ×2、输出 ×1.5（按整个请求计，不拆分）。
 
-| id | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 | 长上下文阶梯 |
+| id | 缓存命中 | 缓存写入(30m / 12h) | 输入 | 输出 | 上下文 | 长上下文阶梯 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `gpt-6.1-sol`（含裸 `gpt-6.1`） | 0.10 | 2.50 | 2.00 | 10.00 | 1,050,000 | 是 |
+| `gpt-6.1-sol`（含裸 `gpt-6.1`） | 0.10 | 2.50 / 5.00 | 2.00 | 10.00 | 1,050,000 | 是 |
 
-> `gpt-6.1-sol`（2026-10 发布）：缓存写入为输入价的 1.25 倍，长上下文阈值随 GPT-6 代取 272K。
+> `gpt-6.1-sol`（2026-10 发布）：30m 写入为输入价的 1.25 倍，12h 为 2.5 倍，长上下文阈值随 GPT-6 代取 272K。
 > 另有 `gpt-6.1-sol:flex` 变体（$1/$5）未收录——本地记录未出现该 id。
 
-| id | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 | 长上下文阶梯 |
+| id | 缓存命中 | 缓存写入(30m / 12h) | 输入 | 输出 | 上下文 | 长上下文阶梯 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `gpt-6-astra` | 1.00 | 12.50 | 10.00 | 50.00 | 1,050,000 | 是 |
-| `gpt-6-sol` | 0.20 | 2.50 | 2.00 | 10.00 | 1,050,000 | 是 |
-| `gpt-6-luna` | 0.01 | 0.125 | 0.10 | 0.50 | 1,050,000 | 是 |
-| `gpt-5.6-sol`（含裸 `gpt-5.6`） | 0.40 | 5.00 | 4.00 | 20.00 | 1,050,000 | 是 |
-| `gpt-5.6-terra` | 0.20 | 2.50 | 2.00 | 12.00 | 1,050,000 | 是 |
-| `gpt-5.6-luna` | 0.02 | 0.25 | 0.20 | 1.20 | 1,050,000 | 是 |
+| `gpt-6-astra` | 1.00 | 12.50 / 25.00 | 10.00 | 50.00 | 1,050,000 | 是 |
+| `gpt-6-sol` | 0.20 | 2.50 / 5.00 | 2.00 | 10.00 | 1,050,000 | 是 |
+| `gpt-6-luna` | 0.01 | 0.125 / 0.25 | 0.10 | 0.50 | 1,050,000 | 是 |
+| `gpt-5.6-sol`（含裸 `gpt-5.6`） | 0.40 | 5.00 / 10.00 | 4.00 | 20.00 | 1,050,000 | 是 |
+| `gpt-5.6-terra` | 0.20 | 2.50 / 5.00 | 2.00 | 12.00 | 1,050,000 | 是 |
+| `gpt-5.6-luna` | 0.02 | 0.25 / 0.50 | 0.20 | 1.20 | 1,050,000 | 是 |
 | `gpt-5`（含 o3/o4-mini） | 0.125 | 继承输入 | 1.25 | 10.00 | 400,000 | 否 |
 | `codex-auto-review` | 0.02 | 继承输入 | 0.20 | 1.20 | — | **估算价**（计划内后台模型，无公开牌价） |
+
+Codex rollout 的 `cache_write_input_tokens` 没有 30m/12h 类型，非零写入按两档简单平均并标记估算。
 
 ### 3.8 Anthropic（`CLAUDE_PRICES`，USD，Claude Code provider 用）
 
 来源：[Claude 官方模型与定价](https://platform.claude.com/docs/en/docs/about-claude/models/overview)
-缓存读取通常为输入 10%（Opus 5.5 为 5%，Fable/Mythos 5.1 为 2.5%），缓存写入 = 输入 1.25×。
+缓存读取通常为输入 10%（Opus 5.5 为 5%，Fable/Mythos 5.1 为 2.5%）；5min 写入 = 输入 1.25×，1h 写入 = 输入 2×。
 **特定版本行排在泛家族行之前，首个命中即用。**
 
-| id | 匹配 | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 |
+| id | 匹配 | 缓存命中 | 缓存写入(5min / 1h) | 输入 | 输出 | 上下文 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `claude-fable-5` | `fable|mythos`（Mythos 5 同价） | 0.25 | 12.50 | 10.00 | 50.00 | 1,000,000 |
-| `claude-opus-5-5` | `opus-5-5`（2026-09-22 发布，比 Opus 5 便宜 20%，缓存读 $0.20） | 0.20 | 5.00 | 4.00 | 20.00 | 1,000,000 |
-| `claude-opus-5` | `opus-5`、`opus-4.5~4.9`（同价代） | 0.50 | 6.25 | 5.00 | 25.00 | 1,000,000 |
-| `claude-sonnet-5` | `sonnet-5` | 0.20 | 2.50 | 2.00 | 10.00 | 1,000,000 |
-| `claude-haiku-4-5` | `haiku-4-5` | 0.10 | 1.25 | 1.00 | 5.00 | 200,000 |
-| `claude-3-haiku` | `3-haiku` | 0.03 | 0.30 | 0.25 | 1.25 | 200,000 |
-| `claude-sonnet` | `sonnet`（3.5/3.7/4/4.5/4.6 同价） | 0.30 | 3.75 | 3.00 | 15.00 | 200,000 |
-| `claude-opus` | `opus`（3/4/4.1 旧 $15 档） | 1.50 | 18.75 | 15.00 | 75.00 | 200,000 |
-| `claude-3-5-haiku` | 其余 `haiku` | 0.08 | 1.00 | 0.80 | 4.00 | 200,000 |
+| `claude-fable-5` | `fable|mythos`（Mythos 5 同价） | 0.25 | 12.50 / 25.00 | 10.00 | 50.00 | 1,000,000 |
+| `claude-opus-5-5` | `opus-5-5`（2026-09-22 发布，比 Opus 5 便宜 20%，缓存读 $0.20） | 0.20 | 5.00 / 10.00 | 4.00 | 20.00 | 1,000,000 |
+| `claude-opus-5` | `opus-5`、`opus-4.5~4.9`（同价代） | 0.50 | 6.25 / 12.50 | 5.00 | 25.00 | 1,000,000 |
+| `claude-sonnet-5` | `sonnet-5` | 0.20 | 2.50 / 5.00 | 2.00 | 10.00 | 1,000,000 |
+| `claude-haiku-4-5` | `haiku-4-5` | 0.10 | 1.25 / 2.50 | 1.00 | 5.00 | 200,000 |
+| `claude-3-haiku` | `3-haiku` | 0.03 | 0.30 / 0.60 | 0.25 | 1.25 | 200,000 |
+| `claude-sonnet` | `sonnet`（3.5/3.7/4/4.5/4.6 同价） | 0.30 | 3.75 / 7.50 | 3.00 | 15.00 | 200,000 |
+| `claude-opus` | `opus`（3/4/4.1 旧 $15 档） | 1.50 | 18.75 / 37.50 | 15.00 | 75.00 | 200,000 |
+| `claude-3-5-haiku` | 其余 `haiku` | 0.08 | 1.00 / 2.00 | 0.80 | 4.00 | 200,000 |
+
+Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h_write_tokens`
+会分别保留并精确计价；只有旧记录缺少该分类时，才对未分类部分按两档简单平均。
 
 ### 3.9 兜底价（`FALLBACK_PRICE`）
 

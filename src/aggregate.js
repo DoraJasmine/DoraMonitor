@@ -427,13 +427,17 @@ function calendarStartDay(range, nowMs) {
   return dayKey(nowMs - (days - 1) * 24 * 3600_000);
 }
 
-const { RATE_KEYS, priceForCell } = require("./pricing");
+const { RATE_KEYS, priceForCell, costCacheCreation } = require("./pricing");
 
 function cellCost(cell, price) {
   return (
     (cell.i / 1e6) * price.input +
     (cell.cr / 1e6) * price.cacheHit +
-    (cell.cc / 1e6) * (price.cacheWrite ?? price.input) +
+    costCacheCreation({
+      inputCacheCreation: cell.cc,
+      inputCacheCreationShort: cell.cs,
+      inputCacheCreationLong: cell.cl,
+    }, price) +
     (cell.o / 1e6) * price.output
   );
 }

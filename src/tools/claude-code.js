@@ -84,11 +84,10 @@ const tool = {
           // Older builds log only the combined total; newer ones also break
           // it down by TTL — fall back to the breakdown when the total is 0.
           let cacheCreate = n(usage.cache_creation_input_tokens);
-          if (!cacheCreate && usage.cache_creation && typeof usage.cache_creation === "object") {
-            cacheCreate =
-              n(usage.cache_creation.ephemeral_5m_write_tokens) +
-              n(usage.cache_creation.ephemeral_1h_write_tokens);
-          }
+          const cacheCreation = usage.cache_creation && typeof usage.cache_creation === "object" ? usage.cache_creation : null;
+          const cacheCreateShort = cacheCreation ? n(cacheCreation.ephemeral_5m_write_tokens) : null;
+          const cacheCreateLong = cacheCreation ? n(cacheCreation.ephemeral_1h_write_tokens) : null;
+          if (!cacheCreate && cacheCreation) cacheCreate = cacheCreateShort + cacheCreateLong;
           const output = n(usage.output_tokens);
           // Skip all-zero placeholders BEFORE dedupe: registering the key first
           // would let a zero-usage placeholder swallow the real record that
@@ -113,6 +112,8 @@ const tool = {
           rec.output = output;
           rec.inputCacheRead = cacheRead;
           rec.inputCacheCreation = cacheCreate;
+          rec.inputCacheCreationShort = cacheCreateShort;
+          rec.inputCacheCreationLong = cacheCreateLong;
           const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
           rec.costCny = cost.total;
           rec.costEstimated = cost.estimated;

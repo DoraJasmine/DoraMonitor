@@ -38,7 +38,7 @@ export const messages = {
     themeLight: "浅色",
     themeSystem: "跟随系统",
     pricingNote:
-      "表内金额按当前显示币种展示：Kimi 中国区、DeepSeek 与智谱使用人民币官方价，OpenAI 使用美元官方价并按设置汇率换算。缓存写入列为 — 表示官网未单列，不代表免费；费用估算仍按厂商计费规则计算。DeepSeek 分高峰/空闲价；未识别模型按 K2.6 参考价估算。",
+      "表内金额按当前显示币种展示：Kimi 中国区、DeepSeek 与智谱使用人民币官方价，OpenAI 使用美元官方价并按设置汇率换算。缓存写入按 TTL 分档展示；用量缺少 TTL 类型时按两档简单平均估算。写入列为 — 表示官网未单列，不代表免费。DeepSeek 分高峰/空闲价；未识别模型按 K2.6 参考价估算。",
     noData: "暂无 usage.record 数据",
     scanning: "正在扫描…",
     filesScanned: "已扫描文件",
@@ -414,7 +414,7 @@ export const messages = {
     themeLight: "Light",
     themeSystem: "System",
     pricingNote:
-      "Amounts use the selected display currency. Kimi China, DeepSeek, and BigModel use official CNY prices; OpenAI uses official USD prices converted at the configured rate. A dash in Cache write means the vendor does not list a separate rate, not that it is free; cost estimates still follow the vendor's billing rules. DeepSeek has peak/off-peak rows; unknown models use an estimated K2.6 fallback.",
+      "Amounts use the selected display currency. Kimi China, DeepSeek, and BigModel use official CNY prices; OpenAI uses official USD prices converted at the configured rate. Cache writes are shown by TTL tier; usage without a TTL type uses the simple two-tier average. A dash means no separately listed rate, not free. DeepSeek has peak/off-peak rows; unknown models use an estimated K2.6 fallback.",
     noData: "No usage.record data found",
     scanning: "Scanning…",
     filesScanned: "Files scanned",

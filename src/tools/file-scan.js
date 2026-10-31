@@ -7,7 +7,7 @@ const {
   readStoredBucket,
   writeStoredBucket,
 } = require("../buckets");
-const { rateKeyFor, priceForCell } = require("../pricing");
+const { rateKeyFor, priceForCell, costCacheCreation } = require("../pricing");
 
 /**
  * Shared per-file incremental scan skeleton for the heavy tools
@@ -75,7 +75,7 @@ function recostRecords(records, settings) {
       rec.costCny =
         ((rec.inputOther || 0) / 1e6) * p.input +
         ((rec.inputCacheRead || 0) / 1e6) * p.cacheHit +
-        ((rec.inputCacheCreation || 0) / 1e6) * (p.cacheWrite ?? p.input) +
+        costCacheCreation(rec, p) +
         ((rec.output || 0) / 1e6) * p.output;
       rec.priceId = p.id;
     }

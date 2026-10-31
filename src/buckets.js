@@ -11,7 +11,7 @@ const { rateKeyFor } = require("./pricing");
  * Day-bucket layer (phase 3) — see docs/plan-phase3-day-bucket.md.
  *
  * A bucket is the day-granular aggregation of ONE source file's records:
- *   usageDays: day → tool → model → rateKey → {i,o,cr,cc,req,estReq,credits}
+ *   usageDays: day → tool → model → rateKey → {i,o,cr,cc,cs?,cl?,req,estReq,credits}
  *   eventDays: day → eventName → count
  * Buckets store INTEGER TOKEN COUNTS ONLY — costs are always computed at
  * query time from the current price table (priceForCell), so a price-table
@@ -29,7 +29,7 @@ const { rateKeyFor } = require("./pricing");
  * the local timezone changed, or the fold logic version bumped.
  */
 
-const BUCKET_VERSION = 2;
+const BUCKET_VERSION = 3;
 const BUCKETS_DIR = path.join(os.homedir(), ".doramonitor", "buckets");
 /** git-index style guard: a file whose mtime is this fresh may have been
  *  written within the same timestamp granularity as our own scan — never
@@ -95,13 +95,16 @@ function foldRecordInto(bucket, rec) {
   cell.o += rec.output || 0;
   cell.cr += rec.inputCacheRead || 0;
   cell.cc += rec.inputCacheCreation || 0;
+  if (rec.inputCacheCreationShort != null || rec.inputCacheCreationLong != null) {
+    cell.cs = (cell.cs || 0) + (rec.inputCacheCreationShort || 0);
+    cell.cl = (cell.cl || 0) + (rec.inputCacheCreationLong || 0);
+  }
   cell.req += reqs;
   cell.credits += rec.credits || 0;
-  // Only TIME-derived estimated-ness folds here (no-timestamp DeepSeek);
-  // table-row estimated-ness (fallback pricing) is derived at query time by
+  // Fold record-derived estimated-ness (missing time or cache-write TTL).
+  // Table-row estimated-ness (fallback pricing) is derived at query time by
   // priceForCell, so adding a price row retroactively clears the flag
-  // without re-folding. v2: folding rec.costEstimated baked stale table
-  // state into buckets.
+  // without re-folding; rec.costEstimated is never persisted in buckets.
   if (rate.estimated) cell.estReq += reqs;
   if (!entry.display || entry.display === modelKey) {
     const d = rec.modelDisplay || modelKey;
@@ -171,6 +174,10 @@ function mergeBuckets(buckets) {
             outCell.o += cell.o || 0;
             outCell.cr += cell.cr || 0;
             outCell.cc += cell.cc || 0;
+            if (cell.cs != null || cell.cl != null) {
+              outCell.cs = (outCell.cs || 0) + (cell.cs || 0);
+              outCell.cl = (outCell.cl || 0) + (cell.cl || 0);
+            }
             outCell.req += cell.req || 0;
             outCell.estReq += cell.estReq || 0;
             outCell.credits += cell.credits || 0;

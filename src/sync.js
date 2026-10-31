@@ -16,7 +16,7 @@ const { normalizeQuotaRecord } = require("./quota-schema");
  *
  *   {version, device, generatedAt, updatedRange, codexQuota, quotaUsage,
  *    quotaSamples, usageWaterMark, days: {
- *     "YYYY-MM-DD": { "<tool>": { "<model>": {i,o,cr,cc,req,credits} } }
+ *     "YYYY-MM-DD": { "<tool>": { "<model>": {i,o,cr,cc,cs?,cl?,req,credits} } }
  *   }}
  *
  * Daily granularity lets the dashboard aggregate any range (today / 7d /
@@ -59,6 +59,10 @@ function buildQuotaUsage(records) {
     bucket.o += r.output || 0;
     bucket.cr += r.inputCacheRead || 0;
     bucket.cc += r.inputCacheCreation || 0;
+    if (r.inputCacheCreationShort != null || r.inputCacheCreationLong != null) {
+      bucket.cs = (bucket.cs || 0) + (r.inputCacheCreationShort || 0);
+      bucket.cl = (bucket.cl || 0) + (r.inputCacheCreationLong || 0);
+    }
     bucket.c += Number(r.costCny) || 0;
     bucket.req += 1;
   }
@@ -99,6 +103,10 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
     bucket.o += r.output || 0;
     bucket.cr += r.inputCacheRead || 0;
     bucket.cc += r.inputCacheCreation || 0;
+    if (r.inputCacheCreationShort != null || r.inputCacheCreationLong != null) {
+      bucket.cs = (bucket.cs || 0) + (r.inputCacheCreationShort || 0);
+      bucket.cl = (bucket.cl || 0) + (r.inputCacheCreationLong || 0);
+    }
     bucket.req += 1;
     bucket.credits += r.credits || 0;
   }
@@ -142,6 +150,8 @@ function quotaUsageRecords(summary) {
     output: b.o || 0,
     inputCacheRead: b.cr || 0,
     inputCacheCreation: b.cc || 0,
+    inputCacheCreationShort: b.cs ?? null,
+    inputCacheCreationLong: b.cl ?? null,
     costCny: Number(b.c) || 0,
     device,
     peer: true,
@@ -178,6 +188,8 @@ function summaryToRecords(summary) {
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
           inputCacheCreation: b.cc || 0,
+          inputCacheCreationShort: b.cs ?? null,
+          inputCacheCreationLong: b.cl ?? null,
         }, { settings });
         records.push({
           tool,
@@ -189,6 +201,8 @@ function summaryToRecords(summary) {
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
           inputCacheCreation: b.cc || 0,
+          inputCacheCreationShort: b.cs ?? null,
+          inputCacheCreationLong: b.cl ?? null,
           // A peer summary collapses a day/model into one synthetic record;
           // retain its source request count so aggregate statistics do not
           // misleadingly display it as a single request.

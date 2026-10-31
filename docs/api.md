@@ -127,11 +127,12 @@
 ```json
 {
   "prices": [ {
-    "id": "kimi-k3.1-pro", "cacheHit": 1.3, "cacheWrite": 13.0, "input": 13.0, "output": 68.0,
+    "id": "kimi-k3.1-pro", "cacheHit": 1.3, "cacheWrite": 13.0, "cacheWriteLong": 26.0,
+    "cacheWritePeriod": "5min", "cacheWriteLongPeriod": "1h", "input": 13.0, "output": 68.0,
     "context": 1048576, "estimated": false, "period": null,
     "nativeCurrency": "CNY", "unit": "CNY / 1M tokens",
     "sourceUrl": "https://platform.kimi.com/docs/pricing/chat",
-    "display": { "currency": "CNY", "symbol": "¥", "cacheHit": 1.3, "cacheWrite": 13.0, "input": 13.0, "output": 68.0 }
+    "display": { "currency": "CNY", "symbol": "¥", "cacheHit": 1.3, "cacheWrite": 13.0, "cacheWriteLong": 26.0, "input": 13.0, "output": 68.0 }
   } ],
   "currency": "CNY", "currencySymbol": "¥", "fxRate": 6.67, "customPrices": []
 }
@@ -139,6 +140,7 @@
 
 - DeepSeek 模型会输出两行：`period: "peak"` 与 `period: "offPeak"`。
 - `cacheWrite` 仅在官方单列缓存写入价时提供数值；未单列时为 `null`，前端显示 `—`，不代表免费。
+- 双档写入模型另返回 `cacheWriteLong`、`cacheWritePeriod`、`cacheWriteLongPeriod`：Kimi/Claude 为 5min/1h，OpenAI 为 30m/12h；价目表在同一列分两行展示。
 - `display.*` 已按用户币种换算好，前端直接展示。
 - `estimated: true` 的行界面显示「估算」徽标。
 

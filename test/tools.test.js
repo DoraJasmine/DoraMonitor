@@ -186,7 +186,7 @@ const sync = require("../src/sync");
 
 test("sync: summary build/merge round-trip preserves tokens", () => {
   const records = [
-    record({ tool: "kimi-code", model: "k3", inputOther: 100, output: 50, inputCacheRead: 200, inputCacheCreation: 10, credits: 0, time: new Date(2026, 7, 28, 10, 0).getTime() }),
+    record({ tool: "kimi-code", model: "k3", inputOther: 100, output: 50, inputCacheRead: 200, inputCacheCreation: 10, inputCacheCreationShort: 4, inputCacheCreationLong: 6, credits: 0, time: new Date(2026, 7, 28, 10, 0).getTime() }),
     record({ tool: "zcode", model: "GLM-5.3", inputOther: 5, output: 1, inputCacheRead: 7, credits: 0, time: new Date(2026, 7, 28, 15, 0).getTime() }),
     record({ tool: "qoder-cn-cli", model: "qfmodel", inputOther: 0, output: 0, credits: 2.5, time: new Date(2026, 7, 27, 8, 0).getTime() }),
   ];
@@ -200,6 +200,8 @@ test("sync: summary build/merge round-trip preserves tokens", () => {
   const k3 = peerRecords.find((r) => r.model === "k3");
   assert.strictEqual(k3.inputOther, 100);
   assert.strictEqual(k3.inputCacheRead, 200);
+  assert.strictEqual(k3.inputCacheCreationShort, 4);
+  assert.strictEqual(k3.inputCacheCreationLong, 6);
   assert.strictEqual(k3.requests, 1);
   const qc = peerRecords.find((r) => r.tool === "qoder-cn-cli");
   assert.strictEqual(qc.credits, 2.5);

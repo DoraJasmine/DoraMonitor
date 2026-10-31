@@ -50,6 +50,7 @@ const SONNET_USAGE = {
   input_tokens: 1000,
   cache_read_input_tokens: 400,
   cache_creation_input_tokens: 50,
+  cache_creation: { ephemeral_5m_write_tokens: 50, ephemeral_1h_write_tokens: 0 },
   output_tokens: 200,
 };
 
@@ -188,6 +189,8 @@ test("claude provider: falls back to cache_creation TTL breakdown when total mis
   });
   const out = claudeCode.scan(home);
   assert.strictEqual(out.records[0].inputCacheCreation, 100);
+  assert.strictEqual(out.records[0].inputCacheCreationShort, 60);
+  assert.strictEqual(out.records[0].inputCacheCreationLong, 40);
 });
 
 test("claude provider: project falls back to the encoded dir name when cwd is absent", () => {

@@ -31,6 +31,34 @@ describe("pricing", () => {
     }
   });
 
+  it("uses exact TTL cache-write rates when known and the simple average otherwise", () => {
+    const typed = costForUsage("kimi-k3.1-pro", {
+      inputCacheCreation: 1_000_000,
+      inputCacheCreationShort: 250_000,
+      inputCacheCreationLong: 750_000,
+    }, { skipSettings: true });
+    assert.ok(Math.abs(typed.total - (0.25 * 13 + 0.75 * 26)) < 1e-9);
+    assert.equal(typed.estimated, false);
+
+    const untyped = costForUsage("kimi-k3.1-pro", { inputCacheCreation: 1_000_000 }, { skipSettings: true });
+    assert.ok(Math.abs(untyped.total - 19.5) < 1e-9);
+    assert.equal(untyped.estimated, true);
+
+    const singleTier = costForUsage("kimi-k2.7-code", { inputCacheCreation: 1_000_000 }, { skipSettings: true });
+    assert.equal(singleTier.total, 6.5);
+    assert.equal(singleTier.estimated, false);
+
+    const prices = listPrices({ fxRate: 7.2 });
+    const k31 = prices.find((p) => p.id === "kimi-k3.1-pro");
+    assert.equal(k31.cacheWriteLong, 26);
+    assert.equal(k31.cacheWritePeriod, "5min");
+    assert.equal(k31.cacheWriteLongPeriod, "1h");
+    const gpt = prices.find((p) => p.id === "gpt-6-sol");
+    assert.equal(gpt.cacheWriteLong, 5 * 7.2);
+    assert.equal(gpt.cacheWritePeriod, "30m");
+    assert.equal(gpt.cacheWriteLongPeriod, "12h");
+  });
+
   it("matches k2.7 code highspeed at its own official rates", () => {
     const p = matchPrice("kimi-k2.7-code-highspeed", { fxRate: 7.2 });
     assert.equal(p.id, "kimi-k2.7-code-highspeed");
@@ -246,7 +274,8 @@ describe("pricing", () => {
     const cost = costForUsage("gpt-6-luna", usage, {
       settings: { fxRate: 7.2, customPrices: [] },
     });
-    const expectedUsd = (272_001 * 0.2 + 1_000 * 0.02 + 1_000 * 0.25 + 1_000 * 0.75) / 1e6;
+    // Unknown TTL uses the simple average of the $0.25/$0.50 long-context write rates.
+    const expectedUsd = (272_001 * 0.2 + 1_000 * 0.02 + 1_000 * 0.375 + 1_000 * 0.75) / 1e6;
     assert.ok(Math.abs(cost.total - expectedUsd * 7.2) < 1e-12);
     assert.equal(cost.priceId, "gpt-6-luna");
   });
@@ -258,8 +287,8 @@ describe("pricing", () => {
       inputCacheCreation: 1_000,
       output: 1_000,
     }, { skipSettings: true, settings: { fxRate: 7.2, customPrices: [] } });
-    // Over 272K: input/cache x2, output x1.5; Sol cache write is $5/M.
-    const expected = ((272_001 * 8) + (1_000 * 0.8) + (1_000 * 10) + (1_000 * 30)) / 1e6;
+    // Over 272K: input/cache x2, output x1.5; unknown TTL averages $10/$20 writes.
+    const expected = ((272_001 * 8) + (1_000 * 0.8) + (1_000 * 15) + (1_000 * 30)) / 1e6;
     assert.ok(Math.abs(c.total - expected * 7.2) < 1e-12);
   });
 

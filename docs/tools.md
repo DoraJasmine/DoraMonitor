@@ -19,7 +19,9 @@ DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器�
     inputOther: 0,        // 普通输入（不含缓存）
     output: 0,
     inputCacheRead: 0,    // 缓存读取
-    inputCacheCreation: 0,// 缓存写入
+    inputCacheCreation: 0,// 缓存写入总量
+    inputCacheCreationShort: null, // 可选：短档写入（Kimi/Claude 5min、OpenAI 30m）
+    inputCacheCreationLong: null,  // 可选：长档写入（Kimi/Claude 1h、OpenAI 12h）
     costCny: 0,           // 内部 CNY 账本
     costEstimated: false,
     priceId: null,

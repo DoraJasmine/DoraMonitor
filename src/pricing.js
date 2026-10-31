@@ -5,8 +5,9 @@ const { loadSettings } = require("./settings");
 /**
  * Official Kimi China API Platform list prices (CNY per 1M tokens).
  * Source: https://platform.kimi.com/
- * Fields: cacheHit (input cache read), input (non-cache / miss), output
- * cacheCreation is billed at the input rate when not separately listed.
+ * Fields: cacheHit (input cache read), input (non-cache / miss), output.
+ * cacheCreation is billed at the input rate when not separately listed. Tiered
+ * writes use exact TTL counts when available and the two-tier simple average otherwise.
  *
  * User-defined prices (settings.customPrices) take precedence: exact model
  * match first, then case-insensitive substring. Each provider's native list
@@ -26,6 +27,7 @@ const KIMI_PRICES = [
     ],
     cacheHit: 1.3,
     cacheWrite: 26.0,
+    cacheWriteLong: 52.0,
     input: 26.0,
     output: 136.0,
     context: 1_048_576,
@@ -33,13 +35,13 @@ const KIMI_PRICES = [
   },
   {
     // Official China API prices, published 2026-10-24 on the pricing page.
-    // Official cache write bills by TTL: ¥13 (5min, the default) / ¥26 (1h);
-    // the usage wire carries no TTL, so the default tier is billed.
+    // Official cache write bills by TTL: ¥13 (5min) / ¥26 (1h).
     // Must precede the kimi-k3 row: /kimi[_-]?k3/ matches K3.1 ids too.
     id: "kimi-k3.1-pro",
     patterns: [/^kimi-k3[._-]1(?:[-_ ]?pro)?$/i, /kimi[_-]?k3[._-]1/i, /k3[._-]1[_-]?pro/i],
     cacheHit: 1.3,
     cacheWrite: 13.0,
+    cacheWriteLong: 26.0,
     input: 13.0,
     output: 68.0,
     context: 1_048_576,
@@ -48,11 +50,11 @@ const KIMI_PRICES = [
   {
     id: "kimi-k3",
     // k3-256k is the same model at a longer context — same unit price.
-    // Official cache write bills by TTL: ¥20 (5min, the default) / ¥40 (1h);
-    // the usage wire carries no TTL, so the default tier is billed.
+    // Official cache write bills by TTL: ¥20 (5min) / ¥40 (1h).
     patterns: [/^kimi-k3$/i, /^k3$/i, /\/kimi-k3$/i, /kimi[_-]?k3/i, /k3[_-]?256k/i],
     cacheHit: 2.0,
     cacheWrite: 20.0,
+    cacheWriteLong: 40.0,
     input: 20.0,
     output: 100.0,
     context: 1_048_576,
@@ -414,14 +416,13 @@ const FALLBACK_PRICE = {
  */
 const OPENAI_PRICES = [
   {
-    // Announced 2026-10 with a 95% cache discount ($0.10). OpenAI has not
-    // published a separate cache-write rate — it bills at the input price,
-    // same policy as the gpt-5 row. Long-context tier assumed to match the
-    // rest of the GPT-6 generation (272K threshold).
+    // Long-context tier assumed to match the rest of the GPT-6 generation
+    // (272K threshold). Prompt-cache writes are 30m / 12h.
     id: "gpt-6.1-sol",
     patterns: [/gpt[_-]?6\.1([_-]?sol)?$/i, /gpt[_-]?6\.1[_-]?sol/i, /^gpt[_-]?6\.1$/i],
     cacheHit: 0.1,
     cacheWrite: 2.5,
+    cacheWriteLong: 5.0,
     input: 2.0,
     output: 10.0,
     context: 1_050_000,
@@ -433,6 +434,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?6[_-]?astra/i],
     cacheHit: 1.0,
     cacheWrite: 12.5,
+    cacheWriteLong: 25.0,
     input: 10.0,
     output: 50.0,
     context: 1_050_000,
@@ -444,6 +446,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?6[_-]?sol/i],
     cacheHit: 0.2,
     cacheWrite: 2.5,
+    cacheWriteLong: 5.0,
     input: 2.0,
     output: 10.0,
     context: 1_050_000,
@@ -455,6 +458,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?6[_-]?luna/i],
     cacheHit: 0.01,
     cacheWrite: 0.125,
+    cacheWriteLong: 0.25,
     input: 0.1,
     output: 0.5,
     context: 1_050_000,
@@ -466,6 +470,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?5\.6[_-]?sol/i, /^gpt[_-]?5\.6$/i],
     cacheHit: 0.4,
     cacheWrite: 5.0,
+    cacheWriteLong: 10.0,
     input: 4.0,
     output: 20.0,
     context: 1_050_000,
@@ -477,6 +482,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?5\.6[_-]?terra/i],
     cacheHit: 0.2,
     cacheWrite: 2.5,
+    cacheWriteLong: 5.0,
     input: 2.0,
     output: 12.0,
     context: 1_050_000,
@@ -488,6 +494,7 @@ const OPENAI_PRICES = [
     patterns: [/gpt[_-]?5\.6[_-]?luna/i],
     cacheHit: 0.02,
     cacheWrite: 0.25,
+    cacheWriteLong: 0.5,
     input: 0.2,
     output: 1.2,
     context: 1_050_000,
@@ -623,7 +630,7 @@ const CLAUDE_PRICES = [
     context: 200_000,
     currency: "USD",
   },
-];
+].map((row) => ({ ...row, cacheWriteLong: row.cacheWrite * 2 }));
 
 /** Find the first matching price row for a model id (first match wins). */
 function matchRow(modelName) {
@@ -657,20 +664,21 @@ const RATE_KEYS = Object.freeze(["std", "peak", "off", "long"]);
 function rateKeyFor(modelName, usage = {}, time) {
   const row = matchRow(modelName);
   if (!row) return { key: "std", estimated: true }; // FALLBACK_PRICE is estimated
+  const ttlEstimated = hasEstimatedCacheCreation(usage, row);
   if (row.longContextThreshold) {
     const tokens =
       num(usage.inputOther) + num(usage.inputCacheRead) + num(usage.inputCacheCreation);
     if (Number.isFinite(tokens) && tokens > row.longContextThreshold) {
-      return { key: "long", estimated: false };
+      return { key: "long", estimated: ttlEstimated };
     }
   }
   if (row.offPeakMultiplier) {
     const t = deepSeekTimeOfUse(row, time);
     return t.multiplier === row.offPeakMultiplier
-      ? { key: "off", estimated: t.estimated }
-      : { key: "peak", estimated: t.estimated };
+      ? { key: "off", estimated: ttlEstimated || t.estimated }
+      : { key: "peak", estimated: ttlEstimated || t.estimated };
   }
-  return { key: "std", estimated: false };
+  return { key: "std", estimated: ttlEstimated };
 }
 
 /**
@@ -689,7 +697,7 @@ function priceForCell(modelName, rateKey, options = {}) {
   if (!row) {
     const fx0 = Number(options.fxRate) > 0 ? Number(options.fxRate) : 6.67;
     const fb = normalizedFallbackPrice(fx0, String(modelName || ""));
-    return { id: fb.id, cacheHit: fb.cacheHit, cacheWrite: fb.cacheWrite, input: fb.input, output: fb.output, estimated: true };
+    return { id: fb.id, cacheHit: fb.cacheHit, cacheWrite: fb.cacheWrite, cacheWriteLong: null, input: fb.input, output: fb.output, estimated: true };
   }
   const fxRate = Number(options.fxRate) > 0 ? Number(options.fxRate) : 6.67;
   const cny = priceToCnyMultiplier(row, fxRate);
@@ -707,6 +715,7 @@ function priceForCell(modelName, rateKey, options = {}) {
     id: row.id,
     cacheHit: row.cacheHit * inputMult * cny,
     cacheWrite: (row.cacheWrite ?? row.input) * inputMult * cny,
+    cacheWriteLong: row.cacheWriteLong == null ? null : row.cacheWriteLong * inputMult * cny,
     input: row.input * inputMult * cny,
     output: row.output * outputMult * cny,
     estimated: !!row.estimated,
@@ -732,6 +741,7 @@ function matchPrice(modelName, options = {}) {
       id: row.id,
       cacheHit: row.cacheHit * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
       cacheWrite: (row.cacheWrite ?? row.input) * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
+      cacheWriteLong: row.cacheWriteLong == null ? null : row.cacheWriteLong * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
       input: row.input * timeOfUse.multiplier * context.inputMultiplier * currencyMultiplier,
       output: row.output * timeOfUse.multiplier * context.outputMultiplier * currencyMultiplier,
       context: row.context,
@@ -762,6 +772,7 @@ function normalizedFallbackPrice(fxRate, match) {
     input: FALLBACK_PRICE.input * multiplier,
     output: FALLBACK_PRICE.output * multiplier,
     cacheWrite: FALLBACK_PRICE.input * multiplier,
+    cacheWriteLong: null,
     match,
     estimated: true,
   };
@@ -861,12 +872,34 @@ function matchCustomPrice(modelName, customPrices, fxRate, fallbackPrice = FALLB
     cacheHit: cacheHit ?? fallbackPrice.cacheHit,
     output: output ?? fallbackPrice.output,
     cacheWrite: input ?? fallbackPrice.cacheWrite ?? fallbackPrice.input,
+    cacheWriteLong: fallbackPrice.cacheWriteLong == null ? null : input ?? fallbackPrice.cacheWriteLong,
     context: null,
     estimated: usesFallback && !!fallbackPrice.estimated,
     custom: true,
     match: best.model,
     ratePeriod: fallbackPrice.ratePeriod,
   };
+}
+
+function cacheCreationAmounts(usage) {
+  const u = usage || {};
+  const total = num(u.inputCacheCreation);
+  const typed = u.inputCacheCreationShort != null || u.inputCacheCreationLong != null;
+  const short = typed ? num(u.inputCacheCreationShort) : 0;
+  const long = typed ? num(u.inputCacheCreationLong) : 0;
+  return { short, long, untyped: typed ? Math.max(0, total - short - long) : total };
+}
+
+function hasEstimatedCacheCreation(usage, price) {
+  return price.cacheWriteLong != null && cacheCreationAmounts(usage).untyped > 0;
+}
+
+function costCacheCreation(usage, price) {
+  const { short, long, untyped } = cacheCreationAmounts(usage);
+  const shortRate = price.cacheWrite ?? price.input;
+  const longRate = price.cacheWriteLong ?? shortRate;
+  const untypedRate = price.cacheWriteLong == null ? shortRate : (shortRate + longRate) / 2;
+  return (short * shortRate + long * longRate + untyped * untypedRate) / 1e6;
 }
 
 /**
@@ -901,8 +934,7 @@ function costForUsage(modelName, usage, options = {}) {
   const price = custom || official;
   const costInput = (inputOther / 1e6) * price.input;
   const costCacheRead = (cacheRead / 1e6) * price.cacheHit;
-  // GPT-5.6 and Astra publish cache-write rates; other providers inherit input.
-  const costCacheCreate = (cacheCreate / 1e6) * (price.cacheWrite ?? price.input);
+  const costCacheCreate = costCacheCreation(u, price);
   const costOutput = (output / 1e6) * price.output;
   const total = costInput + costCacheRead + costCacheCreate + costOutput;
 
@@ -915,7 +947,7 @@ function costForUsage(modelName, usage, options = {}) {
       output: costOutput,
     },
     priceId: price.id,
-    estimated: !!price.estimated,
+    estimated: !!price.estimated || hasEstimatedCacheCreation(u, price),
     custom: !!price.custom,
   };
 }
@@ -949,6 +981,9 @@ function listPrices(options = {}) {
       id: p.id,
       cacheHit: p.cacheHit * multiplier * priceToCnyMultiplier(p, options.fxRate),
       cacheWrite: p.cacheWrite == null ? null : p.cacheWrite * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      cacheWriteLong: p.cacheWriteLong == null ? null : p.cacheWriteLong * multiplier * priceToCnyMultiplier(p, options.fxRate),
+      cacheWritePeriod: p.cacheWriteLong == null ? null : OPENAI_PRICES.includes(p) ? "30m" : "5min",
+      cacheWriteLongPeriod: p.cacheWriteLong == null ? null : OPENAI_PRICES.includes(p) ? "12h" : "1h",
       input: p.input * multiplier * priceToCnyMultiplier(p, options.fxRate),
       output: p.output * multiplier * priceToCnyMultiplier(p, options.fxRate),
       context: p.context,
@@ -987,5 +1022,6 @@ module.exports = {
   matchPrice,
   matchCustomPrice,
   costForUsage,
+  costCacheCreation,
   listPrices,
 };

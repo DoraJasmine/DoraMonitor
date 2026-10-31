@@ -11,6 +11,7 @@ const path = require("path");
  * {
  *   tool, time, model, modelDisplay, modelResolved,
  *   inputOther, output, inputCacheRead, inputCacheCreation,
+ *   inputCacheCreationShort?, inputCacheCreationLong?,
  *   costCny, costEstimated, priceId, credits,
  *   project, session, sessionHint,
  * }
@@ -156,6 +157,8 @@ function emptyRecord(tool) {
     output: 0,
     inputCacheRead: 0,
     inputCacheCreation: 0,
+    inputCacheCreationShort: null,
+    inputCacheCreationLong: null,
     costCny: 0,
     costEstimated: false,
     priceId: null,
