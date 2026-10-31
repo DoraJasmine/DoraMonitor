@@ -245,7 +245,7 @@ function recordSig(rec) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  if (!force && getMeta(`fp4:${tool}`) === fp) return { ok: true, skipped: true };
+  if (!force && getMeta(`fp5:${tool}`) === fp) return { ok: true, skipped: true };
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO usage_records
@@ -313,7 +313,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp4:${tool}`, fp);
+    setMeta(`fp5:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {

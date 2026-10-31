@@ -74,7 +74,7 @@ function kimiWorkspaceLookup(home, workspaceId) {
   try {
     for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
       if (!ent.isDirectory() || ent.name === ".kcd-archive") continue;
-      if (!/^wd_[A-Za-z0-9-]+_[0-9a-f]+$/.test(ent.name)) continue;
+      if (!/^wd_[\w.-]+_[0-9a-f]+$/.test(ent.name)) continue;
       if (map.has(ent.name)) continue;
       const info = probeKimiWorkspaceDir(path.join(root, ent.name));
       if (info) map.set(ent.name, info);
@@ -158,7 +158,7 @@ function normalizeWorkspace(toolId, record, home) {
     return { workspaceKey: UNKNOWN_KEY, workspaceName: UNKNOWN_NAME };
   }
   if (toolId === "kimi-code") {
-    if (/^wd_[A-Za-z0-9-]+_[0-9a-f]+$/.test(project)) {
+    if (/^wd_[\w.-]+_[0-9a-f]+$/.test(project)) {
       const hit = home ? kimiWorkspaceLookup(home, project) : null;
       if (hit && hit.workDir) {
         return { workspaceKey: hit.workDir, workspaceName: hit.name || baseName(hit.workDir) };
