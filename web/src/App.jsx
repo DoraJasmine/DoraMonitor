@@ -163,6 +163,7 @@ export default function App() {
   });
   const [loading, setLoading] = useState(false);
   const [refreshFlash, setRefreshFlash] = useState(false);
+  const [quotaRefreshSignal, setQuotaRefreshSignal] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [recentPage, setRecentPage] = useState(1);
@@ -542,7 +543,10 @@ export default function App() {
           </Button>
           {page === "usage" ? (
             <Button
-              onClick={() => loadSummary({ refresh: true })}
+              onClick={() => {
+                setQuotaRefreshSignal((value) => value + 1);
+                loadSummary({ refresh: true });
+              }}
               disabled={loading}
               aria-busy={loading}
               className={cn(
@@ -774,7 +778,7 @@ export default function App() {
       {(tool === "all" || tool === "kimi-code") &&
       availableTools.some((x) => x.id === "kimi-code") ? (
         <div className="mb-5">
-          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} />
         </div>
       ) : null}
 
@@ -782,7 +786,7 @@ export default function App() {
       {(tool === "all" || tool === "codex") &&
       availableTools.some((x) => x.id === "codex") ? (
         <div className="mb-5">
-          <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="codex" />
+          <QuotaToolCards t={t} locale={locale} refreshSignal={quotaRefreshSignal} tool="codex" />
         </div>
       ) : null}
 

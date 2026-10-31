@@ -638,8 +638,11 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
     }
   }, [tool, scope, accountKey, t]);
 
+  const previousRefreshSignal = useRef(refreshSignal);
   useEffect(() => {
-    load(false);
+    const refresh = refreshSignal !== previousRefreshSignal.current;
+    previousRefreshSignal.current = refreshSignal;
+    load(refresh);
   }, [load, refreshSignal]);
   useEffect(() => {
     const timer = setInterval(() => forceTick((x) => x + 1), 60_000);
