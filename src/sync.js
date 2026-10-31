@@ -139,7 +139,7 @@ function buildWsDaily(records, salt) {
     if (!r || !r.time || r.kind === "event") continue;
     const ws = normalizeWorkspace(r.tool, r, homes.get(r.tool) || null);
     const slot = wsHash(ws.workspaceKey, salt);
-    if (ws.workspaceKey && !ws.workspaceKey.startsWith("__")) wsNames[slot] = ws.workspaceKey;
+    if (ws.workspaceKey && !ws.workspaceKey.startsWith("__")) wsNames[slot] = ws.workspaceName || ws.workspaceKey;
     const day = dayKey(r.time);
     if (!wsDaily[day]) wsDaily[day] = {};
     if (!wsDaily[day][r.tool]) wsDaily[day][r.tool] = {};
