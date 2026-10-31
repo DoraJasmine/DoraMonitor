@@ -16,6 +16,7 @@
 | 后台（跨平台） | `doramonitor web --background --no-open` | 脱离终端，不打开浏览器 |
 | Windows 双击 | `scripts/start-windows.bat` | 调用上面的后台命令，路径可迁移 |
 | Windows 登录自启 | `scripts/register-autostart.ps1` | 隐藏窗口、登录启动、Web 崩溃重启 |
+| Linux systemd 用户服务 | `scripts/install-linux.sh --with-web` | Web/daemon 登录启动与崩溃重启 |
 | 开发模式 | `npm run dev` | API + Vite 热更新 |
 
 后台命令会先检查端口，已监听时不会重复启动。Windows 注册脚本还会在安装目录生成 `web-hidden.vbs`、`daemon-hidden.vbs` 和 `start-doramonitor.bat`。
@@ -51,7 +52,28 @@ powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
 Unregister-ScheduledTask -TaskName doramonitor-daemon,doramonitor-web -Confirm:$false
 ```
 
-## 4. 源码部署与更新
+## 4. Linux 一键安装（包括 WSL）
+
+```bash
+bash scripts/install-linux.sh --with-web --start
+```
+
+- 默认安装到 `~/.local`，命令位于 `~/.local/bin/doramonitor`，无需 sudo。
+- 优先使用 PATH 中 Node 18+；没有可用 Node 时，为当前用户下载便携 Node 22，支持 x64 和 arm64。
+- `--with-web` 注册 `doramonitor-web.service` 与 `doramonitor-daemon.service` 两个 systemd 用户服务；
+  `--start` 安装后立即启动。两个开关均可省略。
+- PATH 写入 `~/.profile`；安装后重开终端，或执行 `export PATH="$HOME/.local/bin:$PATH"`。
+- 可用 `--prefix <绝对路径>` 和 `--bin-dir <绝对路径>` 调整安装位置。
+
+移除自启：
+
+```bash
+systemctl --user disable --now doramonitor-web.service doramonitor-daemon.service
+rm ~/.config/systemd/user/doramonitor-{web,daemon}.service
+systemctl --user daemon-reload
+```
+
+## 5. 源码部署与更新
 
 首次克隆后可直接使用跨平台部署脚本：
 
@@ -79,14 +101,14 @@ npm run build
 
 修改 `src/` 后必须重启 Web 服务。所有设置保存后立即生效；daemon 每分钟读取最新同步配置。
 
-## 5. 验证与日志
+## 6. 验证与日志
 
 - 健康检查：`http://127.0.0.1:3847/api/health` 应返回 `{ "ok": true }`。
 - 工具检测：`doramonitor tools` 查看各工具是否可用及数据目录。
 - daemon 状态：`~/.doramonitor/daemon.pid`、`status.cache`、`sync.state`。
 - 前台启动日志直接显示在终端；后台启动故障时改用前台命令定位。
 
-## 6. 故障排查
+## 7. 故障排查
 
 **端口被占用**：改用 `doramonitor web --port 3848`，或停止已有实例。后台命令检测到端口已监听时不会强行启动第二个进程。
 

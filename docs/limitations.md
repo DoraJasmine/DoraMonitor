@@ -9,7 +9,8 @@
   Origin 校验不能替代公网鉴权；不要直接以 `0.0.0.0` 或 `::` 暴露到不可信网络。
 - Node 18 可运行，但 ZCode/QoderCN 在没有 `node:sqlite` 时需要额外安装 `sqlite3` CLI。
   推荐 Node 22.15+；旧版的压缩会话由纯 JS `fzstd` 回退处理。
-- Windows 提供隐藏计划任务；其他系统只提供后台进程，不自动注册 systemd、launchd 或容器服务。
+- Windows 提供隐藏计划任务；Linux 安装器可选注册 systemd 用户服务。其他 init 系统需自行管理后台进程；
+  macOS 尚未提供一键安装或登录自启脚本。
 - 源码部署需要 devDependencies 来构建前端；npm 包则已带 `dist/`，普通安装不需要前端工具链。
 
 ## 2. 用量统计

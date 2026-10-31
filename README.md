@@ -2,11 +2,11 @@
 
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![平台](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#环境要求)
+[![平台](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#环境要求)
 
 [English](./README.en.md) · **简体中文**
 
-本地、隐私优先的 AI 编码工具用量看板。统一展示 Token、API 刊例价等效费用、缓存命中率、额度窗口、会话与多设备用量，同时提供 Web UI 和命令行。
+**支持 Windows 和 Linux（包括 WSL）。** 本地、隐私优先的 AI 编码工具用量看板。统一展示 Token、API 刊例价等效费用、缓存命中率、额度窗口、会话与多设备用量，同时提供 Web UI 和命令行。
 
 ![DoraMonitor 看板](./assets/screenshot.png)
 
@@ -52,25 +52,29 @@ npm start
 
 `npm run deploy` 会检查 Node、安装锁定依赖并构建前端；也可使用 `npm run deploy -- --background` 在部署后后台启动，或用 `--skip-install` 只重新构建。前端开发使用 `npm run dev`，会同时启动 API 和 Vite 热更新。
 
-## 静默启动与 Windows 自启
+## 一键安装、静默启动与自启
+
+Linux（包括 WSL）使用用户级安装器，无需 sudo；`--with-web` 注册 systemd 用户服务，`--start` 安装后立即启动：
+
+```bash
+bash scripts/install-linux.sh --with-web --start
+```
+
+Windows 使用 PowerShell 安装器，注册隐藏登录任务并立即启动：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
+```
+
+两个安装器都只使用 nodejs.org 与 npm 官方源，不包含私人同步配置，并支持没有预装 Node.js 的环境。安装后如提示找不到 `doramonitor`，请重开终端；Windows 也可显式运行 `doramonitor.cmd`。
+
+已有安装可手动后台启动：
 
 ```bash
 doramonitor web --background --no-open
 ```
 
-Windows 也可双击 `scripts/start-windows.bat`。脚本使用相对路径，移动安装目录后仍可使用；重复执行会检测已有端口，不会重复启动。
-
-注册登录自启、隐藏窗口和崩溃自动重启：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
-```
-
-Windows 一键安装器仅从 nodejs.org 与 npm 官方源下载，不包含私人同步配置：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
-```
+Windows 还可双击 `scripts/start-windows.bat`，或单独运行 `scripts/register-autostart.ps1` 注册自启。Linux 的 systemd 单元为 `doramonitor-web.service` 和 `doramonitor-daemon.service`。
 
 默认仅监听本机回环地址。修改监听地址前请阅读[部署与故障排查](./docs/deployment.md)。
 

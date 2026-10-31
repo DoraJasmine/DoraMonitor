@@ -38,12 +38,20 @@ if (-not (Test-Path $Npm)) { throw "npm.cmd was not found next to $Node" }
 Info "Installing DoraMonitor from npm"
 & $Npm install -g doramonitor
 if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+$GlobalPrefix = (& $Npm prefix -g).Trim()
 $GlobalRoot = (& $Npm root -g).Trim()
 $PackageDir = Join-Path $GlobalRoot "doramonitor"
 if (-not (Test-Path "$PackageDir\src\doramonitor.js")) { throw "DoraMonitor package was not found in $GlobalRoot" }
 
-$Command = "$NodeDir\doramonitor.cmd"
-if (-not (Test-Path $Command)) { $Command = (Get-Command doramonitor -ErrorAction Stop).Source }
+$Command = Join-Path $GlobalPrefix "doramonitor.cmd"
+if (-not (Test-Path $Command)) { throw "doramonitor.cmd was not found in $GlobalPrefix" }
+# Prefer the CMD shim so PowerShell execution policy cannot block the command.
+Remove-Item (Join-Path $GlobalPrefix "doramonitor.ps1") -Force -ErrorAction SilentlyContinue
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($UserPath -split ";" | Where-Object { $_ -ieq $GlobalPrefix }).Count -eq 0) {
+  [Environment]::SetEnvironmentVariable("Path", (($UserPath, $GlobalPrefix | Where-Object { $_ }) -join ";"), "User")
+}
+$env:Path = "$GlobalPrefix;$env:Path"
 & $Command --version
 
 if ($WithWeb) {

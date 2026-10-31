@@ -2,11 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#requirements)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)](#requirements)
 
 **English** · [简体中文](./README.md)
 
-DoraMonitor is a local, privacy-first dashboard for AI coding tools. It combines token usage, API-equivalent cost, cache hit rates, quota windows, sessions, and multi-device summaries in one Web UI and CLI.
+**Windows and Linux (including WSL) are supported.** DoraMonitor is a local, privacy-first dashboard for AI coding tools. It combines token usage, API-equivalent cost, cache hit rates, quota windows, sessions, and multi-device summaries in one Web UI and CLI.
 
 ![DoraMonitor dashboard](./assets/screenshot.png)
 
@@ -52,25 +52,29 @@ npm start
 
 `npm run deploy` checks Node, installs the locked dependencies, and builds the Web UI. Use `npm run deploy -- --background` to deploy and start detached, or `--skip-install` to rebuild without reinstalling. For development with Vite hot reload, run `npm run dev`.
 
-## Background and Windows startup
+## One-command install, background and startup
 
-Start a detached server without opening a browser:
+On Linux (including WSL), the user-level installer needs no sudo. `--with-web` registers systemd user services and `--start` starts them immediately:
+
+```bash
+bash scripts/install-linux.sh --with-web --start
+```
+
+On Windows, the PowerShell installer registers hidden logon tasks and starts the dashboard:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
+```
+
+Both installers use only nodejs.org and the public npm registry, contain no private sync configuration, and can install Node.js when it is missing. If `doramonitor` is not found after installation, open a new terminal; on Windows you can also run `doramonitor.cmd` explicitly.
+
+For an existing installation, start a detached server without opening a browser:
 
 ```bash
 doramonitor web --background --no-open
 ```
 
-On Windows, `scripts/start-windows.bat` provides the same portable, double-clickable launcher. For hidden startup at logon and automatic restart:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/register-autostart.ps1
-```
-
-The one-command Windows installer uses only nodejs.org and the public npm registry:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -Start
-```
+Windows also provides `scripts/start-windows.bat` and `scripts/register-autostart.ps1`. The Linux systemd units are `doramonitor-web.service` and `doramonitor-daemon.service`.
 
 See [deployment and recovery](./docs/deployment.md) before exposing or changing the listening address. The default is loopback only.
 
