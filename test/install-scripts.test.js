@@ -8,7 +8,7 @@ const { spawnSync } = require("node:child_process");
 const root = path.join(__dirname, "..");
 
 test("Linux installer parses and documents its options", (t) => {
-  const script = path.join("scripts", "install-linux.sh");
+  const script = "scripts/install-linux.sh";
   const syntax = spawnSync("bash", ["-n", script], { cwd: root, encoding: "utf8" });
   if (syntax.error && syntax.error.code === "ENOENT") return t.skip("bash is unavailable");
   assert.equal(syntax.status, 0, syntax.stderr);
