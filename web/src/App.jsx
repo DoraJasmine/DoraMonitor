@@ -319,13 +319,12 @@ export default function App() {
   const storeEnabled = !!data?.storeEnabled;
   // 洞察数据只覆盖本机(store 行存);对端设备没有工作区/模型明细,
   // 选择 peer 设备时全部保持 summary 口径,避免数字错配。
+  const wsActive = wsFilter !== "all";
+  const peerSelected = wsFilter.startsWith("peer:");
+  const modelActive = modelFilter !== "all";
   const insightsActive = storeEnabled && (device === "all" || device === "local");
-  const filterActive = insightsActive && (wsFilter !== "all" || modelFilter !== "all");
   const hasPeers = (data?.sync?.peers || 0) > 0;
-  const localOnlyNote = insightsActive && hasPeers && device === "all" ? t("wsLocalNote") : null;
-  // 筛选只作用于本机行存;合并视图无筛选时保持 summary(含 peer)口径,
-  // 筛选激活后 Hero/KPI/区间卡切到本机口径并以 wsLocalNote 明示。
-  const heroFromUsage = insightsActive && filterActive;
+  const heroFromUsage = insightsActive && (wsActive || modelActive);
 
   // Workspace aliases are display-only and never synced; load once when the
   // store is confirmed available (FR-10).
@@ -341,7 +340,7 @@ export default function App() {
   // both refresh together; failures degrade to "sections hidden".
   const usageSeq = useRef(0);
   useEffect(() => {
-    if (!insightsActive) {
+    if (!insightsActive || peerSelected) {
       setUsageData(null);
       return undefined;
     }
@@ -359,7 +358,100 @@ export default function App() {
       });
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insightsActive, range, tool, wsFilter, modelFilter, data?.scannedAt]);
+  }, [insightsActive, peerSelected, range, tool, wsFilter, modelFilter, data?.scannedAt]);
+
+  // FP-06:对端工作区日汇总(哈希键),驱动工作区面板与对端筛选口径。
+  const [peerWs, setPeerWs] = useState(null);
+  useEffect(() => {
+    if (!storeEnabled) {
+      setPeerWs(null);
+      return undefined;
+    }
+    let alive = true;
+    fetchPeerWorkspaces(device)
+      .then((d) => alive && setPeerWs(d.rows || []))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeEnabled, device, data?.scannedAt]);
+
+  const fmtDay = (ms) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const toDisplayCost = (cny) => (settings.currency === "USD" ? cny / (Number(settings.fxRate) || 6.67) : cny);
+  const sumAcc = () => ({ requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, cost: 0, credits: 0, totalTokens: 0 });
+  const addCell = (acc, i, o, cr, cc, req, credits, costCny) => {
+    acc.requests += req || 0;
+    acc.inputOther += i || 0;
+    acc.output += o || 0;
+    acc.inputCacheRead += cr || 0;
+    acc.inputCacheCreation += cc || 0;
+    acc.credits += credits || 0;
+    acc.costCny += costCny || 0;
+    acc.cost += toDisplayCost(costCny || 0);
+    acc.totalTokens += (i || 0) + (o || 0) + (cr || 0) + (cc || 0);
+  };
+  const finishAcc = (acc) => {
+    const denom = acc.inputOther + acc.inputCacheRead + acc.inputCacheCreation;
+    acc.cacheHitRate = denom > 0 ? acc.inputCacheRead / denom : 0;
+    return acc;
+  };
+
+  // 选中对端工作区 → 该工作区的 perRange 口径(全部来自对端 wsDaily)
+  const peerPer = useMemo(() => {
+    if (!peerSelected) return null;
+    const row = (peerWs || []).find((r) => r.key === wsFilter);
+    const nowMs = Date.now();
+    const sum = (startDay) => {
+      const acc = sumAcc();
+      for (const [day, c] of Object.entries(row?.daily || {})) {
+        if (startDay && day < startDay) continue;
+        addCell(acc, c.i, c.o, c.cr, c.cc, c.req, c.credits, c.c);
+      }
+      return finishAcc(acc);
+    };
+    return {
+      today: sum(fmtDay(nowMs)),
+      "7d": sum(fmtDay(nowMs - 6 * 86400000)),
+      "30d": sum(fmtDay(nowMs - 29 * 86400000)),
+      all: sum(null),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerSelected, peerWs, wsFilter, settings.currency, settings.fxRate]);
+
+  // 合并/对端设备 + 仅模型筛选 → summary 的 rangeModels(按设备聚合)客户端求和
+  const modelMerged = useMemo(() => {
+    if (!modelActive) return null;
+    const out = {};
+    for (const [key, rows] of Object.entries(data?.rangeModels || {})) {
+      const acc = sumAcc();
+      for (const m of rows.filter((x) => x.model === modelFilter)) {
+        addCell(acc, m.inputOther, m.output, m.inputCacheRead, m.inputCacheCreation, m.requests, m.credits, m.costCny ?? 0);
+      }
+      out[key] = finishAcc(acc);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelActive, modelFilter, data?.rangeModels, settings.currency, settings.fxRate]);
+
+  // 对端工作区行(合并视图 = 本机 + 对端;单对端设备 = 仅对端)
+  const peerRows = useMemo(() => (peerWs || []).map((r) => ({
+    workspaceKey: r.key,
+    workspaceName: r.key === "peer:unknown" ? t("peerUnknownWs") : `${t("peerWs")} · ${r.key.slice(5, 13)}`,
+    totalTokens: r.totalTokens,
+    requests: r.requests,
+    scope: "peer",
+  })), [peerWs, t]);
+  const panelWorkspaces = useMemo(() => {
+    const local = (wsAllData?.workspaces || []).map((w) => ({ ...w, scope: "local" }));
+    if (device === "local") return local;
+    if (device === "all") return [...local, ...peerRows].sort((a, b) => b.totalTokens - a.totalTokens);
+    return peerRows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsAllData, peerRows, device]);
 
   // 工作区面板始终展示全历史口径的所有工作区(与当前时间范围解耦)。
   const [wsAllData, setWsAllData] = useState(null);
@@ -415,17 +507,41 @@ export default function App() {
   const totals = data?.stats?.totals || {};
   const stats = data?.stats || { daily: [], models: [], recent: [] };
   const rangeTotals = data?.rangeTotals || {};
-  // 筛选激活时 Hero/KPI/区间卡切到本机 usage-query 口径,并以 wsLocalNote 明示。
-  const viewTotals = (heroFromUsage && usageData ? usageData.totals : totals) || totals;
-  const viewRangeTotals = (heroFromUsage && usageData?.perRange) || rangeTotals;
+  // 筛选激活时的口径优先级:对端工作区 → 本机 usage-query → 合并模型求和 → summary。
+  const viewTotals = (() => {
+    if (peerSelected) return peerPer?.all || totals;
+    if (wsActive && insightsActive) return usageData?.totals || totals;
+    if (modelActive && modelMerged) return modelMerged[range] || totals;
+    return totals;
+  })();
+  const viewRangeTotals = (() => {
+    if (peerSelected && peerPer) return peerPer;
+    if (wsActive && insightsActive && usageData?.perRange) return usageData.perRange;
+    if (modelActive && modelMerged) return modelMerged;
+    return rangeTotals;
+  })();
 
   const meta = data?.meta || {};
   const dashboard = settings.dashboard || DEFAULT_DASHBOARD;
   const heatmap = data?.heatmaps?.[dashboard.heatmapRange] || data?.heatmap || null;
-  const dailyTrend =
-    heroFromUsage && usageData?.daily
-      ? { daily: usageData.daily, dailyByModel: null } // 筛选模式下无按模型序列,用总量曲线
-      : data?.dailyTrends?.[dashboard.dailyRange] || stats;
+  const peerDailyTrend = useMemo(() => {
+    if (!peerSelected) return null;
+    const row = (peerWs || []).find((r) => r.key === wsFilter);
+    if (!row) return null;
+    const daily = Object.entries(row.daily || {})
+      .map(([date, c]) => {
+        const acc = sumAcc();
+        addCell(acc, c.i, c.o, c.cr, c.cc, c.req, c.credits, c.c);
+        return { date, ...acc, cacheHitRate: finishAcc(acc).cacheHitRate };
+      })
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    return { daily, dailyByModel: null };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerSelected, peerWs, wsFilter, settings.currency, settings.fxRate]);
+  const dailyTrend = peerDailyTrend
+    || (wsActive && usageData?.daily
+      ? { daily: usageData.daily, dailyByModel: null } // 本机筛选模式无按模型序列,用总量曲线
+      : data?.dailyTrends?.[dashboard.dailyRange] || stats);
   const allModels = data?.allModels || [];
   const allModelCount = data?.allModelCount ?? allModels.length;
   const rangeModelCount = (stats.models || []).length;
@@ -1002,14 +1118,13 @@ export default function App() {
       {/* Workspace usage (FR-10, store-backed) */}
       {storeEnabled ? (
         <WorkspacePanel
-          workspaces={wsAllData?.workspaces || []}
+          workspaces={panelWorkspaces}
           activeKey={wsFilter}
           onSelect={setWsFilter}
           t={t}
           locale={locale}
           aliases={aliases}
           onAliasesChanged={setAliases}
-          note={localOnlyNote}
         />
       ) : null}
 
@@ -1197,14 +1312,14 @@ export default function App() {
       {/* Model usage detail (FR-12, store-backed) */}
       {storeEnabled ? (
         <ModelInsights
-          models={usageData?.models || []}
+          models={peerSelected ? [] : wsActive ? usageData?.models || [] : (stats.models || []).filter((m) => !modelActive || m.model === modelFilter)}
           t={t}
           locale={locale}
           moneyCfg={moneyCfg}
           showToolColumn={showToolColumn}
           toolById={toolById}
           loading={usageLoading}
-          note={localOnlyNote}
+          note={peerSelected ? t("peerWsNoModels") : wsActive && hasPeers ? t("wsLocalNote") : null}
           onSelectModel={(m) => setModelDetail({ model: m.modelDisplay || m.model, resolved: m.key })}
         />
       ) : null}
@@ -1490,6 +1605,7 @@ export default function App() {
       <ModelDetailDialog
         model={modelDetail?.model || null}
         resolved={modelDetail?.resolved || null}
+        note={hasPeers && device === "all" ? t("wsLocalNote") : null}
         range={range}
         tool={tool}
         workspace={wsFilter}

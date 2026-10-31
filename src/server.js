@@ -31,7 +31,7 @@ const { startQuotaSampler } = require("./quota-sampler");
 const { resolveQuotaTool } = require("./quota-tool");
 const { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, listToolQuotaAccounts } = require("./tool-quota-service");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
-const { runSync, peerRecordsCached, syncEnabled, syncConfigured, readSyncState, loadCachedPeers } = require("./sync");
+const { runSync, peerRecordsCached, syncEnabled, syncConfigured, readSyncState, loadCachedPeers, peerWorkspaceSummaries } = require("./sync");
 const { toolMeta } = require("./tools/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -515,6 +515,9 @@ async function handleApi(req, res, url, cliHome) {
       dailyTrends: { "7d": displayTrend("7d"), "30d": displayTrend("30d") },
       allModels,
       allModelCount: allModels.length,
+      rangeModels: Object.fromEntries(
+        Object.entries(cached.perRange).map(([key, agg]) => [key, displayCosts(agg, settingsNow).models])
+      ),
       rangeTotals: displayRangeTotals,
       storeEnabled,
       storeWorkspaces: storeEnabled ? store.workspaceOptions() : [],
@@ -612,6 +615,11 @@ async function handleApi(req, res, url, cliHome) {
     });
     if (!page) return json(res, 503, { error: "store_unavailable" });
     return json(res, 200, page);
+  }
+
+  // FP-06: per-workspace daily totals from cached peer summaries (hashed keys).
+  if (url.pathname === "/api/usage/peer-workspaces") {
+    return json(res, 200, { rows: peerWorkspaceSummaries(url.searchParams.get("device") || "all") });
   }
 
   if (url.pathname === "/api/workspace-aliases" && req.method === "GET") {

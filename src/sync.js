@@ -4,8 +4,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const crypto = require("crypto");
 const { randomUUID } = require("crypto");
 const { normalizeQuotaRecord } = require("./quota-schema");
+const { normalizeWorkspace } = require("./workspaces");
 
 /**
  * Cross-device usage sync.
@@ -25,7 +27,7 @@ const { normalizeQuotaRecord } = require("./quota-schema");
  * working offline; a failed sync degrades to cached data with a status note.
  */
 
-const SUMMARY_VERSION = 2;
+const SUMMARY_VERSION = 3; // v3: adds wsDaily (hashed workspace daily totals) + wsSalt
 const REMOTE_DIR = "ai-usage-monitor"; // keep: remote sync dir shared with other devices
 const CACHE_DIR = path.join(".doramonitor", "remote-cache");
 
@@ -83,8 +85,74 @@ function quotaSamplesForSync(samples, now = Date.now()) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Workspace dimension (FP-06): workspace keys are hashed with a shared salt
+// before leaving the device — real paths/names never enter the sync channel.
+// Reserved keys (__unknown__/__legacy__) travel as literal slots so the
+// receiving side can label them. The salt rides inside every summary; a
+// device that sees a peer salt adopts it, so all devices converge on one
+// salt within a sync cycle.
+// ---------------------------------------------------------------------------
+
+const WS_SALT_FILE = path.join(os.homedir(), ".doramonitor", "ws-salt");
+
+function readWsSalt() {
+  try {
+    const salt = fs.readFileSync(WS_SALT_FILE, "utf8").trim();
+    return /^[0-9a-f]{32}$/.test(salt) ? salt : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWsSalt(salt) {
+  try {
+    fs.mkdirSync(path.dirname(WS_SALT_FILE), { recursive: true });
+    const tmp = `${WS_SALT_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, salt, "utf8");
+    fs.renameSync(tmp, WS_SALT_FILE);
+  } catch {
+    /* best effort — next sync retries */
+  }
+}
+
+function wsHash(workspaceKey, salt) {
+  // Reserved slots travel as clean literals so the receiving side can label them.
+  if (workspaceKey === "__unknown__") return "unknown";
+  if (workspaceKey === "__legacy__") return "legacy";
+  if (workspaceKey.startsWith("__")) return workspaceKey.slice(2);
+  return crypto.createHmac("sha256", salt).update(workspaceKey).digest("hex").slice(0, 16);
+}
+
+/** Daily per-workspace token totals, workspace keys hashed with the salt. */
+function buildWsDaily(records, salt) {
+  if (!salt) return null;
+  const homes = new Map();
+  try {
+    for (const t of require("./tools").listTools()) homes.set(t.id, t.home);
+  } catch {
+    /* homeless tools normalize without wd_* mapping */
+  }
+  const wsDaily = {};
+  for (const r of records || []) {
+    if (!r || !r.time || r.kind === "event") continue;
+    const ws = normalizeWorkspace(r.tool, r, homes.get(r.tool) || null);
+    const slot = wsHash(ws.workspaceKey, salt);
+    const day = dayKey(r.time);
+    if (!wsDaily[day]) wsDaily[day] = {};
+    const cell = wsDaily[day][slot] || (wsDaily[day][slot] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+    cell.i += r.inputOther || 0;
+    cell.o += r.output || 0;
+    cell.cr += r.inputCacheRead || 0;
+    cell.cc += r.inputCacheCreation || 0;
+    cell.req += Number.isFinite(Number(r.requests)) && Number(r.requests) >= 0 ? Number(r.requests) : 1;
+    cell.credits += r.credits || 0;
+  }
+  return wsDaily;
+}
+
 /** Build the device summary from local usage records. */
-function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [], deviceId = null) {
+function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [], deviceId = null, wsSalt = null) {
   const days = {};
   let earliest = null;
   let latest = null;
@@ -120,6 +188,11 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
     quotaUsage: buildQuotaUsage(records),
     quotaSamples: Array.isArray(quotaSamples) ? quotaSamples : [],
   };
+  const wsDaily = buildWsDaily(records, wsSalt);
+  if (wsDaily) {
+    summary.wsDaily = wsDaily;
+    summary.wsSalt = wsSalt;
+  }
   if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
   if (deviceId) summary.deviceId = deviceId;
   return summary;
@@ -662,7 +735,23 @@ async function runSync(records, settings, codexQuota = null) {
     // Local sync reports the missing identity; existing backends stay compatible.
   }
   const { readSamples } = require("./quota-estimator-store");
-  const summary = buildSummary(deviceName, records, codexQuota, quotaSamplesForSync(readSamples()), deviceId);
+  // Salt bootstrap: local → cached peer salt → generate. A differing peer
+  // salt (fetched below) is adopted after the run; the next cycle re-uploads
+  // with it, so all devices converge on one salt.
+  let wsSalt = readWsSalt();
+  if (!wsSalt) {
+    for (const peer of loadCachedPeers()) {
+      if (peer.wsSalt && /^[0-9a-f]{32}$/.test(peer.wsSalt)) {
+        wsSalt = peer.wsSalt;
+        break;
+      }
+    }
+  }
+  if (!wsSalt) {
+    wsSalt = crypto.randomBytes(16).toString("hex");
+  }
+  writeWsSalt(wsSalt);
+  const summary = buildSummary(deviceName, records, codexQuota, quotaSamplesForSync(readSamples()), deviceId, wsSalt);
 
   let uploaded = false;
   let uploadError = null;
@@ -696,6 +785,14 @@ async function runSync(records, settings, codexQuota = null) {
   const fromCache = !fetched.ok;
   const peers = fetched.ok ? fetched.peers : loadCachedPeers();
   if (fetched.ok) savePeersToCache(peers);
+  // Converge on one workspace salt across devices.
+  for (const peer of peers) {
+    if (peer.wsSalt && /^[0-9a-f]{32}$/.test(peer.wsSalt) && peer.wsSalt !== wsSalt) {
+      wsSalt = peer.wsSalt;
+      writeWsSalt(wsSalt);
+      break;
+    }
+  }
 
   const result = {
     enabled: true,
@@ -722,6 +819,49 @@ function peerRecordsCached() {
     records.push(...summaryToRecords(peer));
   }
   return records;
+}
+
+/**
+ * Per-workspace daily totals from cached peer summaries (FP-06). Keys are
+ * "peer:<hash>" slots (reserved keys surface as "peer:unknown" etc.).
+ * device: "all" (every peer combined) or one peer device name.
+ */
+function peerWorkspaceSummaries(device = "all") {
+  const map = new Map();
+  for (const peer of loadCachedPeers()) {
+    if (!peer || !peer.wsDaily) continue;
+    if (device !== "all" && String(peer.device || "") !== String(device)) continue;
+    const peerDevice = String(peer.device || "peer");
+    for (const [day, slots] of Object.entries(peer.wsDaily || {})) {
+      for (const [slot, cell] of Object.entries(slots || {})) {
+        const key = `peer:${slot}`;
+        if (!map.has(key)) {
+          map.set(key, { key, workspaceKey: key, workspaceName: slot.startsWith("__") ? null : null, devices: new Set(), daily: {}, totalTokens: 0, requests: 0, credits: 0 });
+        }
+        const row = map.get(key);
+        row.devices.add(peerDevice);
+        const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+        d.i += cell.i || 0;
+        d.o += cell.o || 0;
+        d.cr += cell.cr || 0;
+        d.cc += cell.cc || 0;
+        d.req += cell.req || 0;
+        d.credits += cell.credits || 0;
+        row.totalTokens += (cell.i || 0) + (cell.o || 0) + (cell.cr || 0) + (cell.cc || 0);
+        row.requests += cell.req || 0;
+        row.credits += cell.credits || 0;
+      }
+    }
+  }
+  return [...map.values()].map((row) => ({
+    key: row.key,
+    workspaceKey: row.workspaceKey,
+    devices: [...row.devices],
+    daily: row.daily,
+    totalTokens: row.totalTokens,
+    requests: row.requests,
+    credits: row.credits,
+  })).sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 function peerQuotaUsageCached() {
@@ -764,5 +904,7 @@ module.exports = {
   recordSyncState,
   savePeersToCache,
   loadCachedPeers,
+  peerWorkspaceSummaries,
+  readWsSalt,
   dayKey,
 };

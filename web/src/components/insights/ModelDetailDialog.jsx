@@ -16,7 +16,7 @@ import { modelLabel } from "@/lib/labels";
 /**
  * FR-12 单模型明细弹层:当前范围内该模型的汇总、按日趋势与全历史逐请求分页。
  */
-export function ModelDetailDialog({ model, resolved = null, range = "all", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById }) {
+export function ModelDetailDialog({ model, resolved = null, range = "all", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById, note }) {
   const [query, setQuery] = useState(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -81,6 +81,7 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
             {row?.costEstimated ? <Badge variant="warn">{t("estimated")}</Badge> : row?.priceId ? <Badge variant="success">{t("official")}</Badge> : null}
           </DialogTitle>
           <DialogDescription>{t("modelDetailHint")}</DialogDescription>
+        {note ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-warning">{note}</div> : null}
         </DialogHeader>
 
         {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div> : null}

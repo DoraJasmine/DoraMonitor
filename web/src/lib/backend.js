@@ -150,6 +150,11 @@ export async function fetchUsageRecords(params = {}) {
   return httpJson(`/api/usage/records?${qs.toString()}`);
 }
 
+/** GET /api/usage/peer-workspaces — hashed peer workspace daily totals (FP-06) */
+export async function fetchPeerWorkspaces(device = "all") {
+  return httpJson(`/api/usage/peer-workspaces?device=${encodeURIComponent(device)}`);
+}
+
 /** GET /api/workspace-aliases */
 export async function fetchWorkspaceAliases() {
   return httpJson("/api/workspace-aliases");
