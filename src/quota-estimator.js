@@ -6,7 +6,7 @@ const { costForUsage } = require("./pricing");
 const CACHE_TARGETS = [0.85, 0.9, 0.95, 0.98];
 // Bump whenever estimation logic changes: cache validation rejects results
 // from every older algorithm version, including persisted results after restart.
-const ALGORITHM_VERSION = 9;
+const ALGORITHM_VERSION = 10;
 const TOKEN_TYPES = ["inputOther", "inputCacheRead", "inputCacheCreation", "output"];
 const DAY_MS = 86_400_000;
 
@@ -484,11 +484,10 @@ function estimateWindow(intervals, { now = Date.now(), settings = null } = {}) {
       const values = nearby.map((interval) => interval.totalTokens * 100 / interval.dp);
       const localWeights = nearby.map((interval) => baseWeight(interval, now) / Math.max(0.005, Math.abs(interval.cacheHitRate - cacheHitRate)));
       const fullWindowTokens = weightedQuantile(values, localWeights, 0.5);
-      const localMonetary = costCapacity(nearby, now);
-      const pricedTokens = tokensFromCost(localMonetary, modelProfile(nearby), cacheHitRate, resolvedSettings);
+      const pricedTokens = tokensFromCost(monetary, modelProfile(nearby), cacheHitRate, resolvedSettings);
       return {
         ...common,
-        ...localMonetary,
+        ...monetary,
         sampleCount: nearby.length,
         percentSpan: nearby.reduce((sum, interval) => sum + interval.dp, 0),
         confidence: confidenceFor(nearby.length, nearby.reduce((sum, interval) => sum + interval.dp, 0), coverage, 1),

@@ -124,6 +124,22 @@ test("price prior provides clearly marked sparse estimates in tokens and CNY", (
   assert.ok(extrapolated.confidenceReasons.includes("cache_extrapolation"));
 });
 
+test("all cache targets share one monetary basis when local profiles differ", () => {
+  const { costForUsage } = require("../src/pricing");
+  const intervals = [0.9, 0.95].map((cacheHitRate, index) => {
+    const interval = syntheticInterval(cacheHitRate, index);
+    const usage = interval.models["gpt-test"];
+    delete interval.models["gpt-test"];
+    interval.models["gpt-5.6-sol"] = usage;
+    interval.costCny = costForUsage("gpt-5.6-sol", usage, { skipSettings: true }).total * (index + 1);
+    usage.costCny = interval.costCny;
+    return interval;
+  });
+  const result = estimateWindow(intervals, { settings: { fxRate: 6.67, customPrices: [] } });
+  assert.equal(result.targets.find((target) => target.cacheHitRate === 0.95).method, "local");
+  assert.equal(new Set(result.targets.map((target) => target.fullWindowCostCny)).size, 1);
+});
+
 test("cost-based conversion includes uncached input, cache read, cache write and output", () => {
   const { costForUsage } = require("../src/pricing");
   const usage = { inputOther: 50, inputCacheRead: 900, inputCacheCreation: 50, output: 100, totalTokens: 1100 };

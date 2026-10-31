@@ -48,11 +48,11 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
     }
   }
   const resolvedAccount = accountKey || `${provider}:default`;
+  // The calculation range delimits reporting; capacity learns from all
+  // observations available at its endpoint to avoid small-interval volatility.
   const estimationSamples = [...samples.values()].filter((sample) => {
-    if (calculation?.trigger !== "scheduled" || sample.window !== calculation.window) return true;
-    const time = Date.parse(sample.sampledAt || "");
-    return (!calculation.startAt || time >= Date.parse(calculation.startAt)) &&
-      (!calculation.endAt || time <= Date.parse(calculation.endAt));
+    if (calculation?.trigger !== "scheduled" || sample.window !== calculation.window || !calculation.endAt) return true;
+    return Date.parse(sample.sampledAt || "") <= Date.parse(calculation.endAt);
   });
   return getOrComputeCapacity({
     provider,
@@ -99,8 +99,8 @@ function getCapacityHistory(query, root, { collected, peers } = {}) {
   const reconstructed = new Map();
   page.history = page.history.map((item) => {
     if (Array.isArray(item.observations) && item.observations.length) return item;
-    const start = Date.parse(item.calculationStartAt || item.dataRange?.start || "");
-    const end = Date.parse(item.calculationEndAt || item.dataRange?.end || "");
+    const start = Date.parse(item.dataRange?.start || item.calculationStartAt || "");
+    const end = Date.parse(item.dataRange?.end || item.calculationEndAt || "");
     const key = `${start}:${end}`;
     if (!reconstructed.has(key)) {
       const intervalSamples = [...samples.values()].filter((sample) => {
