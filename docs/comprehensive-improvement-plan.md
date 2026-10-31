@@ -127,6 +127,10 @@ R1 视觉升级 / R2 工作区维度 / R3 图表下钻当日明细 / R4 模型�
 
 ## 9. 路线图与依赖
 
+> **M3.5 SQLite 扩展性加固(2026-10-31 已完成)**:① `PRAGMA user_version` 版本化迁移(MIGRATIONS 数组,追加式);② `src/record-schema.js` 记录契约(字段声明 + validateRecord 入库边界校验 + emptyRecord 单一实现);③ `pricing.cellCostCny` 单一费用计算(aggregate/store 去重);④ 存储端口成文(architecture.md §4.0:五方法唯一边界 + 四条纪律)。验证:272 项测试全绿,真实数据 13.6k 记录零校验误杀。
+> 说明:曾评估"费用完全推迟到 DTO 组装"——因热力图需要逐日费用而放弃;③ 的"单一费用函数"达成同一目标(改价不动聚合)且无结构震荡。
+
+
 ```mermaid
 flowchart LR
     M0[M0 基线修订] --> M1[M1 存储层<br/>store.js + workspaces + 旧桶导入]
