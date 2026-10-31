@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import {
   Gauge,
   Github,
@@ -140,22 +139,11 @@ function useTheme() {
   return { theme, changeTheme };
 }
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 12 },
-  show: (i = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: i * 0.05, duration: 0.4, ease: [0.22, 1, 0.36, 1] },
-  }),
-};
-
 export default function App() {
   const { locale, t, changeLocale } = useLocale();
   const { theme, changeTheme } = useTheme();
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
-  const reduceMotion = useReducedMotion();
   const [home, setHome] = useState(() => localStorage.getItem("kcd_home") || "");
-  const [homeInput, setHomeInput] = useState(home);
   const [range, setRange] = useState(
     () => localStorage.getItem("kcd_range") || "all"
   );
@@ -166,6 +154,7 @@ export default function App() {
     () => localStorage.getItem("aum_device") || "all"
   );
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(null);
   const [settings, setSettings] = useState({
     currency: "CNY",
     currencySymbol: "¥",
@@ -187,8 +176,6 @@ export default function App() {
     return localStorage.getItem("kcd_page") || "usage";
   });
   const rangeReady = useRef(false);
-  // Play entrance motion only once — refresh must not re-trigger fade/stagger.
-  const entered = useRef(false);
   const loadingRef = useRef(false);
   const loadSeq = useRef(0);
   const flashTimer = useRef(null);
@@ -238,7 +225,6 @@ export default function App() {
         if (seq !== loadSeq.current) return;
         setData(summary);
         setHome(summary.home || nextHome);
-        setHomeInput(summary.home || nextHome);
         localStorage.setItem("kcd_home", summary.home || nextHome || "");
         if (refresh) {
           setRefreshFlash(true);
@@ -257,7 +243,6 @@ export default function App() {
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
         loadingRef.current = false;
         setLoading(false);
-        entered.current = true;
       }
     },
     [home, range, tool, device, t]
@@ -277,7 +262,6 @@ export default function App() {
       .then((d) => {
         if (!home) {
           setHome(d.current || "");
-          setHomeInput(d.current || "");
         }
       })
       .catch(() => {});
@@ -470,23 +454,15 @@ export default function App() {
       });
     }
     return items;
-  }, [totals, t, locale]);
+  }, [totals, t, locale, moneyCfg, settings.currencySymbol]);
 
   return (
     <div className="mx-auto max-w-[1240px] px-4 py-6 pb-16 sm:px-6">
       {/* Header */}
-      <motion.header
-        className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-        initial={reduceMotion || entered.current ? false : "hidden"}
-        animate="show"
-        variants={fadeUp}
-      >
+      <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <AppLogo size={40} className="shrink-0 rounded-[9px] shadow-panel ring-1 ring-white/10" />
           <div className="flex min-w-0 flex-col justify-center leading-tight">
-            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {t("brandEyebrow")}
-            </div>
             <div className="flex items-end gap-2.5">
               <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                 {t("appTitle")}
@@ -594,10 +570,10 @@ export default function App() {
             </Button>
           ) : <span className="inline-block h-9 w-[84px]" aria-hidden />}
         </div>
-      </motion.header>
+      </header>
 
       {error && page === "usage" ? (
-        <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-red-200">
+        <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       ) : null}
@@ -610,13 +586,7 @@ export default function App() {
       <>
       {/* Tool switcher */}
       {availableTools.length > 0 ? (
-        <motion.div
-          className="mb-4"
-          custom={1}
-          initial={reduceMotion || entered.current ? false : "hidden"}
-          animate="show"
-          variants={fadeUp}
-        >
+        <div className="mb-4">
           <div className="flex flex-wrap items-center gap-2">
             <Tabs value={tool} onValueChange={switchTool}>
               <TabsList>
@@ -648,11 +618,11 @@ export default function App() {
               </TabsList>
             </Tabs>
           </div>
-        </motion.div>
+        </div>
       ) : null}
 
       {creditsOnlyTool ? (
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-warning">
           {t("toolNoTokenNote")}
         </div>
       ) : null}
@@ -674,35 +644,38 @@ export default function App() {
                 ))}
             </TabsList>
           </Tabs>
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
             disabled={syncing}
             onClick={async () => {
               setSyncing(true);
+              setSyncMessage(null);
               try {
-                await fetch("/api/sync", { method: "POST" });
+                const response = await fetch("/api/sync", { method: "POST" });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.message || result.error || response.statusText);
+                const problem = result.uploadError || result.error;
+                setSyncMessage(problem
+                  ? { kind: "error", text: fill(t("syncFailed"), { reason: problem }) }
+                  : { kind: "success", text: fill(t("syncComplete"), { n: (result.peers || []).length }) });
                 await loadSummary({ refresh: true });
-              } catch {
-                // keep the UI alive on sync failure
+              } catch (e) {
+                setSyncMessage({ kind: "error", text: fill(t("syncFailed"), { reason: e.message || String(e) }) });
               } finally {
                 setSyncing(false);
               }
             }}
           >
             {syncing ? t("syncing") : t("syncNow")}
-          </button>
+          </Button>
+          {syncMessage && <div role="status" className={cn("w-full text-xs", syncMessage.kind === "error" ? "text-destructive" : "text-success")}>{syncMessage.text}</div>}
         </div>
       ) : null}
 
       {/* Range tabs */}
-      <motion.div
-        className="mb-4"
-        custom={2}
-        initial={reduceMotion || entered.current ? false : "hidden"}
-        animate="show"
-        variants={fadeUp}
-      >
+      <div className="mb-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={range} onValueChange={setRange}>
             <TabsList>
@@ -733,21 +706,17 @@ export default function App() {
             </span>
           </p>
         ) : null}
-      </motion.div>
+      </div>
 
       {/* Range overview cards */}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {RANGE_KEYS.map((r, i) => {
+        {RANGE_KEYS.map((r) => {
           const tot = rangeTotals[r.value] || {};
           const active = range === r.value;
           return (
-            <motion.button
+            <button
               key={r.value}
               type="button"
-              custom={i}
-              initial={reduceMotion || entered.current ? false : "hidden"}
-              animate="show"
-              variants={fadeUp}
               onClick={() => setRange(r.value)}
               className={cn(
                 "rounded-lg border bg-card p-4 text-left shadow-panel transition-colors",
@@ -764,21 +733,15 @@ export default function App() {
                 {fmtInt(tot.requests || 0, locale)} · {fmtMoney(tot.cost || 0, moneyCfg)} ·{" "}
                 {fmtPct(tot.cacheHitRate || 0)}
               </div>
-            </motion.button>
+            </button>
           );
         })}
       </div>
 
       {/* KPI strip — first screen before heatmap */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-        {kpiItems.map((item, i) => (
-          <motion.div
-            key={item.title}
-            custom={i}
-            initial={reduceMotion || entered.current ? false : "hidden"}
-            animate="show"
-            variants={fadeUp}
-          >
+        {kpiItems.map((item) => (
+          <div key={item.title}>
             <Card className="h-full">
               <CardContent className="p-3.5">
                 <div className="text-[11px] text-muted-foreground">{item.title}</div>
@@ -797,59 +760,35 @@ export default function App() {
                 ) : null}
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         ))}
       </div>
 
       {/* Kimi quota (5-hour + weekly windows) */}
       {(tool === "all" || tool === "kimi-code") &&
       availableTools.some((x) => x.id === "kimi-code") ? (
-        <motion.div
-          className="mb-5"
-          custom={3}
-          initial={reduceMotion || entered.current ? false : "hidden"}
-          animate="show"
-          variants={fadeUp}
-        >
+        <div className="mb-5">
           <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} />
-        </motion.div>
+        </div>
       ) : null}
 
       {/* Codex quota (rate_limits from rollout files: 5h + weekly) */}
       {(tool === "all" || tool === "codex") &&
       availableTools.some((x) => x.id === "codex") ? (
-        <motion.div
-          className="mb-5"
-          custom={3}
-          initial={reduceMotion || entered.current ? false : "hidden"}
-          animate="show"
-          variants={fadeUp}
-        >
+        <div className="mb-5">
           <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="codex" />
-        </motion.div>
+        </div>
       ) : null}
 
       {(tool === "all" || tool === "zcode") &&
       availableTools.some((x) => x.id === "zcode") ? (
-        <motion.div
-          className="mb-5"
-          custom={3}
-          initial={reduceMotion || entered.current ? false : "hidden"}
-          animate="show"
-          variants={fadeUp}
-        >
+        <div className="mb-5">
           <QuotaToolCards t={t} locale={locale} refreshSignal={data?.scannedAt} tool="zcode" />
-        </motion.div>
+        </div>
       ) : null}
 
       {/* Heatmap */}
-      <motion.div
-        custom={3}
-        initial={reduceMotion || entered.current ? false : "hidden"}
-        animate="show"
-        variants={fadeUp}
-        className="mb-5"
-      >
+      <div className="mb-5">
         <Card>
           <CardHeader>
             <CardTitle>{t("heatmap")}</CardTitle>
@@ -859,7 +798,7 @@ export default function App() {
             <Heatmap heatmap={heatmap} locale={locale} t={t} moneyCfg={moneyCfg} />
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
 
       {/* Charts + models */}
       <div className="mb-5 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -876,7 +815,6 @@ export default function App() {
               daily={stats.daily}
               dailyByModel={stats.dailyByModel}
               t={t}
-              reducedMotion={!!reduceMotion}
               moneyCfg={moneyCfg}
             />
           </CardContent>
@@ -1300,7 +1238,7 @@ export default function App() {
             .flatMap((m) => m.errors || [])
             .slice(0, 5);
           return errs.length > 0 ? (
-            <div className="mt-1 max-w-[720px] truncate text-amber-400/90" title={errs.map((e) => `${e.file || ""} ${e.message || e}`).join("\n")}>
+            <div className="mt-1 max-w-[720px] truncate text-warning" title={errs.map((e) => `${e.file || ""} ${e.message || e}`).join("\n")}>
               {errs[0]?.message || errs[0]}
               {errs.length > 1 ? ` (+${errs.length - 1})` : ""}
             </div>

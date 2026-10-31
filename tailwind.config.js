@@ -34,6 +34,8 @@ module.exports = {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
+        warning: "hsl(var(--warning))",
+        success: "hsl(var(--success))",
         heat: {
           0: "hsl(var(--heat-0))",
           1: "hsl(var(--heat-1))",
@@ -67,15 +69,6 @@ module.exports = {
       },
       boxShadow: {
         panel: "var(--shadow-panel)",
-      },
-      keyframes: {
-        "fade-up": {
-          from: { opacity: "0", transform: "translateY(10px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-      },
-      animation: {
-        "fade-up": "fade-up 0.45s ease-out both",
       },
     },
   },

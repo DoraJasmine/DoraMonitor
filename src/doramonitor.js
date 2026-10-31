@@ -89,7 +89,7 @@ function cmdWeb(rest) {
   }
   const { createServer, urlHost } = require("./server");
   const { listTools } = require("./tools");
-  const server = createServer(null);
+  const server = createServer(null, opts.host);
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
       console.error(`端口 ${opts.port} 已被占用（可能已在运行）。换端口: doramonitor web --port 3848`);

@@ -56,7 +56,7 @@ function areaPath(points, baselineY) {
  * Prefers stats.dailyByModel (continuous days + per-model series);
  * falls back to stats.daily totals only.
  */
-export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, moneyCfg }) {
+export function DailyBars({ daily, dailyByModel, t, moneyCfg }) {
   const wrapRef = useRef(null);
   const [hover, setHover] = useState(null); // index
   const [hidden, setHidden] = useState(() => new Set());
@@ -286,7 +286,7 @@ export function DailyBars({ daily, dailyByModel, t, reducedMotion = false, money
           <path
             d={areaPath(totalPoints, pad.top + innerH)}
             fill={TOTAL_COLOR}
-            opacity={reducedMotion ? 0.5 : 0.55}
+            opacity={0.55}
           />
           <path
             d={smoothPath(totalPoints)}

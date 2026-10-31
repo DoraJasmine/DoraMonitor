@@ -13,9 +13,8 @@ export default defineConfig({
       "@": path.resolve(__dirname, "web/src"),
     },
   },
-  // @lobehub/icons ships ESM that needs pre-bundling under Vite
   optimizeDeps: {
-    include: ["@lobehub/icons/es/Kimi", "@tauri-apps/api/core"],
+    include: ["@tauri-apps/api/core"],
   },
   build: {
     outDir: "../dist",
@@ -29,7 +28,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           react: ["react", "react-dom", "scheduler"],
-          motion: ["framer-motion"],
           icons: ["lucide-react"],
           radix: [
             "@radix-ui/react-dialog",

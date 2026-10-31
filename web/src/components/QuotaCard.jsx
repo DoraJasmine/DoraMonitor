@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Gauge, Play, RefreshCw, Square, X } from "lucide-react";
 import {
   Card,
@@ -140,6 +140,7 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const requestSeq = useRef(0);
   const query = {
     tool: capacity.tool,
     accountKey: capacity.accountKey,
@@ -150,25 +151,31 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
   const queryKey = JSON.stringify(query);
 
   useEffect(() => {
+    requestSeq.current += 1;
     setHistory(null);
     setTotal(0);
+    setLoading(false);
     setFailed(false);
+    setOpen(false);
   }, [queryKey]);
 
   const load = async (offset = 0) => {
     if (loading) return;
+    const seq = ++requestSeq.current;
     setLoading(true);
     setFailed(false);
     try {
       const data = await fetchQuotaCapacityHistory({ ...query, limit: 40, offset });
+      if (seq !== requestSeq.current) return;
       const rows = data.history || [];
       setHistory((current) => offset === 0 || !current ? rows : [...current, ...rows]);
       setTotal(Number(data.total) || rows.length);
     } catch {
+      if (seq !== requestSeq.current) return;
       setFailed(true);
       if (offset === 0) setHistory([]);
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 
@@ -330,7 +337,7 @@ function CalibrationControls({ window, capacity, locale, t, onChanged }) {
           </>
         )}
       </div>
-      {message && <div className={cn("mt-2", message.kind === "error" ? "text-destructive" : "text-emerald-600")} role="status">{message.text}</div>}
+      {message && <div className={cn("mt-2", message.kind === "error" ? "text-destructive" : "text-success")} role="status">{message.text}</div>}
     </div>
   );
 }
@@ -341,29 +348,34 @@ function QuotaSampleHistory({ quota, locale, t }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const requestSeq = useRef(0);
   const tool = quota.tool;
   const accountKey = quota.accountKey || quota.capacity?.accountKey;
   const queryKey = `${tool}:${accountKey}`;
 
   useEffect(() => {
+    requestSeq.current += 1;
     setSamples(null);
     setTotal(0);
+    setLoading(false);
     setOpen(false);
   }, [queryKey]);
 
   const load = async (offset = 0) => {
     if (loading || !tool || !accountKey) return;
+    const seq = ++requestSeq.current;
     setLoading(true);
     setFailed(false);
     try {
       const data = await fetchQuotaSampleHistory({ tool, accountKey, limit: 20, offset });
+      if (seq !== requestSeq.current) return;
       const rows = data.samples || [];
       setSamples((current) => offset === 0 || !current ? rows : [...current, ...rows]);
       setTotal(Number(data.total) || rows.length);
     } catch {
-      setFailed(true);
+      if (seq === requestSeq.current) setFailed(true);
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 
@@ -480,7 +492,7 @@ function CapacitySection({ capacity, locale, t, onChanged }) {
           );
         })}
       </div>
-      {capacity.usageScope === "kimi-code-only" && <div className="mt-3 text-[11px] text-amber-600">{t("capacityScopeWarning")}</div>}
+      {capacity.usageScope === "kimi-code-only" && <div className="mt-3 text-[11px] text-warning">{t("capacityScopeWarning")}</div>}
     </section>
   );
 }
@@ -563,9 +575,11 @@ function HomeCapacity({ capacity, locale, t }) {
 
 export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail = false, accountKey = null, accountLabel = null }) {
   const [quota, setQuota] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [scope, setScope] = useState("all-clients");
   const [, forceTick] = useState(0);
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     fetchSettings().then((settings) => {
@@ -576,16 +590,18 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
   }, [tool]);
 
   const load = useCallback(async (refresh = false) => {
+    const seq = ++requestSeq.current;
     setLoading(true);
+    setError(null);
     try {
       const d = await fetchQuota(refresh, tool, scope, accountKey);
-      setQuota(d);
-    } catch {
-      setQuota(null);
+      if (seq === requestSeq.current) setQuota(d);
+    } catch (e) {
+      if (seq === requestSeq.current) setError(e.message || t("quotaLoadFailed"));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
-  }, [tool, scope, accountKey]);
+  }, [tool, scope, accountKey, t]);
 
   useEffect(() => {
     load(false);
@@ -600,8 +616,9 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
     setScope(next);
     try {
       await saveSettings({ quotaEstimation: tool === "codex" ? { codexOnly: next === "codex-only" } : { kimiCodeOnly: next === "kimi-code-only" } });
-    } catch {
+    } catch (e) {
       setScope(previous);
+      setError(e.message || t("settingsSaveFailed"));
     }
   };
 
@@ -644,24 +661,33 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
         <CardDescription>{t(i18n.hint)}</CardDescription>
       </CardHeader>
       <CardContent>
-        {!quota ? (
+        {error && <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+          <span>{error}</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => load(true)}>{t("retry")}</Button>
+        </div>}
+        {loading && !quota ? (
+          <div className="grid gap-3 sm:grid-cols-2" aria-busy="true" aria-label={t("loading")}>
+            {[0, 1].map((item) => <div key={item} className="h-[88px] animate-pulse rounded-lg border border-border/60 bg-secondary/30" />)}
+          </div>
+        ) : !quota ? (
           <div className="py-2 text-sm text-muted-foreground">{t("quotaNoUsage")}</div>
         ) : !quota.available ? (
           <div className="py-2 text-sm text-muted-foreground">{fill(t("quotaUnavailable"), { reason: reasonText })}</div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {[...windows].sort((a, b) => (a.kind === "session" ? 0 : 1) - (b.kind === "session" ? 0 : 1)).map((w) => {
               const used = Math.round(w.usedPercent);
               const remainingPercent = Math.max(0, Math.min(100, 100 - used));
               const remaining = countdown(w.resetsAt, Date.now());
+              const barColor = remainingPercent <= 20 ? "bg-destructive" : remainingPercent <= 50 ? "bg-amber-500" : "bg-emerald-500";
               return (
-                <div key={w.kind} className="space-y-2">
+                <div key={w.kind} className="space-y-2 rounded-lg border border-border/60 bg-secondary/20 p-3">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-sm font-medium">{w.kind === "session" ? t("quota5h") : w.label || t("quotaWeekly")}</span>
                     <span className="text-sm font-semibold num">{remainingPercent}% {t("quotaRemaining")}</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${remainingPercent}%` }} />
+                  <div className="h-2 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-label={w.kind === "session" ? t("quota5h") : w.label || t("quotaWeekly")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={remainingPercent}>
+                    <div className={cn("h-full rounded-full transition-[width] duration-200", barColor)} style={{ width: `${remainingPercent}%` }} />
                   </div>
                   <div className="text-[11px] text-muted-foreground">{w.resetsAt ? fill(t("quotaResetsIn"), { t: remaining || "—" }) : "\u00a0"}</div>
                 </div>
@@ -680,14 +706,18 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
 
 export function QuotaToolCards(props) {
   const { tool = "kimi-code" } = props;
-  const [accounts, setAccounts] = useState([]);
+  const [accounts, setAccounts] = useState(null);
   useEffect(() => {
     let active = true;
+    setAccounts(null);
     fetchQuotaAccounts(tool).then((data) => {
       if (active) setAccounts(data.accounts || []);
-    }).catch(() => {});
+    }).catch(() => {
+      if (active) setAccounts([]);
+    });
     return () => { active = false; };
   }, [tool]);
+  if (accounts === null) return <Card aria-busy="true"><CardContent className="p-5"><div className="h-24 animate-pulse rounded-lg bg-secondary/30" /></CardContent></Card>;
   if (accounts.length <= 1) return <QuotaCard {...props} accountKey={accounts[0]?.accountKey || null} />;
   return (
     <div className="space-y-5">

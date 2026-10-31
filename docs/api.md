@@ -114,7 +114,7 @@
 
 ## 5. GET/POST /api/settings
 
-- GET → `loadSettings()` 原样（结构见[配置与设置](./configuration.md)）。
+- GET → 设置视图（结构见[配置与设置](./configuration.md)）；不返回 `sync.webdav.password`，以 `sync.webdav.hasPassword` 表示是否已保存密码。POST 响应同样脱敏。
 - POST：body 与当前设置**浅合并**，`sync` 段深合并（`sync.ssh`、`sync.webdav`
   各自 merge）。保存后 `invalidateCollect()` + `collect({force:true})`——
   **自定义价格与汇率立即生效，无需重启**。

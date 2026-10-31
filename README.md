@@ -97,7 +97,7 @@ doramonitor --help                Show all options
 - Cross-client model attribution: GPT usage in omp can count toward OpenAI quota estimation; unrelated models are excluded.
 - Optional client-only estimation switches and detailed estimation history on the `/quota` page.
 - Kimi session/workspace management with secret-redacting previews.
-- Optional SSH/WebDAV multi-device synchronization, including minute-level quota-usage buckets.
+- Optional SSH/WebDAV/local-directory multi-device synchronization, including minute-level quota-usage buckets.
 
 Equivalent capacity and API-price costs are estimates, not vendor bills or guaranteed subscription limits.
 

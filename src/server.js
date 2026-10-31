@@ -62,6 +62,24 @@ if (!fs.existsSync(path.join(PUBLIC, "index.html"))) {
 
 const DEFAULT_HOST = "127.0.0.1";
 
+function requestAllowed(req, bindHost = DEFAULT_HOST) {
+  const host = String(req.headers.host || "").toLowerCase();
+  if (["127.0.0.1", "localhost", "::1"].includes(bindHost) && host) {
+    const hostname = host.startsWith("[")
+      ? host.slice(1, host.indexOf("]"))
+      : host.split(":")[0];
+    if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) return false;
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && req.headers.origin) {
+    try {
+      if (new URL(req.headers.origin).host.toLowerCase() !== host) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 function parseArgs(argv) {
   const opts = { port: 3847, host: DEFAULT_HOST, home: null, open: true };
   for (let i = 2; i < argv.length; i++) {
@@ -882,8 +900,11 @@ function displayCosts(aggregateResult, settings) {
   };
 }
 
-function createServer(cliHome) {
+function createServer(cliHome, bindHost = DEFAULT_HOST) {
   return http.createServer((req, res) => {
+    if (!requestAllowed(req, bindHost)) {
+      return json(res, 403, { error: "forbidden_origin" });
+    }
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname.startsWith("/api/")) {
       Promise.resolve(handleApi(req, res, url, cliHome)).catch((err) => {
@@ -937,8 +958,7 @@ function main() {
     printHelp();
     process.exit(0);
   }
-  const home = resolveKimiHome(opts.home);
-  const server = createServer(opts.home);
+  const server = createServer(opts.home, opts.host);
   startQuotaSampler(opts.home);
   server.listen(opts.port, opts.host, () => {
     // Show an address the user can actually click; the wildcard binds are
@@ -959,4 +979,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createServer, parseArgs, urlHost, settingsView, DEFAULT_HOST };
+module.exports = { createServer, parseArgs, urlHost, requestAllowed, settingsView, DEFAULT_HOST };

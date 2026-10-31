@@ -56,7 +56,7 @@ function loadConfig(home) {
   }
   if (text.trim() === "") return {};
   try {
-    return parseToml(text);
+    return structuredClone(parseToml(text));
   } catch (err) {
     throw new ConfigError("invalid_toml", `config.toml is not valid TOML: ${err.message}`);
   }
