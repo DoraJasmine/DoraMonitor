@@ -3,6 +3,7 @@
 
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { URL } = require("url");
 
@@ -28,7 +29,7 @@ const { startQuotaSampler } = require("./quota-sampler");
 const { resolveQuotaTool } = require("./quota-tool");
 const { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, listToolQuotaAccounts } = require("./tool-quota-service");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
-const { runSync, peerRecordsCached, syncEnabled } = require("./sync");
+const { runSync, peerRecordsCached, syncEnabled, syncConfigured, readSyncState, loadCachedPeers } = require("./sync");
 const { toolMeta } = require("./tools/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -654,6 +655,20 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/tools") {
     return json(res, 200, { tools: listTools() });
+  }
+
+  if (url.pathname === "/api/sync" && req.method === "GET") {
+    const settings = loadSettings();
+    const sync = settings.sync || {};
+    return json(res, 200, {
+      enabled: syncEnabled(settings),
+      configured: syncConfigured(settings),
+      backend: sync.backend,
+      device: sync.deviceName || os.hostname(),
+      syncInterval: sync.syncInterval,
+      state: readSyncState(),
+      cachedPeers: loadCachedPeers().map((peer) => ({ device: peer.device, generatedAt: peer.generatedAt || null })),
+    });
   }
 
   if (url.pathname === "/api/sync" && req.method === "POST") {

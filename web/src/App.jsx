@@ -619,7 +619,7 @@ export default function App() {
 
       {page === "prices" ? <PricesPage t={t} locale={locale} onSaved={handlePricingSaved} /> : null}
 
-      {page === "sync" ? <SyncSettingsPage t={t} onSaved={handleSyncSaved} onSynced={handleSyncSaved} /> : null}
+      {page === "sync" ? <SyncSettingsPage t={t} locale={locale} onSaved={handleSyncSaved} onSynced={handleSyncSaved} /> : null}
 
       {page === "usage" ? (
       <>

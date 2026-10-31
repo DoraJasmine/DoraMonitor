@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchSettings, saveSettings, syncNow } from "@/lib/backend";
+import { fetchSettings, fetchSyncStatus, saveSettings, syncNow } from "@/lib/backend";
 import { fill } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -40,21 +40,51 @@ function Field({ label, hint, children }) {
   );
 }
 
-export default function SyncSettingsPage({ t, onSaved, onSynced }) {
+function SyncStatus({ connection, t, locale }) {
+  if (!connection) return <div role="alert" className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">{t("syncStatusUnavailable")}</div>;
+  const state = connection.state || {};
+  const peers = state.peerNames || (connection.cachedPeers || []).map((peer) => peer.device);
+  const backend = connection.backend === "local" ? t("syncBackendLocal") : String(connection.backend || "").toUpperCase();
+  const lastSync = Date.parse(state.lastSync || "");
+  const failed = state.lastAttemptAt && (!state.uploaded || !state.downloaded);
+  return (
+    <Card className={cn("border-success/30 bg-success/5", !connection.enabled && "border-border bg-muted/20", connection.enabled && !connection.configured && "border-warning/30 bg-warning/5")}>
+      <CardContent className="space-y-2 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <span className={cn("h-2 w-2 rounded-full bg-success", !connection.enabled && "bg-muted-foreground", connection.enabled && !connection.configured && "bg-warning")} />
+            {connection.enabled ? t(connection.configured ? "syncConfigured" : "syncNotConfigured") : t("syncNotEnabled")}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {Number.isFinite(lastSync) ? fill(t("syncLastSuccess"), { time: new Date(lastSync).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", { hour12: false }) }) : t("syncNeverRan")}
+          </span>
+        </div>
+        {connection.enabled && <p className="text-xs text-muted-foreground">{fill(t("syncSavedAs"), { device: connection.device, backend, interval: connection.syncInterval })}</p>}
+        {failed && <p role="alert" className="text-xs text-destructive">{fill(t("syncLastAttemptFailed"), { reason: state.uploadError || state.error || t("syncFailedUnknown") })}</p>}
+        {connection.enabled && <p className="text-xs text-muted-foreground">{peers.length ? fill(t("syncPeerDevices"), { devices: peers.join(", ") }) : t("syncNoPeers")}</p>}
+        {connection.enabled && connection.configured && <p className="text-[11px] text-muted-foreground">{t("syncStatusHint")}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SyncSettingsPage({ t, locale, onSaved, onSynced }) {
   const [form, setForm] = useState(() => toForm());
   const [hasPassword, setHasPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
+  const [connection, setConnection] = useState(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const settings = await fetchSettings();
+      const [settings, current] = await Promise.all([fetchSettings(), fetchSyncStatus().catch(() => null)]);
       setForm(toForm(settings.sync));
       setHasPassword(settings.sync?.webdav?.hasPassword === true);
+      setConnection(current);
     } catch (e) {
       setError(e.message || t("settingsSaveFailed"));
     } finally {
@@ -95,12 +125,16 @@ export default function SyncSettingsPage({ t, onSaved, onSynced }) {
       const saved = await saveSettings({ sync });
       setForm(toForm(saved.sync));
       setHasPassword(saved.sync?.webdav?.hasPassword === true);
+      const savedStatus = await fetchSyncStatus().catch(() => null);
+      if (savedStatus) setConnection(savedStatus);
       onSaved?.(saved);
       if (!withSync) {
         setStatus(t("saved"));
       } else {
         if (!saved.sync?.enabled) throw new Error(t("syncDisabled"));
         const result = await syncNow();
+        const current = await fetchSyncStatus().catch(() => null);
+        if (current) setConnection(current);
         const problem = result.uploadError || result.error;
         if (problem) throw new Error(problem === "duplicate_device_name" ? t("syncDuplicateDevice") : problem);
         setStatus(fill(t("syncComplete"), { n: (result.peers || []).length }));
@@ -120,6 +154,7 @@ export default function SyncSettingsPage({ t, onSaved, onSynced }) {
         <h2 className="text-lg font-semibold tracking-tight">{t("syncSettingsTitle")}</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t("syncSettingsSubtitle")}</p>
       </div>
+      {!loading && <SyncStatus connection={connection} t={t} locale={locale} />}
       <Card>
         <CardHeader>
           <CardTitle>{t("syncConnectionTitle")}</CardTitle>

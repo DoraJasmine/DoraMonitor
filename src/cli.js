@@ -299,14 +299,6 @@ function runDaemon(opts) {
         settings,
         collected.byTool.get("codex")?.quota
       ))
-      .then((r) => {
-        if (r && r.uploaded) {
-          atomicWrite(
-            path.join(path.dirname(target), "sync.state"),
-            JSON.stringify({ lastSync: new Date().toISOString(), peers: (r.peers || []).length }) + "\n"
-          );
-        }
-      })
       .catch((e) => {
         // sync must never break status rendering; log for journalctl
         console.error(`sync 失败: ${e && e.message ? e.message : e}`);

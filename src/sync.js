@@ -596,6 +596,54 @@ function loadCachedPeers() {
   return peers;
 }
 
+function syncStatePath() {
+  return path.join(os.homedir(), ".doramonitor", "sync.state");
+}
+
+function readSyncState(file = syncStatePath()) {
+  try {
+    const state = JSON.parse(fs.readFileSync(file, "utf8"));
+    return state && typeof state === "object" && !Array.isArray(state) ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordSyncState(result, file = syncStatePath(), now = new Date()) {
+  try {
+    const previous = readSyncState(file) || {};
+    const attemptedAt = now.toISOString();
+    const state = {
+      lastAttemptAt: attemptedAt,
+      lastSync: result.uploaded ? attemptedAt : previous.lastSync || null,
+      uploaded: result.uploaded === true,
+      downloaded: result.downloaded === true,
+      uploadError: result.uploadError || null,
+      error: result.error || null,
+      fromCache: result.fromCache === true,
+      peers: (result.peers || []).length,
+      peerNames: (result.peers || []).map((peer) => peer.device).filter(Boolean),
+      device: result.device || null,
+      backend: result.backend || null,
+    };
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
+    fs.renameSync(temporary, file);
+  } catch {
+    // Status persistence must never turn a completed sync into a failure.
+  }
+}
+
+function syncConfigured(settings) {
+  const cfg = settings?.sync || {};
+  if (!cfg.enabled) return false;
+  if (cfg.backend === "local") return Boolean(cfg.local?.path?.trim());
+  if (cfg.backend === "ssh") return Boolean(cfg.ssh?.host?.trim());
+  if (cfg.backend === "webdav") return Boolean(cfg.webdav?.url?.trim());
+  return false;
+}
+
 /**
  * Run a full sync: upload local summary, download peers, refresh cache.
  * records: local usage records (from collect).
@@ -649,7 +697,7 @@ async function runSync(records, settings, codexQuota = null) {
   const peers = fetched.ok ? fetched.peers : loadCachedPeers();
   if (fetched.ok) savePeersToCache(peers);
 
-  return {
+  const result = {
     enabled: true,
     device: deviceName,
     backend: cfg.backend,
@@ -660,6 +708,8 @@ async function runSync(records, settings, codexQuota = null) {
     fromCache,
     error: fetched.ok ? null : fetched.reason,
   };
+  recordSyncState(result);
+  return result;
 }
 
 /**
@@ -709,6 +759,9 @@ module.exports = {
   peerQuotaUsageCached,
   newestCodexQuota,
   syncEnabled,
+  syncConfigured,
+  readSyncState,
+  recordSyncState,
   savePeersToCache,
   loadCachedPeers,
   dayKey,

@@ -88,7 +88,7 @@ node src/cli.js daemon [--interval 30] [--tool all] [--style tmux] [--status-fil
 - 启动立即执行一次 tick，然后每 `interval` 秒一次：
   - 渲染状态行 → **原子写**（tmp + rename）到 `status.cache`；
   - 每 `max(60, settings.sync.syncInterval || 300)` 秒额外执行一次强制
-    collect + runSync；上传成功后写 `sync.state`（`{lastSync, peers}`）。
+    collect + runSync；每次尝试后写 `sync.state`，保留最近成功时间、失败原因与对端设备。
 - SIGINT/SIGTERM 清理 pid 文件后退出。
 - 启动输出示例：`DoraMonitor daemon: pid 12345，每 30s 写入 ~/.doramonitor/status.cache，每 300s 同步`。
 

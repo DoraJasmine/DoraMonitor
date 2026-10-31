@@ -146,6 +146,10 @@ export async function saveSettings(body) {
   });
 }
 
+export async function fetchSyncStatus() {
+  return httpJson("/api/sync");
+}
+
 export async function syncNow() {
   return httpJson("/api/sync", { method: "POST" });
 }

@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { runSync, peerRecordsCached } = require("../src/sync");
+const { runSync, peerRecordsCached, readSyncState, syncConfigured } = require("../src/sync");
 const { sanitizeSettings } = require("../src/settings");
 
 function settings(shared, deviceName) {
@@ -125,4 +125,29 @@ test("local sync serializes writers and recovers an abandoned lock", async (t) =
   const recovered = await runSync([], settings(shared, "desktop-win"));
   assert.equal(recovered.uploaded, true);
   assert.equal(fs.existsSync(lock), false);
+});
+
+test("sync status survives reloads and keeps the last success after a failed attempt", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dora-sync-status-"));
+  const shared = path.join(root, "shared");
+  t.mock.method(os, "homedir", () => path.join(root, "home"));
+  const config = settings(shared, "windows");
+  assert.equal(syncConfigured(config), true);
+  assert.equal(syncConfigured(settings("", "windows")), false);
+  assert.equal(syncConfigured({ sync: { enabled: false, backend: "local" } }), false);
+
+  await runSync([], config);
+  const successful = readSyncState();
+  assert.equal(successful.uploaded, true);
+  assert.equal(successful.downloaded, true);
+  assert.equal(successful.lastSync, successful.lastAttemptAt);
+
+  const disconnected = path.join(root, "disconnected");
+  fs.writeFileSync(disconnected, "not a directory");
+  await runSync([], settings(disconnected, "windows"));
+  const failed = readSyncState();
+  assert.equal(failed.uploaded, false);
+  assert.equal(failed.lastSync, successful.lastSync);
+  assert.ok(Date.parse(failed.lastAttemptAt) >= Date.parse(successful.lastAttemptAt));
+  assert.ok(failed.uploadError);
 });

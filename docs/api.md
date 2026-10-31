@@ -21,7 +21,7 @@
 | 6 | `GET /api/prices` | 官方价目表 |
 | 7 | `GET /api/quota` | 额度（Kimi 在线 / Codex 本地） |
 | 8 | `GET /api/tools` | provider 列表 |
-| 9 | `POST /api/sync` | 立即执行多设备同步 |
+| 9 | `GET /api/sync` / `POST /api/sync` | 读取同步配置与最近结果 / 立即执行多设备同步 |
 | 10 | `GET /api/sessions` | 会话/工作区列表 |
 | 11 | `POST /api/sessions/archive` / `unarchive` | 归档 / 恢复 |
 | 12 | `POST /api/sessions/delete` | 永久删除会话 |

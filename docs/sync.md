@@ -20,6 +20,10 @@ DoraMonitor 支持把本机用量摘要同步到 SSH 服务器、WebDAV 网盘�
 - 共享摘要目录名固定 `ai-usage-monitor`（`REMOTE_DIR`），位于各后端的配置根路径之下。
 - 本地对端缓存：`~/.doramonitor/remote-cache/<设备名>.json`
   （设备名中 `[^a-zA-Z0-9_-]` 替换为 `_`）。
+- 「同步」页顶部显示已保存配置、本机设备、最近成功时间、失败原因和对端设备。
+  `GET /api/sync` 只返回这些状态与非敏感配置摘要；`POST /api/sync` 仍用于立即同步。
+- 每次手动或后台同步都会原子更新 `~/.doramonitor/sync.state`。其中 `lastAttemptAt`
+  是最近尝试，`lastSync` 是最近上传成功；失败不会抹掉上次成功时间。
 
 ## 2. 摘要格式（日汇总 + 测算元数据）
 
