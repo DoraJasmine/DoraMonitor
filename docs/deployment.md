@@ -13,8 +13,9 @@
 | --- | --- | --- |
 | npm 前台 | `doramonitor` | 当前终端运行并打开浏览器 |
 | 源码前台 | `npm start` | 使用仓库中的 `dist/` |
-| 后台（跨平台） | `doramonitor web --background --no-open` | 脱离终端，不打开浏览器 |
-| Windows 双击 | `scripts/start-windows.bat` | 调用上面的后台命令，路径可迁移 |
+| 后台 Web（跨平台） | `doramonitor web --background --no-open` | 脱离终端，不打开浏览器 |
+| 后台 daemon（跨平台） | `doramonitor daemon --background` | 脱离终端并检查 PID 心跳 |
+| Windows 双击 | `scripts/start-windows.bat` | 同时后台启动 Web 和 daemon，路径可迁移 |
 | Windows 登录自启 | `scripts/register-autostart.ps1` | 隐藏窗口、登录启动、Web 崩溃重启 |
 | Linux systemd 用户服务 | `scripts/install-linux.sh --with-web` | Web/daemon 登录启动与崩溃重启 |
 | 开发模式 | `npm run dev` | API + Vite 热更新 |

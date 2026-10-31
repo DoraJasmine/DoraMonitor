@@ -98,9 +98,10 @@ provisional 只降分，不隐藏结果；剔除区间的详情会显示数量�
 容量估算使用截至本次终点的全部历史有效样本，不读取终点之后的数据，通过时间衰减、异常剔除和稳健聚合
 避免短区间的模型组合或少量高价请求造成数倍跳变。区间结果不覆盖看板缓存。历史以
 `[provider, accountKey, usageScope, estimateKind, window, cacheHitRate]` 为键链式去重；没有新观测终点的定期目标
-不会重复写空批次。每条记录附估算使用的 `observations`，界面再按本段区间筛选实际 token、成本、增量、
-分模型 token 和缓存命中；旧记录明细为空时按观测范围重建。`calculationStartAt` / `calculationEndAt` 是连续
-测算区间；`dataRange` 是截至终点参与估算的有效观测范围，可能早于本次起点，不能替代测算区间。
+不会重复写空批次。容量估算仍使用截至终点的历史样本，但历史记录只保存本次区间的 `observations`，
+用于展示实际 token、成本、增量、分模型 token 和缓存命中，避免四个缓存档重复写入整段历史造成内存和磁盘膨胀；
+旧记录明细为空时按本次区间重建。`calculationStartAt` / `calculationEndAt` 是连续测算区间；`dataRange` 是截至终点
+参与估算的有效观测范围，可能早于本次起点，不能替代测算区间。
 
 ## 6. 展示口径
 

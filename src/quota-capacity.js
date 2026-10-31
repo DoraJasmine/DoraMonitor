@@ -99,8 +99,8 @@ function getCapacityHistory(query, root, { collected, peers } = {}) {
   const reconstructed = new Map();
   page.history = page.history.map((item) => {
     if (Array.isArray(item.observations) && item.observations.length) return item;
-    const start = Date.parse(item.dataRange?.start || item.calculationStartAt || "");
-    const end = Date.parse(item.dataRange?.end || item.calculationEndAt || "");
+    const start = Date.parse(item.calculationStartAt || item.dataRange?.start || "");
+    const end = Date.parse(item.calculationEndAt || item.dataRange?.end || "");
     const key = `${start}:${end}`;
     if (!reconstructed.has(key)) {
       const intervalSamples = [...samples.values()].filter((sample) => {

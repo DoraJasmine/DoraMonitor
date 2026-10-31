@@ -19,6 +19,12 @@ test("Linux installer parses and documents its options", (t) => {
   assert.match(help.stdout, /without sudo/);
 });
 
+test("Windows manual launcher starts both background services", () => {
+  const script = require("fs").readFileSync(path.join(root, "scripts", "start-windows.bat"), "utf8");
+  assert.match(script, /daemon --background/);
+  assert.match(script, /web --background --no-open/);
+});
+
 test("Windows installer has valid PowerShell syntax", (t) => {
   if (process.platform !== "win32") return t.skip("PowerShell parser test runs on Windows");
   const script = path.join(root, "scripts", "install-windows.ps1");

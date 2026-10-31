@@ -30,7 +30,7 @@ if (-not $Node) { throw "未找到 Node.js 18+，请先安装支持版本的 Nod
 $launchers = @(
   @{ file = "daemon-hidden.vbs"; line = 'CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\doramonitor.js"" daemon", 0, False' -f $Node, $InstallDir },
   @{ file = "web-hidden.vbs";    line = ('CreateObject("Wscript.Shell").Run """{0}"" ""{1}\src\server.js"" --host 127.0.0.1 --port 3847 --no-open", 0, True' -f $Node, $InstallDir) + "`r`n" + 'WScript.Quit 1' },
-  @{ file = "start-doramonitor.bat"; line = '@echo off' + "`r`n" + '"' + $Node + '" "' + $InstallDir + '\src\doramonitor.js" web --background --no-open' }
+  @{ file = "start-doramonitor.bat"; line = '@echo off' + "`r`n" + '"' + $Node + '" "' + $InstallDir + '\src\doramonitor.js" daemon --background' + "`r`n" + '"' + $Node + '" "' + $InstallDir + '\src\doramonitor.js" web --background --no-open' }
 )
 foreach ($l in $launchers) {
   Set-Content -Path (Join-Path $InstallDir $l.file) -Value $l.line -Encoding ASCII

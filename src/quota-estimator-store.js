@@ -242,14 +242,23 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
     const calculationEndAt = calculation?.endAt || target.dataRange?.end || null;
     if (calculation && !calculation.calibrationId && previous && calculationEndAt && previous.calculationEndAt === calculationEndAt) continue;
     if (calculation) {
+      const calculationStartAt = calculation?.startAt || previous?.calculationEndAt || target.dataRange?.start || null;
+      const start = Date.parse(calculationStartAt || "");
+      const end = Date.parse(calculationEndAt || "");
+      const observations = (target.observations || []).filter((observation) => {
+        const observedStart = Date.parse(observation.start || "");
+        const observedEnd = Date.parse(observation.end || "");
+        return (!Number.isFinite(start) || observedStart >= start) && (!Number.isFinite(end) || observedEnd <= end);
+      });
       const entry = {
         ...target,
         provider,
         accountKey,
         usageScope,
         createdAt: capacity.generatedAt,
-        calculationStartAt: calculation?.startAt || previous?.calculationEndAt || target.dataRange?.start || null,
+        calculationStartAt,
         calculationEndAt,
+        observations,
         previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
         trigger: calculation.trigger || "scheduled",
         calibrationId: calculation.calibrationId || null,

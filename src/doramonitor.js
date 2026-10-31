@@ -38,6 +38,7 @@ Web options:
   --no-open        不自动打开浏览器
 
 Status / daemon options:
+  --background, -d     daemon 后台运行并检查启动状态
   --tool <id|all>      过滤工具: kimi-code | zcode | qoder-cn | qoder-cn-cli | codex | claude-code | dsh | all
   --range <range>      today | 7d | 30d | month | all (默认 month)
   --style <s>          plain | tmux
@@ -234,9 +235,34 @@ function cmdStatus(rest) {
   process.stdout.write(cli.renderOnce(opts) + "\n");
 }
 
-function cmdDaemon(rest) {
+async function cmdDaemon(rest) {
+  const background = rest.includes("--background") || rest.includes("-d");
   const cli = require("./cli");
-  cli.runDaemon(cli.parseArgs(rest));
+  if (!background) {
+    cli.runDaemon(cli.parseArgs(rest));
+    return;
+  }
+  const { isDaemonRunning } = require("./daemon-liveness");
+  if (isDaemonRunning()) {
+    console.log("DoraMonitor daemon 已在运行");
+    return;
+  }
+  const args = rest.filter((arg) => arg !== "--background" && arg !== "-d");
+  launchDetached([require("path").join(__dirname, "cli.js"), "daemon", ...args]);
+  const started = Date.now();
+  const attempt = () => {
+    if (isDaemonRunning()) {
+      console.log("DoraMonitor daemon 已在后台启动");
+      return;
+    }
+    if (Date.now() - started >= 12_000) {
+      console.error("DoraMonitor daemon 后台启动失败");
+      process.exitCode = 1;
+      return;
+    }
+    setTimeout(attempt, 250);
+  };
+  attempt();
 }
 
 async function cmdSync() {

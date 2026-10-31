@@ -59,12 +59,13 @@ if ($WithWeb) {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PackageDir\scripts\register-autostart.ps1"
 }
 if ($Start) {
-  Info "Starting the dashboard without a console window"
+  Info "Starting the daemon and dashboard without console windows"
+  & $Command daemon --background
   & $Command web --background --no-open
 }
 
 Write-Host ""
 Write-Host "DoraMonitor installed successfully." -ForegroundColor Green
 Write-Host "Run: doramonitor"
-Write-Host "Background: doramonitor web --background --no-open"
+Write-Host "Background: doramonitor daemon --background; doramonitor web --background --no-open"
 Write-Host "Dashboard: http://127.0.0.1:3847"

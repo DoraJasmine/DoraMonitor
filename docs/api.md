@@ -188,7 +188,8 @@
 `400 conflicting_tool_provider`，未知工具返回 `400 unsupported_tool`。有新观测终点的测算结果追加到
 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
 模型结构、触发方式和算法元数据。`calculationStartAt` / `calculationEndAt` 是本次连续结算区间，
-`dataRange` 是截至终点参与估算的有效观测范围，可能早于本次起点。四个缓存档共用同一等效金额基准，
+`dataRange` 是截至终点参与估算的有效观测范围，可能早于本次起点；`observations` 只包含本次区间的展示明细。
+四个缓存档共用同一等效金额基准，
 缓存档只改变 Token 换算所用的命中率和模型结构。界面按一次测算批次并列展示四个缓存档，不会拆成四套历史。
 
 `GET /api/quota/samples` 查询参数为 `tool`、`accountKey`、`window`、`changesOnly=1`、`limit`

@@ -68,13 +68,14 @@ powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -S
 
 Both installers use only nodejs.org and the public npm registry, contain no private sync configuration, and can install Node.js when it is missing. If `doramonitor` is not found after installation, open a new terminal; on Windows you can also run `doramonitor.cmd` explicitly.
 
-For an existing installation, start a detached server without opening a browser:
+For an existing installation, start the daemon and detached server without opening a browser:
 
 ```bash
+doramonitor daemon --background
 doramonitor web --background --no-open
 ```
 
-Windows also provides `scripts/start-windows.bat` and `scripts/register-autostart.ps1`. The Linux systemd units are `doramonitor-web.service` and `doramonitor-daemon.service`.
+Windows also provides `scripts/start-windows.bat` to start both and `scripts/register-autostart.ps1` for logon startup. The Linux systemd units are `doramonitor-web.service` and `doramonitor-daemon.service`.
 
 See [deployment and recovery](./docs/deployment.md) before exposing or changing the listening address. The default is loopback only.
 

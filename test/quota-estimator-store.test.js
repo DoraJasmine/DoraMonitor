@@ -276,6 +276,9 @@ test("scheduled calculations use history through their endpoint without poisonin
   assert.equal(history[1].calculationStartAt, history[0].calculationEndAt);
   assert.equal(history[1].calculationStartAt, new Date(middle).toISOString());
   assert.equal(history[1].calculationEndAt, new Date(end).toISOString());
+  assert.equal(history[1].observations.length, 1);
+  assert.equal(history[1].observations[0].start, new Date(middle).toISOString());
+  assert.equal(history[1].dataRange.start, new Date(start).toISOString());
 
   const general = getCapacityForProvider({ ...options, force: false, now: future });
   const generalTarget = general.targets.find((item) => item.window === "session" && item.cacheHitRate === 0.95);

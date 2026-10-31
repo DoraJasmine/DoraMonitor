@@ -68,13 +68,14 @@ powershell -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -WithWeb -S
 
 两个安装器都只使用 nodejs.org 与 npm 官方源，不包含私人同步配置，并支持没有预装 Node.js 的环境。安装后如提示找不到 `doramonitor`，请重开终端；Windows 也可显式运行 `doramonitor.cmd`。
 
-已有安装可手动后台启动：
+已有安装可手动后台启动 Web 和 daemon：
 
 ```bash
+doramonitor daemon --background
 doramonitor web --background --no-open
 ```
 
-Windows 还可双击 `scripts/start-windows.bat`，或单独运行 `scripts/register-autostart.ps1` 注册自启。Linux 的 systemd 单元为 `doramonitor-web.service` 和 `doramonitor-daemon.service`。
+Windows 还可双击 `scripts/start-windows.bat` 同时启动两者，或单独运行 `scripts/register-autostart.ps1` 注册登录自启。Linux 的 systemd 单元为 `doramonitor-web.service` 和 `doramonitor-daemon.service`。
 
 默认仅监听本机回环地址。修改监听地址前请阅读[部署与故障排查](./docs/deployment.md)。
 

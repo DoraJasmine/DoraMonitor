@@ -31,6 +31,6 @@
 - 读取本地用量元数据并生成趋势、费用、额度和会话视图。
 - 默认只监听 `127.0.0.1`；多设备上传必须显式启用。
 - 全局安装：`npm install -g doramonitor && doramonitor`。
-- 后台运行：`doramonitor web --background --no-open`。
+- 后台运行：`doramonitor daemon --background`，再执行 `doramonitor web --background --no-open`。
 
 其他入口：[英文 README](../README.md) · [中文 README](../README.zh-CN.md) · [MIT 许可证](../LICENSE) · [来源与署名](../NOTICE)

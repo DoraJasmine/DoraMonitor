@@ -167,7 +167,7 @@
 - `quota-sampler.js` 在 daemon 内每 60 秒采样 Kimi/Codex 双窗口百分比，daemon 未运行时由 Web 兜底；
   daemon PID 心跳用于避免两个进程同时采样。Codex 首次启动时回补 rollout 中的全部历史 `rate_limits`。5h/7d 标准调度分别按 1 小时 +4% 或 +10% 触发；
   每次结算上次锚点到本次样本的连续区间，成功后推进锚点；容量估算使用截至终点的历史有效样本以降低短区间波动，
-  本段实际用量从历史观测中筛选展示，且定期结果不覆盖看板缓存。
+  历史只保留本段展示明细，不把全量观测重复写入四个缓存档，且定期结果不覆盖看板缓存。
   长程定期调度已停用，旧长程锚点不会再触发计算。
 - `quota-models.js` 只纳入目标厂商的模型：GPT 可来自 Codex/OMP，Kimi 可来自 Kimi Code/OMP；
   DeepSeek 等无关模型和未知模型默认排除。Kimi 可选择仅使用 Kimi Code 用量，Codex 也可选择仅使用

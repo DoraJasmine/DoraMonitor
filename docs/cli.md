@@ -92,6 +92,9 @@ node src/cli.js daemon [--interval 30] [--tool all] [--style tmux] [--status-fil
   - 每 `max(60, settings.sync.syncInterval || 300)` 秒额外执行一次强制
     collect + runSync；每次尝试后写 `sync.state`，保留最近成功时间、失败原因与对端设备。
 - SIGINT/SIGTERM 停止采样器并清理 pid 文件后退出。
+- `doramonitor daemon --background`（或 `-d`）跨平台脱离终端启动，复用健康实例并等待 PID 心跳确认；
+  其余 daemon 参数原样传递。`scripts/start-windows.bat` 依次后台启动 daemon 和 Web，登录自启仍由独立的
+  `scripts/register-autostart.ps1` 负责。
 - 启动输出示例：`DoraMonitor daemon: pid 12345，每 30s 写入 ~/.doramonitor/status.cache；每 60s 采样额度并检查同步设置`。
 
 ### stop
