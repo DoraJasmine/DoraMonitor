@@ -27,7 +27,7 @@ const crypto = require("crypto");
  */
 
 const { DatabaseSync } = tryRequireSqlite();
-const { rateKeyFor, priceForCell, RATE_KEYS, costCacheCreation } = require("./pricing");
+const { rateKeyFor, priceForCell, RATE_KEYS, cellCostCny } = require("./pricing");
 const { dayKey } = require("./aggregate");
 const { normalizeWorkspace } = require("./workspaces");
 const { validateRecord } = require("./record-schema");
@@ -326,22 +326,14 @@ function ingestTool({ tool, home, records, events, force = false }) {
 }
 
 /** Cell totals for one grouped row set, priced at query time. */
-function priceRows(rows, { fxRate, customPrices }) {
+function priceRows({ fxRate, customPrices }) {
   const priceCache = new Map();
   const priceFor = (model, key) => {
     const k = `${model}\u0000${key}`;
     if (!priceCache.has(k)) priceCache.set(k, priceForCell(model, key, { fxRate, customPrices }));
     return priceCache.get(k);
   };
-  const cellCost = (cell, price) =>
-    (cell.i / 1e6) * price.input +
-    (cell.cr / 1e6) * price.cacheHit +
-    costCacheCreation(
-      { inputCacheCreation: cell.cc, inputCacheCreationShort: cell.cs, inputCacheCreationLong: cell.cl },
-      price
-    ) +
-    (cell.o / 1e6) * price.output;
-  return { priceFor, cellCost };
+  return { priceFor, cellCost: cellCostCny };
 }
 
 function cellTotals(cell) {
@@ -435,7 +427,7 @@ function groupedCells(filters) {
  */
 function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", model = "all", singleDay = null, fxRate, customPrices }) {
   if (!open()) return null;
-  const { priceFor, cellCost } = priceRows(null, { fxRate, customPrices });
+  const { priceFor, cellCost } = priceRows({ fxRate, customPrices });
   const filters = { tool, workspace, model, startDay, endDay };
 
   const totals = { requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, credits: 0, totalTokens: 0 };

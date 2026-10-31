@@ -457,20 +457,10 @@ function calendarStartDay(range, nowMs) {
   return dayKey(nowMs - (days - 1) * 24 * 3600_000);
 }
 
-const { RATE_KEYS, priceForCell, costCacheCreation } = require("./pricing");
-
-function cellCost(cell, price) {
-  return (
-    (cell.i / 1e6) * price.input +
-    (cell.cr / 1e6) * price.cacheHit +
-    costCacheCreation({
-      inputCacheCreation: cell.cc,
-      inputCacheCreationShort: cell.cs,
-      inputCacheCreationLong: cell.cl,
-    }, price) +
-    (cell.o / 1e6) * price.output
-  );
-}
+const { RATE_KEYS, priceForCell, cellCostCny } = require("./pricing");
+// Single cost-math source lives in pricing (M3.5 ③) — alias keeps the
+// aggregate call sites unchanged.
+const cellCost = cellCostCny;
 
 /**
  * Aggregate day-buckets into the same shape aggregate() returns, minus

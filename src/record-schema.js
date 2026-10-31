@@ -36,7 +36,7 @@ const RECORD_FIELDS = [
   { key: "project", type: "string", nullable: true, doc: "cwd or wd_* id — workspace source" },
   { key: "session", type: "string", nullable: true },
   { key: "sessionHint", type: "any", nullable: true, doc: "display-only; string or {workspace, session}" },
-  { key: "requests", type: "number", nullable: true, doc: "peer day-summaries carry N original requests; local = 1" },
+  { key: "requests", type: "number", nullable: true, factory: false, doc: "peer day-summaries carry N original requests; local = 1" },
 ];
 
 const FIELD_BY_KEY = new Map(RECORD_FIELDS.map((f) => [f.key, f]));
@@ -82,7 +82,7 @@ function validateRecord(rec) {
 function emptyRecord(tool) {
   const rec = {};
   for (const field of RECORD_FIELDS) {
-    if (field.key === "tool") continue;
+    if (field.key === "tool" || field.factory === false) continue;
     if (field.default !== undefined) rec[field.key] = field.default;
     else if (field.nullable || field.type === "any") rec[field.key] = null;
     else if (field.type === "number") rec[field.key] = 0;

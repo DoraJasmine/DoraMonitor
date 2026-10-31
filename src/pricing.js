@@ -903,6 +903,29 @@ function costCacheCreation(usage, price) {
 }
 
 /**
+ * Cost for one aggregated token cell {i,o,cr,cc,cs?,cl?} under a resolved
+ * `priceForCell` row — the SINGLE cost-math implementation (M3.5 ③).
+ * aggregate.js and store.js both consume this; pricing changes never touch
+ * aggregation code and vice versa. Cell token counts are integers; result
+ * is the internal CNY ledger currency.
+ */
+function cellCostCny(cell, price) {
+  return (
+    ((cell.i || 0) / 1e6) * price.input +
+    ((cell.cr || 0) / 1e6) * price.cacheHit +
+    costCacheCreation(
+      {
+        inputCacheCreation: cell.cc || 0,
+        inputCacheCreationShort: cell.cs,
+        inputCacheCreationLong: cell.cl,
+      },
+      price
+    ) +
+    ((cell.o || 0) / 1e6) * price.output
+  );
+}
+
+/**
  * Cost for one usage record, in the internal CNY ledger currency.
  * usage fields from Kimi Code wire:
  *   inputOther, output, inputCacheRead, inputCacheCreation
@@ -1023,5 +1046,6 @@ module.exports = {
   matchCustomPrice,
   costForUsage,
   costCacheCreation,
+  cellCostCny,
   listPrices,
 };
