@@ -6,7 +6,7 @@ const { costForUsage } = require("./pricing");
 const CACHE_TARGETS = [0.85, 0.9, 0.95, 0.98];
 // Bump whenever estimation logic changes: cache validation rejects results
 // from every older algorithm version, including persisted results after restart.
-const ALGORITHM_VERSION = 8;
+const ALGORITHM_VERSION = 9;
 const TOKEN_TYPES = ["inputOther", "inputCacheRead", "inputCacheCreation", "output"];
 const DAY_MS = 86_400_000;
 

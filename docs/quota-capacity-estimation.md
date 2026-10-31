@@ -93,9 +93,12 @@ provisional 只降分，不隐藏结果；剔除区间的详情会显示数量�
 | **打开看板** | 只更新展示、缓存和有效最高纪录，不写测算历史；算法版本变化会立即使旧缓存失效 |
 
 百分比下降或重置时间变化都会重新锚定，同一调度链的最小间隔为 5 分钟。定时失败或没有有效结果时
-不前进锚点，下一分钟重试。历史以 `[provider, accountKey, usageScope, estimateKind, window, cacheHitRate]`
+不前进锚点，下一分钟重试。每次定期测算只使用 `[上次锚点, 本次额度样本]` 内的样本，成功后本次终点成为
+下次起点；区间结果不覆盖看板的全样本缓存。历史以 `[provider, accountKey, usageScope, estimateKind, window, cacheHitRate]`
 为键链式去重；没有新观测终点的定期目标不会重复写空批次。每条记录附 `observations`（本区间总 token、
-成本、增量、分模型 token、缓存命中），旧记录明细为空时用留存样本按数据窗口重建。
+成本、增量、分模型 token、缓存命中），旧记录明细为空时用留存样本按测算区间重建。界面展示的
+`calculationStartAt` / `calculationEndAt` 是连续测算区间；`dataRange` 仅表示其中有效观测的范围，不能替代
+测算起点。既有历史数值不回填或重算。
 
 ## 6. 展示口径
 

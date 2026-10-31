@@ -187,7 +187,8 @@
 旧 `provider=openai|kimi` 在兼容期仍可使用；同时传 tool/provider 但语义冲突时返回
 `400 conflicting_tool_provider`，未知工具返回 `400 unsupported_tool`。有新观测终点的测算结果追加到
 `history.jsonl`，不设置 30 条上限；记录包含完整起止时间、上一次区间结束时间、观测区间、
-模型结构、触发方式和算法元数据。界面按一次测算批次并列展示四个缓存档，同一批次不会拆成四套历史。
+模型结构、触发方式和算法元数据。`calculationStartAt` / `calculationEndAt` 是本次连续测算区间，
+`dataRange` 只是其中有效观测的范围。界面按一次测算批次并列展示四个缓存档，同一批次不会拆成四套历史。
 
 `GET /api/quota/samples` 查询参数为 `tool`、`accountKey`、`window`、`changesOnly=1`、`limit`
 （默认 50，最大 200）和 `offset`，返回 `{ "samples": [...], "total", "limit", "offset", "tool" }`。

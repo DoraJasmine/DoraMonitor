@@ -53,7 +53,7 @@ function maybeRunScheduledEstimation(root, { now = Date.now(), calculate = null 
     const gap = anchor.lastRunAt ? now - Date.parse(anchor.lastRunAt) : Infinity;
     const due = consumed >= SCHEDULED_DELTA_PERCENT || (minutes >= SCHEDULED_MIN_MINUTES && consumed >= SCHEDULED_MIN_DELTA);
     if (!due || gap < SCHEDULED_MIN_GAP_MS) continue;
-    const target = { provider: sample.provider, accountKey: sample.accountKey || "default", window: sample.window, estimateKind };
+    const target = { provider: sample.provider, accountKey: sample.accountKey || "default", window: sample.window, estimateKind, startAt: anchor.anchorAt, endAt: sample.sampledAt };
     fired.push(target);
     pending.set(`${estimateKind}:${key}`, {
       checkpointKey,
@@ -82,7 +82,7 @@ function maybeRunScheduledEstimation(root, { now = Date.now(), calculate = null 
 
 const persisted = new Map();
 
-function runScheduledCalculation({ provider, accountKey, usageScope, window, estimateKind }, root) {
+function runScheduledCalculation({ provider, accountKey, usageScope, window, estimateKind, startAt, endAt }, root) {
   const { getCapacityForProvider } = require("./quota-capacity");
   const capacity = getCapacityForProvider({
     provider,
@@ -90,7 +90,7 @@ function runScheduledCalculation({ provider, accountKey, usageScope, window, est
     usageScope,
     force: true,
     root,
-    calculation: { trigger: "scheduled", window, estimateKind },
+    calculation: { trigger: "scheduled", window, estimateKind, startAt, endAt },
   });
   if (!capacity.targets.some((target) => target.window === window && Number.isFinite(target.fullWindowTokens))) {
     throw new Error(`No valid ${estimateKind} estimate for ${provider}:${window}`);

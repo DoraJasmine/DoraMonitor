@@ -196,17 +196,9 @@ function readHistory(query = {}, root = DEFAULT_ROOT) {
       // Preserve readable history when the final appended line is incomplete.
     }
   }
-  const sorted = [...rows.values()]
+  return [...rows.values()]
     .filter((item) => historyMatches(item, query))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  const latest = new Map();
-  for (const item of sorted) {
-    const key = estimateKey(item);
-    const previous = latest.get(key);
-    if (previous) item.calculationStartAt = previous.calculationEndAt || item.calculationStartAt;
-    latest.set(key, item);
-  }
-  return sorted;
 }
 
 function readHistoryPage(query, root = DEFAULT_ROOT) {
@@ -223,7 +215,7 @@ function appendHistory(entries, root = DEFAULT_ROOT) {
   fs.appendFileSync(historyPath(root), entries.map((entry) => JSON.stringify(normalizeQuotaRecord(entry, { strict: true }))).join("\n") + "\n", "utf8");
 }
 
-function getOrComputeCapacity({ provider, accountKey, usageScope, force = false, compute, root = DEFAULT_ROOT, now = Date.now(), calculation = null, algorithmVersion = 1 }) {
+function getOrComputeCapacity({ provider, accountKey, usageScope, force = false, compute, root = DEFAULT_ROOT, now = Date.now(), calculation = null, algorithmVersion = 1, cacheResult = true }) {
   const state = loadState(root);
   const key = capacityKey({ provider, accountKey, usageScope }, algorithmVersion);
   const cached = state.cache[key];
@@ -247,7 +239,7 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
     if (calculation?.estimateKind && (target.estimateKind || "standard") !== calculation.estimateKind) continue;
     const keyForTarget = estimateKey({ ...target, provider, accountKey, usageScope });
     const previous = previousByTarget.get(keyForTarget);
-    const calculationEndAt = target.dataRange?.end || calculation?.endAt || null;
+    const calculationEndAt = calculation?.endAt || target.dataRange?.end || null;
     if (calculation && !calculation.calibrationId && previous && calculationEndAt && previous.calculationEndAt === calculationEndAt) continue;
     if (calculation) {
       const entry = {
@@ -256,7 +248,7 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
         accountKey,
         usageScope,
         createdAt: capacity.generatedAt,
-        calculationStartAt: previous?.calculationEndAt || calculation?.startAt || target.dataRange?.start || null,
+        calculationStartAt: calculation?.startAt || previous?.calculationEndAt || target.dataRange?.start || null,
         calculationEndAt,
         previousCalculationEndAt: previous?.calculationEndAt || previous?.dataRange?.end || null,
         trigger: calculation.trigger || "scheduled",
@@ -283,7 +275,7 @@ function getOrComputeCapacity({ provider, accountKey, usageScope, force = false,
     }
   }
   appendHistory(history, root);
-  next.cache[key] = capacity;
+  if (cacheResult) next.cache[key] = capacity;
   saveState(next, root);
   return withMaxima(capacity, next);
 }

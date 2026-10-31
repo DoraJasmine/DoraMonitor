@@ -75,16 +75,20 @@ test("the minimum gap suppresses immediate repeat firing", () => {
   maybeRunScheduledEstimation(root, { now, calculate: () => {} });
   // First trigger fires and stamps lastRunAt…
   appendSamples([kimiSample(10 + SCHEDULED_DELTA_PERCENT, new Date(now).toISOString())], root);
-  assert.equal(maybeRunScheduledEstimation(root, { now, calculate: () => {} }).length, 1);
+  const [first] = maybeRunScheduledEstimation(root, { now, calculate: () => {} });
+  assert.equal(first.startAt, new Date(now - 120_000).toISOString());
+  assert.equal(first.endAt, new Date(now).toISOString());
   // …so growth inside the gap is suppressed…
   appendSamples([kimiSample(10 + 2 * SCHEDULED_DELTA_PERCENT, new Date(now).toISOString())], root);
   const suppressed = maybeRunScheduledEstimation(root, { now, calculate: () => assert.fail("gap suppresses") });
   assert.deepEqual(suppressed, []);
-  // …and after the gap the accumulated growth fires again.
+  // …and after the gap the next estimate starts at the previous endpoint.
   const later = now + SCHEDULED_MIN_GAP_MS + 1;
   appendSamples([kimiSample(10 + 3 * SCHEDULED_DELTA_PERCENT, new Date(later).toISOString())], root);
   const refired = maybeRunScheduledEstimation(root, { now: later, calculate: () => {} });
   assert.equal(refired.length, 1);
+  assert.equal(refired[0].startAt, first.endAt);
+  assert.equal(refired[0].endAt, new Date(later).toISOString());
 });
 
 test("a reset timestamp change re-anchors even when used percent is unchanged", () => {

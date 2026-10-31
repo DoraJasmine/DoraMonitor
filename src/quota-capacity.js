@@ -48,6 +48,12 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
     }
   }
   const resolvedAccount = accountKey || `${provider}:default`;
+  const estimationSamples = [...samples.values()].filter((sample) => {
+    if (calculation?.trigger !== "scheduled" || sample.window !== calculation.window) return true;
+    const time = Date.parse(sample.sampledAt || "");
+    return (!calculation.startAt || time >= Date.parse(calculation.startAt)) &&
+      (!calculation.endAt || time <= Date.parse(calculation.endAt));
+  });
   return getOrComputeCapacity({
     provider,
     algorithmVersion: ALGORITHM_VERSION,
@@ -57,8 +63,9 @@ function getCapacityForProvider({ provider, accountKey, usageScope = "all-client
     root,
     now,
     calculation,
+    cacheResult: calculation?.trigger !== "scheduled",
     compute: () => estimateCapacity({
-      samples: [...samples.values()],
+      samples: estimationSamples,
       records,
       provider,
       accountKey: resolvedAccount,
@@ -92,11 +99,8 @@ function getCapacityHistory(query, root, { collected, peers } = {}) {
   const reconstructed = new Map();
   page.history = page.history.map((item) => {
     if (Array.isArray(item.observations) && item.observations.length) return item;
-    // The chained calculationStartAt (previous run's end) sits inside the data
-    // window and would collapse reconstruction to a single instant; rebuild
-    // from the item's own data range instead.
-    const start = Date.parse(item.dataRange?.start || item.calculationStartAt || "");
-    const end = Date.parse(item.dataRange?.end || item.calculationEndAt || "");
+    const start = Date.parse(item.calculationStartAt || item.dataRange?.start || "");
+    const end = Date.parse(item.calculationEndAt || item.dataRange?.end || "");
     const key = `${start}:${end}`;
     if (!reconstructed.has(key)) {
       const intervalSamples = [...samples.values()].filter((sample) => {

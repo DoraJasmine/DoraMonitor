@@ -245,6 +245,39 @@ test("history reconstructs missing interval usage and model cache details", () =
   assert.equal(observation.models["gpt-6"].inputCacheRead, 900);
 });
 
+test("scheduled calculations use only their chained interval without poisoning the general cache", () => {
+  const { getCapacityForProvider } = require("../src/quota-capacity");
+  const root = tmpRoot();
+  const start = Date.parse("2026-10-30T10:00:00Z");
+  const middle = start + 3600000;
+  const end = middle + 3600000;
+  appendSamples([
+    { provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(start).toISOString(), usedPercent: 10, resetsAt: "r", source: "test" },
+    { provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(middle).toISOString(), usedPercent: 12, resetsAt: "r", source: "test" },
+    { provider: "openai", accountKey: "openai:test", window: "session", sampledAt: new Date(end).toISOString(), usedPercent: 15, resetsAt: "r", source: "test" },
+  ], root);
+  const records = [
+    { tool: "codex", model: "gpt-6", modelResolved: "gpt-6", time: start + 60000, inputOther: 100, inputCacheRead: 900, inputCacheCreation: 0, output: 100, costCny: 2 },
+    { tool: "codex", model: "gpt-6", modelResolved: "gpt-6", time: middle + 60000, inputOther: 200, inputCacheRead: 1800, inputCacheCreation: 0, output: 200, costCny: 4 },
+  ];
+  const options = { provider: "openai", accountKey: "openai:test", usageScope: "all-clients", root, collected: { records }, peers: [], force: true };
+  getCapacityForProvider({ ...options, now: middle, calculation: { trigger: "scheduled", window: "session", estimateKind: "standard", startAt: new Date(start).toISOString(), endAt: new Date(middle).toISOString() } });
+  const current = getCapacityForProvider({ ...options, now: end, calculation: { trigger: "scheduled", window: "session", estimateKind: "standard", startAt: new Date(middle).toISOString(), endAt: new Date(end).toISOString() } });
+  const target = current.targets.find((item) => item.window === "session" && item.cacheHitRate === 0.95);
+  assert.equal(target.observations.length, 1);
+  assert.equal(target.observations[0].start, new Date(middle).toISOString());
+  assert.equal(target.observations[0].totalTokens, 2200);
+  const history = readHistory({ provider: "openai", accountKey: "openai:test", usageScope: "all-clients", window: "session", cacheHitRate: 0.95 }, root);
+  assert.equal(history.length, 2);
+  assert.equal(history[1].calculationStartAt, history[0].calculationEndAt);
+  assert.equal(history[1].calculationStartAt, new Date(middle).toISOString());
+  assert.equal(history[1].calculationEndAt, new Date(end).toISOString());
+
+  const general = getCapacityForProvider({ ...options, force: false, now: end });
+  const generalTarget = general.targets.find((item) => item.window === "session" && item.cacheHitRate === 0.95);
+  assert.equal(generalTarget.observations.length, 2);
+});
+
 test("sync minute bins preserve model identity without changing daily totals", () => {
   const time = Date.parse("2026-10-30T10:00:20Z");
   const records = [

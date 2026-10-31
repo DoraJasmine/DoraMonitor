@@ -97,12 +97,9 @@ function historyBatches(history) {
 }
 
 function observationSummary(targets, calculationStartAt, calculationEndAt) {
-  // Observations belong to the estimate's own data window; the calculation
-  // chain start (previous run's end) can sit inside that window, so filtering
-  // by it would wrongly discard every interval. Prefer the target dataRange.
   const range = targets[0]?.dataRange || {};
-  const start = Date.parse(range.start || calculationStartAt || "");
-  const end = Date.parse(range.end || calculationEndAt || "");
+  const start = Date.parse(calculationStartAt || range.start || "");
+  const end = Date.parse(calculationEndAt || range.end || "");
   const observations = (targets[0]?.observations || []).filter((observation) => {
     const observedStart = Date.parse(observation.start || "");
     const observedEnd = Date.parse(observation.end || "");
@@ -212,7 +209,7 @@ function HistoryList({ window, estimateKind = "standard", capacity, locale, t })
                 })}
               </div>
               <div className="t-caption">
-                {t("capacityInterval")}: {formatRange(batch.dataRange?.start || batch.calculationStartAt, batch.dataRange?.end || batch.calculationEndAt, locale)}
+                {t("capacityInterval")}: {formatRange(batch.calculationStartAt || batch.dataRange?.start, batch.calculationEndAt || batch.dataRange?.end, locale)}
               </div>
               {observed.hasObservations ? (
                 <>
