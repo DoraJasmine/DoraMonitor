@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUpCircle,
   Gauge,
   Github,
   Languages,
@@ -46,7 +47,7 @@ import { Heatmap } from "@/components/Heatmap";
 import { QuotaToolCards } from "@/components/QuotaCard";
 import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
-import { fetchPaths, fetchPeerWorkspaces, fetchSummary, fetchSettings, fetchUsageQuery, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
+import { fetchPaths, fetchPeerWorkspaces, fetchSummary, fetchSettings, fetchUsageQuery, fetchVersionCheck, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
 import { cn } from "@/lib/utils";
 import { HeroCard } from "@/components/insights/HeroCard";
 import { WorkspacePanel } from "@/components/insights/WorkspacePanel";
@@ -184,6 +185,7 @@ export default function App() {
   const [usageData, setUsageData] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [dayDetail, setDayDetail] = useState(null); // "YYYY-MM-DD"
+  const [updateInfo, setUpdateInfo] = useState(null);
   const [modelDetail, setModelDetail] = useState(null); // { model, modelDisplay, ... }
   const [page, setPage] = useState(() => {
     if (typeof window !== "undefined") {
@@ -316,6 +318,17 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("kcd_ws", wsFilter);
   }, [wsFilter]);
+
+  // 版本探测:服务端缓存 6 小时,浏览器仅挂出结果;失败静默。
+  useEffect(() => {
+    let alive = true;
+    fetchVersionCheck()
+      .then((d) => alive && setUpdateInfo(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [data?.scannedAt > 0 ? Math.floor((data.scannedAt || 0) / 3600000) : 0]); // ≈每小时内至多一次
 
   const storeEnabled = !!data?.storeEnabled;
   // 洞察数据只覆盖本机(store 行存);对端设备没有工作区/模型明细,
@@ -736,6 +749,20 @@ export default function App() {
                   author: "DoraJasmine",
                 })}
               </span>
+              {updateInfo?.updateAvailable ? (
+                <button
+                  type="button"
+                  className="mb-0.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] leading-none text-primary transition-colors hover:bg-primary/20"
+                  title={fill(t("newVersionHint"), {
+                    latest: updateInfo.latest,
+                    current: updateInfo.current,
+                  })}
+                  onClick={() => openExternal(updateInfo.releaseUrl)}
+                >
+                  <ArrowUpCircle className="h-3 w-3" aria-hidden />
+                  {fill(t("newVersion"), { v: updateInfo.latest })}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

@@ -25,6 +25,7 @@ const {
 } = require("./aggregate");
 const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const store = require("./store");
+const updateCheck = require("./update-check");
 const { dayKey } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { startQuotaSampler } = require("./quota-sampler");
@@ -354,6 +355,13 @@ async function handleApi(req, res, url, cliHome) {
 
   if (url.pathname === "/api/health") {
     return json(res, 200, { ok: true });
+  }
+
+  // 唯一的自动出站请求:GitHub Releases 只读版本探测(缓存 6 小时,可经
+  // settings.updates.check 关闭)。见 docs/privacy.md。
+  if (url.pathname === "/api/version-check") {
+    const status = await updateCheck.getUpdateStatus({ force: url.searchParams.get("force") === "1" });
+    return json(res, 200, status);
   }
 
   if (url.pathname === "/api/locale") {

@@ -169,6 +169,11 @@ export async function saveWorkspaceAlias(workspaceKey, alias) {
   });
 }
 
+/** GET /api/version-check — npm latest-version probe (server-cached 6h) */
+export async function fetchVersionCheck(force = false) {
+  return httpJson(`/api/version-check${force ? "?force=1" : ""}`);
+}
+
 /** GET /api/settings — display, dashboard, quota and sync preferences */
 export async function fetchSettings() {
   return httpJson("/api/settings");

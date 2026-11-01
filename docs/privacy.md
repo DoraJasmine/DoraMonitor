@@ -82,7 +82,9 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 | 目录缓存 | `~/.kimicode-dashboard/catalog-cache.json`（沿用上游项目的历史路径，迁移计划见[综合改进方案](./comprehensive-improvement-plan.md) A4） |
 | daemon 状态 | `~/.doramonitor/{status.cache,daemon.pid,sync.state}` |
 
-DoraMonitor 自身**没有**遥测、上报、自动更新检查。
+DoraMonitor 自身**没有**遥测、上报，也不会上传任何本地数据。唯一的自动出站请求是
+v1.1.0 起的**新版本探测**：对 GitHub Releases API 的只读 GET（不发任何本地数据，
+服务端缓存 6 小时，可在 `config.json` 中以 `updates.check: false` 关闭）。
 
 ## 6. 审计提示
 

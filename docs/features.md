@@ -70,6 +70,7 @@
 - `doramonitor web --background --no-open`：跨平台后台启动 Web，先检查 `/api/health`，避免把其他占用端口的程序误认为本服务。
 - `doramonitor daemon --background`：跨平台后台启动 daemon 并检查 PID 心跳；`scripts/start-windows.bat` 同时启动 Web 和 daemon。
 - `doramonitor status`：输出一行状态；`daemon` 维护状态缓存、额度采样、定期测算和周期同步，Web 仅在 daemon 未运行时回退采样；`sync` 立即同步；`tools` 检查数据目录。
+- 头部版本号自动探测 GitHub Releases 上的新版本（只读、缓存 6 小时、可关闭），有更新时显示可点击提示；
 - 源码部署：`npm run deploy` 安装锁定依赖并构建；`--skip-install` 复用依赖，`--start` 或 `--background` 可在构建后启动。
 
 详见[CLI](./cli.md)与[部署](./deployment.md)。

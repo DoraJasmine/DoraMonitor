@@ -36,6 +36,7 @@ const DEFAULTS = {
     dailyRange: "30d", // "7d" | "30d"
   },
   workspaceAliases: {}, // workspaceKey -> display alias (local only, never synced)
+  updates: { check: true }, // npm registry read-only latest-version probe (no local data sent)
   sync: {
     enabled: false,
     backend: "ssh", // "ssh" | "webdav" | "local"
@@ -116,6 +117,9 @@ function sanitizeSettings(raw) {
       heatmapRange: ["7d", "30d", "1y"].includes(raw.dashboard.heatmapRange) ? raw.dashboard.heatmapRange : "1y",
       dailyRange: ["7d", "30d"].includes(raw.dashboard.dailyRange) ? raw.dashboard.dailyRange : "30d",
     };
+  }
+  if (raw.updates && typeof raw.updates === "object") {
+    out.updates = { check: raw.updates.check !== false };
   }
   if (raw.workspaceAliases && typeof raw.workspaceAliases === "object" && !Array.isArray(raw.workspaceAliases)) {
     const aliases = {};
