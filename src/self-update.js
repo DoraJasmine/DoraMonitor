@@ -92,6 +92,7 @@ function spawnApply(rootDir) {
     const child = spawn(process.execPath, [script, "--run"], {
       detached: true,
       stdio: "ignore",
+      windowsHide: true, // 不弹命令行窗口
       cwd: modeInfo.repoDir || undefined,
       env: process.env,
     });
@@ -111,6 +112,7 @@ function sh(cmd, args, opts = {}) {
   const { env, ...rest } = opts;
   execFileSync(cmd, args, {
     stdio: "ignore",
+    windowsHide: true,
     timeout: 10 * 60_000,
     ...rest,
     env: env || process.env,
@@ -211,7 +213,7 @@ async function waitHealthy(timeoutMs = 60_000) {
 
 async function run() {
   const fromVersion = currentVersion();
-  const status = { phase: "running", fromVersion, toVersion: null, startedAt: new Date().toISOString(), error: null };
+  const status = { phase: "running", progress: 5, fromVersion, toVersion: null, startedAt: new Date().toISOString(), error: null };
   writeStatus(status);
   appendLog(`update started (from ${fromVersion})`);
   try {
@@ -220,9 +222,12 @@ async function run() {
     writeStatus(status);
 
     stopServices();
+    status.progress = 15;
+    writeStatus(status);
 
     if (mode === "source") {
       status.phase = "fetching";
+      status.progress = 25;
       writeStatus(status);
       const git = (args) => sh("git", args, { cwd: repoDir });
       // 未提交修改或与远端分叉时中止——绝不丢弃用户的工作。
@@ -243,10 +248,12 @@ async function run() {
         throw new Error("本地分支与 origin/main 分叉,已中止更新(请手动处理)");
       }
       status.phase = "installing";
+      status.progress = 50;
       writeStatus(status);
       appendLog("npm install");
       sh("npm", ["install", "--no-audit", "--no-fund"], { cwd: repoDir, timeout: 15 * 60_000, shell: process.platform === "win32", env: childEnv() });
       status.phase = "building";
+      status.progress = 75;
       writeStatus(status);
       appendLog("npm run build");
       sh("npm", ["run", "build"], { cwd: repoDir, timeout: 10 * 60_000, shell: process.platform === "win32", env: childEnv() });
@@ -258,6 +265,7 @@ async function run() {
     }
 
     status.phase = "restarting";
+    status.progress = 90;
     status.toVersion = currentVersion();
     writeStatus(status);
     startServices();
@@ -269,6 +277,7 @@ async function run() {
     }
 
     status.phase = "done";
+    status.progress = 100;
     status.finishedAt = new Date().toISOString();
     writeStatus(status);
     appendLog(`update done (${fromVersion} → ${status.toVersion})`);

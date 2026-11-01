@@ -26,6 +26,7 @@ const PHASE_LABEL = {
  */
 export function UpdateDialog({ open, onOpenChange, targetVersion, currentVersion, mode, t, locale }) {
   const [phase, setPhase] = useState(null); // null = 未开始
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
   const [finished, setFinished] = useState(false);
   const timerRef = useRef(null);
@@ -59,6 +60,7 @@ export function UpdateDialog({ open, onOpenChange, targetVersion, currentVersion
         const st = res.status;
         if (st && st.phase === "done") {
           setPhase("done");
+          setProgress(100);
           setFinished(true);
           return;
         }
@@ -68,6 +70,7 @@ export function UpdateDialog({ open, onOpenChange, targetVersion, currentVersion
           return;
         }
         setPhase(st ? st.phase : "running");
+        setProgress(st?.progress || 0);
       } catch {
         // 服务重启中,请求失败是预期行为
       }
@@ -104,9 +107,18 @@ export function UpdateDialog({ open, onOpenChange, targetVersion, currentVersion
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden />
-                <span className="text-muted-foreground">{phaseText(phase)}</span>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden />
+                  <span className="text-muted-foreground">{phaseText(phase)}</span>
+                  <span className="ml-auto num text-xs text-muted-foreground">{progress}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-500"
+                    style={{ width: `${Math.max(3, progress)}%` }}
+                  />
+                </div>
               </div>
             )}
           </div>
