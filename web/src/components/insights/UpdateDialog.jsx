@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { applyUpdate, fetchUpdateStatus, openExternal } from "@/lib/backend";
+import { fill } from "@/i18n";
 
 const PHASE_LABEL = {
   running: "准备中",
