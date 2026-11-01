@@ -55,6 +55,7 @@ import { ModelInsights } from "@/components/insights/ModelInsights";
 import { DayDetailDialog } from "@/components/insights/DayDetailDialog";
 import { ModelDetailDialog } from "@/components/insights/ModelDetailDialog";
 import { downloadCsv } from "@/components/insights/csv";
+import { UpdateDialog } from "@/components/insights/UpdateDialog";
 
 const GITHUB_URL = "https://github.com/DoraJasmine/DoraMonitor";
 const DEFAULT_DASHBOARD = { hiddenQuotaCards: [], heatmapRange: "1y", dailyRange: "30d" };
@@ -186,6 +187,7 @@ export default function App() {
   const [usageLoading, setUsageLoading] = useState(false);
   const [dayDetail, setDayDetail] = useState(null); // "YYYY-MM-DD"
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateDialog, setUpdateDialog] = useState(false);
   const [modelDetail, setModelDetail] = useState(null); // { model, modelDisplay, ... }
   const [page, setPage] = useState(() => {
     if (typeof window !== "undefined") {
@@ -757,7 +759,7 @@ export default function App() {
                     latest: updateInfo.latest,
                     current: updateInfo.current,
                   })}
-                  onClick={() => openExternal(updateInfo.releaseUrl)}
+                  onClick={() => setUpdateDialog(true)}
                 >
                   <ArrowUpCircle className="h-3 w-3" aria-hidden />
                   {fill(t("newVersion"), { v: updateInfo.latest })}
@@ -1623,6 +1625,15 @@ export default function App() {
       </Card>
 
       {/* FR-11 day drill-down + FR-12 model detail dialogs */}
+      <UpdateDialog
+        open={updateDialog}
+        onOpenChange={setUpdateDialog}
+        targetVersion={updateInfo?.latest}
+        currentVersion={pkg.version}
+        mode={updateInfo?.mode}
+        t={t}
+        locale={locale}
+      />
       <DayDetailDialog
         day={dayDetail}
         open={!!dayDetail}

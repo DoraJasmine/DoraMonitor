@@ -26,6 +26,7 @@ const {
 const { mergeBuckets, newBucket, foldRecordInto } = require("./buckets");
 const store = require("./store");
 const updateCheck = require("./update-check");
+const selfUpdate = require("./self-update");
 const { dayKey } = require("./aggregate");
 const { listPrices } = require("./pricing");
 const { startQuotaSampler } = require("./quota-sampler");
@@ -359,9 +360,24 @@ async function handleApi(req, res, url, cliHome) {
 
   // 唯一的自动出站请求:GitHub Releases 只读版本探测(缓存 6 小时,可经
   // settings.updates.check 关闭)。见 docs/privacy.md。
+  // 一键更新:以脱离进程方式执行(停服务 → 拉取 → 构建 → 重启),
+  // 端点立即返回;进度经 /api/update/status 轮询。仅本机回环可用。
+  if (url.pathname === "/api/update/apply" && req.method === "POST") {
+    const body = await readBody(req);
+    if (!body || body.confirm !== true) {
+      return json(res, 400, { error: "confirm_required" });
+    }
+    const result = selfUpdate.spawnApply();
+    return json(res, result.started ? 200 : 409, result);
+  }
+
+  if (url.pathname === "/api/update/status") {
+    return json(res, 200, { status: selfUpdate.readStatus(), version: selfUpdate.currentVersion() });
+  }
+
   if (url.pathname === "/api/version-check") {
     const status = await updateCheck.getUpdateStatus({ force: url.searchParams.get("force") === "1" });
-    return json(res, 200, status);
+    return json(res, 200, { ...status, mode: selfUpdate.detectMode().mode });
   }
 
   if (url.pathname === "/api/locale") {

@@ -174,6 +174,20 @@ export async function fetchVersionCheck(force = false) {
   return httpJson(`/api/version-check${force ? "?force=1" : ""}`);
 }
 
+/** POST /api/update/apply — spawn the detached self-updater */
+export async function applyUpdate() {
+  return httpJson("/api/update/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
+/** GET /api/update/status — progress of the detached updater */
+export async function fetchUpdateStatus() {
+  return httpJson("/api/update/status");
+}
+
 /** GET /api/settings — display, dashboard, quota and sync preferences */
 export async function fetchSettings() {
   return httpJson("/api/settings");
