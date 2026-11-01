@@ -132,13 +132,13 @@ function stopServices() {
   if (isWin) {
     // web:通过端口找监听进程并终止;daemon:读取 pid 文件。
     try {
-      const out = execFileSync("netstat", ["-ano"], { encoding: "utf8", timeout: 15_000 });
+      const out = execFileSync("netstat", ["-ano"], { encoding: "utf8", timeout: 15_000, windowsHide: true });
       for (const line of out.split(/\r?\n/)) {
         if (/:\d+\s+.*LISTENING\s+(\d+)\s*$/.test(line) && /:3847\s/.test(line)) {
           const pid = line.trim().split(/\s+/).pop();
           if (pid && pid !== String(process.pid)) {
             try {
-              execFileSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", timeout: 15_000 });
+              execFileSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", timeout: 15_000, windowsHide: true });
               appendLog(`stopped web listener pid ${pid}`);
             } catch {
               /* already gone */
@@ -151,7 +151,7 @@ function stopServices() {
     }
     for (const task of ["doramonitor-web", "doramonitor-daemon"]) {
       try {
-        execFileSync("schtasks", ["/end", "/tn", task], { stdio: "ignore", timeout: 15_000 });
+        execFileSync("schtasks", ["/end", "/tn", task], { stdio: "ignore", timeout: 15_000, windowsHide: true });
       } catch {
         /* task not running */
       }
@@ -160,7 +160,7 @@ function stopServices() {
       const daemonPid = fs.readFileSync(path.join(HOME_DIR, "daemon.pid"), "utf8").trim();
       if (daemonPid && daemonPid !== String(process.pid)) {
         try {
-          execFileSync("taskkill", ["/F", "/PID", daemonPid], { stdio: "ignore", timeout: 15_000 });
+          execFileSync("taskkill", ["/F", "/PID", daemonPid], { stdio: "ignore", timeout: 15_000, windowsHide: true });
         } catch {
           /* already gone */
         }
@@ -233,7 +233,7 @@ async function run() {
       // 未提交修改或与远端分叉时中止——绝不丢弃用户的工作。
       let porcelain = "";
       try {
-        porcelain = execFileSync("git", ["status", "--porcelain"], { cwd: repoDir, encoding: "utf8", timeout: 15_000 });
+        porcelain = execFileSync("git", ["status", "--porcelain"], { cwd: repoDir, encoding: "utf8", timeout: 15_000, windowsHide: true });
       } catch (err) {
         throw new Error(`git status 失败:${err.message}`);
       }
@@ -250,7 +250,7 @@ async function run() {
         let diff = "";
         try {
           diff = execFileSync("git", ["diff", "--stat", "HEAD", "origin/main"], {
-            cwd: repoDir, encoding: "utf8", timeout: 15_000,
+            cwd: repoDir, encoding: "utf8", timeout: 15_000, windowsHide: true,
           });
         } catch (err) {
           throw new Error(`git diff 失败:${err.message}`);
