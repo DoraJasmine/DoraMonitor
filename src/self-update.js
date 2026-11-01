@@ -115,6 +115,14 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
+/** npm 解析:Windows 上 npm 是 .cmd,必须经 shell 执行;优先用与当前
+ *  node 同目录的 npm.cmd(脱离进程的 PATH 可能不完整)。*/
+function npmCmd() {
+  if (process.platform !== "win32") return "npm";
+  const local = path.join(path.dirname(process.execPath), "npm.cmd");
+  return fs.existsSync(local) ? local : "npm";
+}
+
 function stopServices() {
   const isWin = process.platform === "win32";
   appendLog("stopping services");
@@ -236,16 +244,16 @@ async function run() {
       status.phase = "installing";
       writeStatus(status);
       appendLog("npm install");
-      sh("npm", ["install", "--no-audit", "--no-fund"], { cwd: repoDir, timeout: 15 * 60_000 });
+      sh(npmCmd(), ["install", "--no-audit", "--no-fund"], { cwd: repoDir, timeout: 15 * 60_000, shell: process.platform === "win32" });
       status.phase = "building";
       writeStatus(status);
       appendLog("npm run build");
-      sh("npm", ["run", "build"], { cwd: repoDir, timeout: 10 * 60_000 });
+      sh(npmCmd(), ["run", "build"], { cwd: repoDir, timeout: 10 * 60_000, shell: process.platform === "win32" });
     } else {
       status.phase = "installing";
       writeStatus(status);
       appendLog("npm install -g doramonitor@latest");
-      sh("npm", ["install", "-g", "doramonitor@latest", "--no-audit", "--no-fund"], { timeout: 15 * 60_000 });
+      sh(npmCmd(), ["install", "-g", "doramonitor@latest", "--no-audit", "--no-fund"], { timeout: 15 * 60_000, shell: process.platform === "win32" });
     }
 
     status.phase = "restarting";
