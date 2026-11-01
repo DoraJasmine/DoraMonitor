@@ -230,10 +230,11 @@ async function run() {
       status.progress = 25;
       writeStatus(status);
       const git = (args) => sh("git", args, { cwd: repoDir });
-      // 未提交修改或与远端分叉时中止——绝不丢弃用户的工作。
+      // 已跟踪文件的未提交修改或与远端分叉时中止——绝不丢弃用户的工作。
+      // 未跟踪文件不阻断:ff-only merge 与 reset --hard 均不触碰它们。
       let porcelain = "";
       try {
-        porcelain = execFileSync("git", ["status", "--porcelain"], { cwd: repoDir, encoding: "utf8", timeout: 15_000, windowsHide: true });
+        porcelain = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repoDir, encoding: "utf8", timeout: 15_000, windowsHide: true });
       } catch (err) {
         throw new Error(`git status 失败:${err.message}`);
       }
