@@ -240,7 +240,21 @@ async function run() {
       try {
         git(["merge", "--ff-only", "origin/main"]);
       } catch {
-        throw new Error("本地分支与 origin/main 分叉,已中止更新(请手动处理)");
+        // ff 不可能:区分"仅提交图分叉"(内容一致,安全移动指针)与
+        // "存在真实代码差异"(可能有未推送的工作,中止)。
+        let diff = "";
+        try {
+          diff = execFileSync("git", ["diff", "--stat", "HEAD", "origin/main"], {
+            cwd: repoDir, encoding: "utf8", timeout: 15_000,
+          });
+        } catch (err) {
+          throw new Error(`git diff 失败:${err.message}`);
+        }
+        if (diff.trim()) {
+          throw new Error("本地分支与 origin/main 存在实际代码差异,已中止更新(请手动处理)");
+        }
+        appendLog("diverged but identical tree → moving HEAD to origin/main");
+        git(["reset", "--hard", "origin/main"]);
       }
       status.phase = "installing";
       writeStatus(status);

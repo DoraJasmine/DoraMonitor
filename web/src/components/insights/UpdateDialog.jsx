@@ -89,8 +89,15 @@ export function UpdateDialog({ open, onOpenChange, targetVersion, currentVersion
         </div>
 
         {error ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {t("updateFailed")} {error}
+          <div className="space-y-2">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {t("updateFailed")} {error}
+            </div>
+            <div className="text-center">
+              <Button variant="secondary" size="sm" onClick={start}>
+                {t("retry")}
+              </Button>
+            </div>
           </div>
         ) : null}
 
