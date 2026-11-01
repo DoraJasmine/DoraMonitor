@@ -39,7 +39,20 @@ npm install --prefix "$SMOKE" ./doramonitor-<version>.tgz
 
 Windows 使用 `npm install --prefix .tmp/smoke ./doramonitor-<version>.tgz`，入口位于 `.tmp/smoke/node_modules/.bin/doramonitor`。隔离目录安装不会改动现有全局命令。
 
-## 3. 正式发布（需要维护者明确执行）
+## 4. GitHub Release（自更新探测数据源）
+
+看板的新版本探测读取 `api.github.com/repos/DoraJasmine/DoraMonitor/releases/latest`（限额耗尽时回退解析 releases 页面 302）。`/releases/latest` 只返回**非预发布、非草稿**的 Release，且必须先 push 版本号 bump 的提交（源码部署的自更新走 `git fetch`）：
+
+```bash
+npm version patch --no-git-tag-version
+git add package.json package-lock.json && git commit -m "chore: vX.Y.Z" && git push origin main
+git tag vX.Y.Z && git push origin vX.Y.Z
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "变更摘要"
+```
+
+发布后在旧版本实例上验证 `GET /api/version-check?force=1` 返回 `updateAvailable: true`（运行中的进程在 require 缓存里仍是旧版本号，磁盘 bump 不影响其"当前版本"判定），再从看板触发一键更新走完全链路。tag 与 Release 均不触发 npm 发布（CI 仅跑测试），正式 npm 发布见下节。
+
+## 5. 正式发布（需要维护者明确执行）
 
 ```bash
 npm whoami
@@ -48,7 +61,7 @@ npm publish
 
 `publishConfig.access` 已设为 `public`。发布是不可逆的对外操作：不要通过脚本自动执行，也不要在仅要求“预览”时运行正式发布。 npm 不允许覆盖同一版本，发布后如需修正必须提升版本号。
 
-## 4. 发布后验证
+## 6. 发布后验证
 
 在一个不包含源码目录的环境执行：
 

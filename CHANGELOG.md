@@ -2,6 +2,16 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [1.2.3] - 2026-11-01
+
+### 修复
+
+- 自更新期间不再弹出命令行窗口:`windowsHide` 补齐至全部外部调用(netstat、taskkill、schtasks、git status、git diff),此前 `sh()` 内的调用已带而裸 `execFileSync` 调用遗漏,从无控制台的 detached 更新器拉起控制台程序时 Windows 会分配可见控制台;
+
+### 变更
+
+- 一键更新的"未提交修改"保护仅检查已跟踪文件(`--untracked-files=no`):未跟踪文件不受 ff-only merge 与 reset --hard 影响,不再阻断更新;已跟踪文件的未提交修改与远端分叉仍照常中止。
+
 ## [1.2.2] - 2026-11-01
 
 - 更新过程不再弹出命令行窗口(`windowsHide`),对话框内以进度条展示实时进度;
