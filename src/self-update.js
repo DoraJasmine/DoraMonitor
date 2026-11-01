@@ -108,19 +108,20 @@ function spawnApply(rootDir) {
 // ---------------------------------------------------------------------------
 
 function sh(cmd, args, opts = {}) {
+  const { env, ...rest } = opts;
   execFileSync(cmd, args, {
     stdio: "ignore",
-    timeout: opts.timeout || 10 * 60_000,
-    ...opts,
+    timeout: 10 * 60_000,
+    ...rest,
+    env: env || process.env,
   });
 }
 
-/** npm 解析:Windows 上 npm 是 .cmd,必须经 shell 执行;优先用与当前
- *  node 同目录的 npm.cmd(脱离进程的 PATH 可能不完整)。*/
-function npmCmd() {
-  if (process.platform !== "win32") return "npm";
-  const local = path.join(path.dirname(process.execPath), "npm.cmd");
-  return fs.existsSync(local) ? local : "npm";
+/** 子进程环境:把当前 node 目录并到 PATH 最前——脱离进程(计划任务拉起)
+ *  的 PATH 不保证含 npm;git/git-bash 也在系统 PATH 中,合并无害。*/
+function childEnv() {
+  const nodeDir = path.dirname(process.execPath);
+  return { ...process.env, PATH: `${nodeDir}${path.delimiter}${process.env.PATH || ""}` };
 }
 
 function stopServices() {
@@ -244,16 +245,16 @@ async function run() {
       status.phase = "installing";
       writeStatus(status);
       appendLog("npm install");
-      sh(npmCmd(), ["install", "--no-audit", "--no-fund"], { cwd: repoDir, timeout: 15 * 60_000, shell: process.platform === "win32" });
+      sh("npm", ["install", "--no-audit", "--no-fund"], { cwd: repoDir, timeout: 15 * 60_000, shell: process.platform === "win32", env: childEnv() });
       status.phase = "building";
       writeStatus(status);
       appendLog("npm run build");
-      sh(npmCmd(), ["run", "build"], { cwd: repoDir, timeout: 10 * 60_000, shell: process.platform === "win32" });
+      sh("npm", ["run", "build"], { cwd: repoDir, timeout: 10 * 60_000, shell: process.platform === "win32", env: childEnv() });
     } else {
       status.phase = "installing";
       writeStatus(status);
       appendLog("npm install -g doramonitor@latest");
-      sh(npmCmd(), ["install", "-g", "doramonitor@latest", "--no-audit", "--no-fund"], { timeout: 15 * 60_000, shell: process.platform === "win32" });
+      sh("npm", ["install", "-g", "doramonitor@latest", "--no-audit", "--no-fund"], { timeout: 15 * 60_000, shell: process.platform === "win32", env: childEnv() });
     }
 
     status.phase = "restarting";
