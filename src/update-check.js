@@ -13,6 +13,7 @@
 const PKG = require("../package.json");
 const RELEASES_API_URL = "https://api.github.com/repos/DoraJasmine/DoraMonitor/releases/latest";
 const RELEASES_PAGE_URL = "https://github.com/DoraJasmine/DoraMonitor/releases";
+const RELEASES_LATEST_PAGE = "https://github.com/DoraJasmine/DoraMonitor/releases/latest";
 const TTL_MS = 6 * 3600_000;
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -30,27 +31,54 @@ function isNewerVersion(candidate, current) {
   return false;
 }
 
+function versionFromTag(tag) {
+  const version = String(tag || "").replace(/^v/, "");
+  return /^\d+\.\d+\.\d+/.test(version) ? version : null;
+}
+
+/** 回退源:github.com 的 releases/latest 页面 302 跳转到具体 Release,
+ *  从 Location 解析版本号——不经 api.github.com 的匿名限额。*/
+async function fetchLatestViaPageRedirect(doFetch) {
+  const res = await doFetch(RELEASES_LATEST_PAGE, {
+    redirect: "manual",
+    headers: { "User-Agent": "DoraMonitor-update-check" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  const location = res.headers.get("location") || "";
+  const m = location.match(/releases\/tag\/(v?[0-9][^/?#]+)/);
+  const version = m ? versionFromTag(m[1]) : null;
+  if (!version) return null;
+  const url = location.startsWith("http") ? location : RELEASES_PAGE_URL;
+  return { version, url, publishedAt: null };
+}
+
 async function fetchLatestRelease(fetchImpl) {
   const doFetch = fetchImpl || globalThis.fetch;
   if (!doFetch) return null;
-  const res = await doFetch(RELEASES_API_URL, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      // GitHub API 要求携带 User-Agent
-      "User-Agent": "DoraMonitor-update-check",
-    },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const tag = data && typeof data.tag_name === "string" ? data.tag_name : null;
-  const version = tag ? tag.replace(/^v/, "") : null;
-  if (!version || !/^\d+\.\d+\.\d+/.test(version)) return null;
-  return {
-    version,
-    url: typeof data.html_url === "string" && data.html_url ? data.html_url : RELEASES_PAGE_URL,
-    publishedAt: typeof data.published_at === "string" ? data.published_at : null,
-  };
+  try {
+    const res = await doFetch(RELEASES_API_URL, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        // GitHub API 要求携带 User-Agent
+        "User-Agent": "DoraMonitor-update-check",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const version = versionFromTag(data && data.tag_name);
+      if (version) {
+        return {
+          version,
+          url: typeof data.html_url === "string" && data.html_url ? data.html_url : RELEASES_PAGE_URL,
+          publishedAt: typeof data.published_at === "string" ? data.published_at : null,
+        };
+      }
+    }
+  } catch {
+    /* API 限额/不可用 → 页面重定向回退 */
+  }
+  return fetchLatestViaPageRedirect(doFetch);
 }
 
 /**
@@ -100,4 +128,4 @@ function resetCache() {
   cache = { at: 0, data: null };
 }
 
-module.exports = { getUpdateStatus, isNewerVersion, resetCache, RELEASES_API_URL, RELEASES_PAGE_URL, TTL_MS };
+module.exports = { getUpdateStatus, isNewerVersion, resetCache, RELEASES_API_URL, RELEASES_LATEST_PAGE, RELEASES_PAGE_URL, TTL_MS };
