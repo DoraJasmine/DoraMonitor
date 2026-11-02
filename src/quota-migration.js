@@ -34,8 +34,11 @@ function withLock(root, action) {
   let handle;
   try {
     handle = fs.openSync(lock, "wx");
-  } catch {
-    migrationError("migration_lock_busy", "Another process is migrating quota data");
+  } catch (error) {
+    if (error && error.code === "EEXIST") {
+      migrationError("migration_lock_busy", "Another process is migrating quota data");
+    }
+    migrationError("migration_lock_failed", `Cannot create migration lock: ${error && error.message}`);
   }
   try {
     fs.writeFileSync(handle, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), "utf8");
@@ -131,8 +134,50 @@ function backupOriginals(root, plans, backupRoot) {
   atomicWrite(path.join(backupRoot, "manifest.json"), JSON.stringify(manifest, null, 1));
 }
 
+function isV2Jsonl(text) {
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && parsed.version === 2) return true;
+      if (parsed && parsed.version !== 2) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isV2State(file) {
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(256);
+      fs.readSync(fd, buf, 0, 256, 0);
+      return /"version"\s*:\s*2/.test(buf.toString("utf8"));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
+function fileHeadIsV2(file) {
+  const head = fs.readFileSync(file, "utf8").slice(0, 4096);
+  return path.basename(file) === "state.json" ? isV2State(file) : isV2Jsonl(head);
+}
+
 function migrateQuotaStorage(root) {
   if (!FILES.some((name) => fs.existsSync(path.join(root, name)))) return { ok: true, status: "already_migrated", count: 0 };
+  // ponytail: 头部快速检查——v2 数据占绝大多数，避免每次启动都全量扫描
+  let allV2 = true;
+  for (const name of FILES) {
+    const file = path.join(root, name);
+    if (!fs.existsSync(file)) continue;
+    if (!fileHeadIsV2(file)) { allV2 = false; break; }
+  }
+  if (allV2) return { ok: true, status: "already_migrated", count: 0 };
   return withLock(root, () => {
     const { plans, warnings } = prepareMigration(root);
     if (!plans.length) return { ok: true, status: "already_migrated", count: 0 };
