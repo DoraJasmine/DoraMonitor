@@ -7,6 +7,22 @@ const os = require("os");
 const path = require("path");
 const { URL } = require("url");
 
+// VBS 隐藏窗口启动时不落地 stdout/stderr，未捕获异常会静默退出——
+// 追加写入 ~/.doramonitor/web.err.log 留尸检报告。
+function logFatal(kind, err) {
+  try {
+    const line = `[${new Date().toISOString()}] ${kind}: ${err && err.stack ? err.stack : err}\n`;
+    fs.appendFileSync(path.join(os.homedir(), ".doramonitor", "web.err.log"), line, "utf8");
+  } catch { /* 日志失败也不能阻止退出流程 */ }
+}
+process.on("uncaughtException", (err) => {
+  logFatal("uncaughtException", err);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  logFatal("unhandledRejection", reason);
+});
+
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
 const { collect, invalidate: invalidateCollect } = require("./collect");
 const { listTools } = require("./tools");
