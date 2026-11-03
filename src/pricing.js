@@ -119,8 +119,10 @@ const DEEPSEEK_PRICES = [
     patterns: [
       /^deepseek[-_ ]?flash$/i,
       // -1017 is a dated internal suffix (codex records it as
-      // deepseek-v4.1-flash-1017) — same model, same price row.
-      /^deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?\d{4})?(?:[-_ ]?vision[-_ ]?exp)?$/i,
+      // deepseek-v4.1-flash-1017); -512k etc. is a context-limited serving
+      // variant; "sn-" is a client routing prefix — all the same model at
+      // the same price row, so this pattern is intentionally unanchored.
+      /deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?\d{4})?(?:[-_ ]?\d{3,4}k)?(?:[-_ ]?vision[-_ ]?exp)?/i,
       /^deepseek[-_ ]?(chat|reasoner)$/i,
       /^dfmodel$/i,
     ],

@@ -121,6 +121,17 @@ describe("pricing", () => {
     assert.equal(p.estimated, false);
   });
 
+  it("maps context-limited and client-prefixed deepseek flash variants to the same row", () => {
+    // -512k is a context-limited serving variant; sn- is a client routing
+    // prefix. Same model, same price — none of these may fall back to the
+    // Kimi estimate.
+    for (const name of ["deepseek-v4.1-flash-1017-512k", "sn-deepseek-v4.1-flash-1017", "DeepSeek-V4.1-Flash-512K"]) {
+      const p = matchPrice(name, { fxRate: 7.2, time: Date.UTC(2026, 9, 20, 2) });
+      assert.equal(p.id, "deepseek-flash", name);
+      assert.equal(p.estimated, false, name);
+    }
+  });
+
   it("falls back for non-kimi models", () => {
     const p = matchPrice("grok-api/grok-4.5");
     assert.equal(p.estimated, true);
