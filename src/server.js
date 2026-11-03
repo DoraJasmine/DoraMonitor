@@ -226,8 +226,18 @@ function json(res, status, body) {
 
 function settingsView(settings) {
   const webdav = settings.sync?.webdav || {};
+  // Kimi API keys are secrets: never echo them back, expose has* flags instead
+  // (same pattern as the WebDAV password).
+  const quotaAccounts = (settings.quotaAccounts || []).map((account) => ({
+    ...account,
+    apiKey: undefined,
+    hasApiKey: Boolean(account.apiKey),
+  }));
   return {
     ...settings,
+    kimiApiKey: undefined,
+    hasKimiApiKey: Boolean(settings.kimiApiKey),
+    quotaAccounts,
     sync: {
       ...settings.sync,
       webdav: { ...webdav, password: undefined, hasPassword: Boolean(webdav.password) },
@@ -696,9 +706,20 @@ async function handleApi(req, res, url, cliHome) {
     try {
       const body = await readBody(req);
       const current = loadSettings();
+      // Secrets: an omitted field keeps the stored value; an empty string clears it.
+      const kimiApiKey = typeof body.kimiApiKey === "string" ? body.kimiApiKey : current.kimiApiKey;
+      const quotaAccounts = Array.isArray(body.quotaAccounts)
+        ? body.quotaAccounts.map((account, index) => {
+            const prior = current.quotaAccounts[index];
+            const apiKey = typeof account.apiKey === "string" ? account.apiKey : prior?.accountKey === account.accountKey ? prior.apiKey : "";
+            return { ...account, apiKey };
+          })
+        : current.quotaAccounts;
       const merged = {
         ...current,
         ...body,
+        kimiApiKey,
+        quotaAccounts,
         quotaEstimation: { ...current.quotaEstimation, ...body.quotaEstimation },
         dashboard: { ...current.dashboard, ...body.dashboard },
         sync: body.sync

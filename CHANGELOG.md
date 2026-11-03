@@ -2,6 +2,12 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [1.3.0] - 2026-11-03
+
+### 新增
+
+- **Kimi 额度支持 API Key 读取**:在额度详情页可配置 Kimi Code Console 生成的 API Key(`sk-kimi-...`,存储于 `settings.kimiApiKey`,多账号可用 `quotaAccounts[].apiKey` 按账号覆盖),配置后优先经 `https://api.kimi.com/coding/v1/usages` 以 Bearer Key 读取 5 小时/周额度,不再依赖 15 分钟即过期的 Kimi Code 登录凭证——在其他机器使用 Kimi 时额度照常可读;保存时立即实测并显示校验结果,已配置状态常驻徽标提示;API Key 在设置接口中打码,不回显明文。
+
 ## [1.2.3] - 2026-11-01
 
 ### 修复

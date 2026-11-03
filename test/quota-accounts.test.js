@@ -53,3 +53,36 @@ test("Kimi quota cache is isolated by credential home and account key", async (c
   assert.equal(work.accountKey, "kimi:work");
   assert.equal(calls, 2);
 });
+
+test("api key fetches usages without touching OAuth credentials", async (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dora-kimi-apikey-"));
+  const originalFetch = global.fetch;
+  context.after(() => { global.fetch = originalFetch; });
+  const calls = [];
+  global.fetch = async (url, opts) => {
+    calls.push([String(url), opts && opts.headers && opts.headers.Authorization]);
+    return { ok: true, json: async () => ({ data: { usage: { percentage: 20, reset_at: 1787210351998 } } }) };
+  };
+  const home = path.join(root, "no-credentials"); // deliberately no credentials file
+  const quota = await fetchQuota(home, { accountKey: "kimi:default", apiKey: "sk-kimi-test" });
+  assert.equal(quota.available, true);
+  assert.equal(quota.source, "api-key");
+  assert.equal(quota.windows.length, 1);
+  assert.equal(quota.windows[0].usedPercent, 20);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0][0].includes("/coding/v1/usages"));
+  assert.equal(calls[0][1], "Bearer sk-kimi-test");
+  // Repeated call is served from the cache (one fetch total).
+  await fetchQuota(home, { accountKey: "kimi:default", apiKey: "sk-kimi-test" });
+  assert.equal(calls.length, 1);
+});
+
+test("api key error surfaces as an unavailable quota, not a crash", async (context) => {
+  const originalFetch = global.fetch;
+  context.after(() => { global.fetch = originalFetch; });
+  global.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
+  const quota = await fetchQuota("/unused", { accountKey: "kimi:default", apiKey: "sk-kimi-bad" });
+  assert.equal(quota.available, false);
+  assert.equal(quota.reason, "http_401");
+  assert.equal(quota.source, "api-key");
+});

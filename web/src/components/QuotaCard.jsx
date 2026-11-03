@@ -576,6 +576,10 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
   const [scope, setScope] = useState("all-clients");
   const [hiddenQuotaCards, setHiddenQuotaCards] = useState([]);
   const [homeSaving, setHomeSaving] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [hasKey, setHasKey] = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null); // { ok, text } — validation result after saving a key
   const [, forceTick] = useState(0);
   const requestSeq = useRef(0);
   const cardId = `${tool}:${accountKey || "default"}`;
@@ -587,8 +591,12 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
         ? settings.quotaEstimation?.codexOnly ? "codex-only" : "all-clients"
         : settings.quotaEstimation?.kimiCodeOnly ? "kimi-code-only" : "all-clients");
       setHiddenQuotaCards(settings.dashboard?.hiddenQuotaCards || []);
+      if (tool === "kimi-code") {
+        const account = (settings.quotaAccounts || []).find((a) => a.accountKey === (accountKey || "kimi:default"));
+        setHasKey(Boolean(account ? account.hasApiKey : settings.hasKimiApiKey));
+      }
     }).catch(() => {});
-  }, [tool]);
+  }, [tool, accountKey]);
 
   const load = useCallback(async (refresh = false) => {
     const seq = ++requestSeq.current;
@@ -623,6 +631,38 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
     } catch (e) {
       setScope(previous);
       setError(e.message || t("settingsSaveFailed"));
+    }
+  };
+
+  const saveApiKey = async () => {
+    setKeySaving(true);
+    setError(null);
+    setSaveMsg(null);
+    try {
+      const body = tool === "kimi-code" && accountKey && accountKey !== "kimi:default"
+        ? { quotaAccounts: [{ tool: "kimi-code", accountKey, apiKey }] }
+        : { kimiApiKey: apiKey };
+      const saved = await saveSettings(body);
+      setApiKey("");
+      if (tool === "kimi-code") {
+        const account = (saved.quotaAccounts || []).find((a) => a.accountKey === (accountKey || "kimi:default"));
+        setHasKey(Boolean(account ? account.hasApiKey : saved.hasKimiApiKey));
+      }
+      onSettingsChanged?.(saved);
+      // Validate immediately: force a quota fetch with the new key so the
+      // user knows right away whether the key actually works.
+      const q = await fetchQuota(true, tool, scope, accountKey);
+      setQuota(q);
+      if (q.available) {
+        setSaveMsg({ ok: true, text: t("kimiApiKeySavedOk") });
+      } else {
+        const reasonText = (q.reason || "").startsWith("http_") ? `HTTP ${q.reason.slice(5)}` : q.reason || "—";
+        setSaveMsg({ ok: false, text: fill(t("kimiApiKeySavedBad"), { reason: reasonText }) });
+      }
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || t("settingsSaveFailed") });
+    } finally {
+      setKeySaving(false);
     }
   };
 
@@ -729,6 +769,34 @@ export function QuotaCard({ t, locale, refreshSignal, tool = "kimi-code", detail
                 </div>
               );
             })}
+          </div>
+        )}
+        {detail && tool === "kimi-code" && (
+          <div className="mt-3 space-y-1.5 border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="password"
+                className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                placeholder={hasKey ? t("kimiApiKeyReplace") : t("kimiApiKeyPlaceholder")}
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                autoComplete="off"
+              />
+              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={keySaving || !apiKey.trim()} onClick={saveApiKey}>
+                {t("kimiApiKeySave")}
+              </Button>
+              {hasKey && (
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                  {t("kimiApiKeyConfigured")}
+                </span>
+              )}
+            </div>
+            {saveMsg && (
+              <div className={cn("text-[11px]", saveMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")} role="status">
+                {saveMsg.text}
+              </div>
+            )}
+            {!saveMsg && <div className="text-[11px] text-muted-foreground">{hasKey ? t("kimiApiKeyActive") : t("kimiApiKeyHint")}</div>}
           </div>
         )}
         {!detail && quota && <HomeCapacity capacity={quota.capacity} locale={locale} t={t} />}

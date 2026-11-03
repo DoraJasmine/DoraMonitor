@@ -37,9 +37,12 @@ async function loadToolQuota(tool, cliHome, force = false, requestedAccountKey) 
     return { quota, accountKey, collected, peers };
   }
   const account = resolveKimiQuotaAccount(cliHome, requestedAccountKey);
-  const quota = await fetchQuota(account.home, { force, accountKey: account.accountKey });
+  // Per-account key wins; falls back to the global Kimi OpenPlatform key.
+  const settings = loadSettings();
+  const apiKey = account.apiKey || settings.kimiApiKey || null;
+  const quota = await fetchQuota(account.home, { force, accountKey: account.accountKey, apiKey });
   persistQuota(quota, quotaProvider, "kimi-api");
-  return { quota, accountKey: account.accountKey, collected: null, peers: syncEnabled(loadSettings()) ? loadCachedPeers() : [] };
+  return { quota, accountKey: account.accountKey, collected: null, peers: syncEnabled(settings) ? loadCachedPeers() : [] };
 }
 
 async function getToolQuota({ tool, cliHome, force = false, scope, root, accountKey: requestedAccountKey }) {

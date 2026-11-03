@@ -20,9 +20,14 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
   "currencySymbol": "¥",        // 符号（trim 后最多 4 字符；切币种自动带出 $/¥）
   "fxRate": 6.67,               // USD→CNY 汇率（默认取 2026-10 市场中间价），合法 (0, 100000)
   "customPrices": [],           // 自定义价格，见下
+  "kimiApiKey": "",             // 可选；Kimi Code Console 的 API Key（sk-kimi-...）。
+                                // 配置后 Kimi 额度优先经 API Key 读取（Bearer 调
+                                // api.kimi.com/coding/v1/usages），不再依赖 15 分钟
+                                // 即过期的登录凭证；经设置接口写入，回显时打码
   "quotaAccounts": [            // 可选；配置后替代默认单 Kimi 账号
     { "tool": "kimi-code", "accountKey": "kimi:default", "label": "个人", "home": "/home/user/.kimi-code" },
-    { "tool": "kimi-code", "accountKey": "kimi:work", "label": "工作", "home": "/home/user/.kimi-code-work" }
+    { "tool": "kimi-code", "accountKey": "kimi:work", "label": "工作", "home": "/home/user/.kimi-code-work",
+      "apiKey": "" }            // 可选；账号级 API Key，优先于全局 kimiApiKey
   ],
   "quotaEstimation": {
     "kimiCodeOnly": false,       // true 时仅用 Kimi Code 中的 Kimi 模型估算额度

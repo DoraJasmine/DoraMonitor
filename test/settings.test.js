@@ -24,3 +24,16 @@ test("dashboard settings reject unknown ranges and non-boolean visibility data",
   const settings = sanitizeSettings({ dashboard: { hiddenQuotaCards: "codex", heatmapRange: "all", dailyRange: "1y" } });
   assert.deepEqual(settings.dashboard, { hiddenQuotaCards: [], heatmapRange: "1y", dailyRange: "30d" });
 });
+
+test("kimi api keys are trimmed, length-capped and stored per account", () => {
+  const settings = sanitizeSettings({
+    kimiApiKey: "  sk-global  ",
+    quotaAccounts: [
+      { tool: "kimi-code", accountKey: "kimi:default", home: "/p", apiKey: " sk-a " },
+      { tool: "kimi-code", accountKey: "kimi:work", home: "/w", apiKey: 42 },
+    ],
+  });
+  assert.equal(settings.kimiApiKey, "sk-global");
+  assert.equal(settings.quotaAccounts[0].apiKey, "sk-a");
+  assert.equal(settings.quotaAccounts[1].apiKey, ""); // non-string becomes empty
+});

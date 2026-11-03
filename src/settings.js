@@ -25,6 +25,7 @@ const DEFAULTS = {
   currencySymbol: "¥", // display symbol (auto-set from currency, overridable)
   fxRate: 6.67, // USD -> CNY
   customPrices: [], // see module doc
+  kimiApiKey: "", // Kimi OpenPlatform API key (sk-...); when set, quota uses the balance API instead of the OAuth credentials file
   quotaAccounts: [],
   quotaEstimation: {
     kimiCodeOnly: false,
@@ -93,6 +94,9 @@ function sanitizeSettings(raw) {
       codexOnly: raw.quotaEstimation.codexOnly === true,
     };
   }
+  if (typeof raw.kimiApiKey === "string") {
+    out.kimiApiKey = raw.kimiApiKey.trim().slice(0, 200);
+  }
   out.quotaAccounts = [];
   if (Array.isArray(raw.quotaAccounts)) {
     const seen = new Set();
@@ -107,6 +111,8 @@ function sanitizeSettings(raw) {
         accountKey,
         label: String(account.label || accountKey).trim().slice(0, 80) || accountKey,
         home: home.slice(0, 500),
+        // Per-account key overrides settings.kimiApiKey; empty string clears it.
+        apiKey: typeof account.apiKey === "string" ? account.apiKey.trim().slice(0, 200) : "",
       });
     }
   }

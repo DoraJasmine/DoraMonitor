@@ -54,7 +54,8 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 - 出站网络请求**只有三类**，都可预期：
   1. `quota.js` → `https://api.kimi.com/coding/v1/usages` 与
      `https://auth.kimi.ai/api/oauth/token`（Kimi 额度卡；凭据来自本机
-     kimi-code 的登录态）；
+     kimi-code 的登录态，或你在设置中显式配置的 Kimi Code Console API Key，
+     仅作为该请求的 Bearer 头发往同一官方端点）；
   2. `codex-quota.js` → `https://chatgpt.com/backend-api/wham/usage` 与 OpenAI
      OAuth 刷新端点（Codex 额度；使用本机 Codex 登录态，60 秒节流）；
   3. `catalog.js` → models.dev 在线目录镜像（模型目录导入功能；失败三级回退

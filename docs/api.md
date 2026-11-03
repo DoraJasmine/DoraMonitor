@@ -156,6 +156,9 @@
 
 - `tool=kimi-code`：调用 Kimi 在线 usages API（`https://api.kimi.com/coding/v1/usages`，
   凭据在 `<home>/credentials/kimi-code.json`，过期自动刷新）。每个 home 独立缓存 60s。
+  配置了 Kimi Code Console 的 API Key（`settings.kimiApiKey`，或账号级 `quotaAccounts[].apiKey`，
+  账号级优先）时，跳过凭证文件直接以 `Bearer <api-key>` 调用同一端点——该端点同样接受
+  Console API Key，响应结构不变，响应额外携带 `source: "api-key"` 标记。
   `GET /api/quota/accounts?tool=kimi-code` 返回配置的账号（不含 home）；额外账号仅开放官方额度、
   采样和历史，`capacity=null`，账号用量归属未可靠映射前禁用估算与校准。
 - `tool=codex`：读取本地 rollout、同步缓存及主动轮询的 `rate_limits` 快照，采用

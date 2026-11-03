@@ -19,6 +19,9 @@ const path = require("path");
  */
 
 const USAGES_URL = "https://api.kimi.com/coding/v1/usages";
+// A Kimi Code Console API key (sk-kimi-...) is accepted as the Bearer token
+// on the same usages endpoint — no OAuth refresh needed, unlike the
+// short-lived (~15 min) access token from the credentials file.
 // Discovered from the kimi CLI binary: refresh endpoint + public client id.
 const TOKEN_URL = "https://auth.kimi.ai/api/oauth/token";
 const OAUTH_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
@@ -233,9 +236,32 @@ function parseUsageBody(body) {
   return [...seen.values()];
 }
 
-async function fetchQuota(home, { force = false, accountKey = "kimi:default" } = {}) {
+/**
+ * API-key path (sk-kimi-... from the Kimi Code Console): the same usages
+ * endpoint accepts it as the Bearer token, so the response parses through
+ * the regular usage-window pipeline. No refresh, no credentials file.
+ */
+async function fetchQuotaWithApiKey(apiKey, base) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const resp = await fetch(USAGES_URL, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return { ...base, available: false, reason: `http_${resp.status}`, source: "api-key", windows: [] };
+    const body = await resp.json();
+    const windows = parseUsageBody(body);
+    return { ...base, available: windows.length > 0, reason: windows.length ? null : "empty", source: "api-key", windows };
+  } catch (err) {
+    return { ...base, available: false, reason: String((err && err.message) || err), source: "api-key", windows: [] };
+  }
+}
+
+async function fetchQuota(home, { force = false, accountKey = "kimi:default", apiKey = null } = {}) {
   const now = Date.now();
-  const cacheKey = credentialsPath(home);
+  const cacheKey = `${apiKey ? `apikey:${apiKey.slice(-6)}` : credentialsPath(home)}:${accountKey}`;
   const cached = cache.get(cacheKey);
   if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.payload;
   const store = (payload) => {
@@ -248,6 +274,11 @@ async function fetchQuota(home, { force = false, accountKey = "kimi:default" } =
   const nowSec = Math.floor(now / 1000);
 
   const base = { fetchedAt: new Date(now).toISOString(), tool: "kimi-code", accountKey };
+
+  // API key beats OAuth credentials — no 15-minute expiry, no refresh dance.
+  const key = String(apiKey || "").trim();
+  if (key) return store(await fetchQuotaWithApiKey(key, base));
+
   let creds = readAccessTokenForCall(home);
   if (!creds) return store({ ...base, available: false, reason: "no_credentials", windows: [] });
 
@@ -281,4 +312,4 @@ function readAccessTokenForCall(home) {
   return { token: creds.accessToken, expiresAt: creds.expiresAt };
 }
 
-module.exports = { fetchQuota, parseUsageBody, credentialsPath };
+module.exports = { fetchQuota, parseUsageBody, credentialsPath, USAGES_URL };

@@ -98,6 +98,7 @@ doramonitor --help                Show all options
 - Input, output, cache-read, and cache-write tokens with per-model cache hit rates.
 - Official-price links, custom prices, USD/CNY display, and a single internal CNY ledger.
 - Kimi and Codex quota cards with per-account home visibility controls and clearly marked equivalent-capacity estimates.
+- Kimi quota can be read via a Kimi Code Console API key (`sk-kimi-...`) — no active Kimi Code login required.
 - Cross-client model attribution, optional client-only estimation switches, and detailed history on `/quota`.
 - Workspace usage statistics and filtering (labeled by source machine and tools), date/model drill-down details, and CSV export of model stats.
 - Kimi session/workspace management with secret-redacting previews.
