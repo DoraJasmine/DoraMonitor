@@ -7,43 +7,34 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { fetchUsageQuery, fetchUsageRecords } from "@/lib/backend";
-import { fmtInt, fmtMoney, fmtPct, fmtTime, fmtTokens } from "@/format";
+import { fetchUsageQuery } from "@/lib/backend";
+import { fmtInt, fmtMoney, fmtPct, fmtTokens } from "@/format";
 import { modelLabel } from "@/lib/labels";
-
-const dayStartMs = (day) => {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).getTime();
-};
+import { fill } from "@/i18n";
 
 /**
  * FR-11 当日明细弹层:点击趋势/热力图数据点后打开。
- * 内容:日汇总 → 小时分布 → 按模型/工作区分项 → 逐请求列表(全历史)。
+ * 内容:日汇总 → 小时分布 → 按模型/工作区分项。
+ * 口径跟随顶部「设备 / 日期 / 工具」选择;对端设备仅同步到天,
+ * 小时分布与工作区因此标注为本机数据。
  */
-export function DayDetailDialog({ day, tool = "all", workspace = "all", model = "all", open, onOpenChange, t, locale, moneyCfg, toolById, showToolColumn }) {
+export function DayDetailDialog({ day, device = "local", tool = "all", workspace = "all", model = "all", open, onOpenChange, t, locale, moneyCfg }) {
   const [query, setQuery] = useState(null);
-  const [records, setRecords] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!open || !day) return;
     let alive = true;
     setQuery(null);
-    setRecords(null);
     setError(null);
-    const params = { day, tool, workspace, model };
+    const params = { day, tool, workspace, model, device };
     fetchUsageQuery(params)
       .then((d) => alive && setQuery(d))
-      .catch((e) => alive && setError(e.message || String(e)));
-    const from = dayStartMs(day);
-    fetchUsageRecords({ from, to: from + 86400_000, tool, workspace, model, limit: 200, offset: 0 })
-      .then((d) => alive && setRecords(d))
       .catch((e) => alive && setError(e.message || String(e)));
     return () => {
       alive = false;
     };
-  }, [open, day, tool, workspace, model]);
+  }, [open, day, tool, workspace, model, device]);
 
   const totals = query?.totals || null;
   const maxHour = Math.max(0, ...(query?.hourly || []).map((h) => h.totalTokens || 0));
@@ -58,6 +49,12 @@ export function DayDetailDialog({ day, tool = "all", workspace = "all", model = 
           </DialogTitle>
           <DialogDescription>{t("dayDetailHint")}</DialogDescription>
         </DialogHeader>
+
+        {query?.peerMerged ? (
+          <div className="rounded-lg border border-border/60 bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
+            {fill(t("dayDetailPeerNote"), { devices: (query.peerMerged.devices || []).join(" / ") })}
+          </div>
+        ) : null}
 
         {error ? <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div> : null}
 
@@ -85,7 +82,10 @@ export function DayDetailDialog({ day, tool = "all", workspace = "all", model = 
 
         {query?.hourly?.length ? (
           <div>
-            <div className="mb-1.5 text-xs font-medium text-muted-foreground">{t("hourlyDistribution")}</div>
+            <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+              {t("hourlyDistribution")}
+              {query?.peerMerged ? ` · ${t("deviceLocal")}` : ""}
+            </div>
             <div className="flex h-16 items-end gap-[2px]">
               {Array.from({ length: 24 }, (_, h) => {
                 const row = hourMap.get(h);
@@ -142,60 +142,16 @@ export function DayDetailDialog({ day, tool = "all", workspace = "all", model = 
 
         {query?.workspaces?.length > 1 ? (
           <div>
-            <div className="mb-1.5 text-xs font-medium text-muted-foreground">{t("workspaceStats")}</div>
+            <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+              {t("workspaceStats")}
+              {query?.peerMerged && !query.peerMerged.workspacesIncluded ? ` · ${t("deviceLocal")}` : ""}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {query.workspaces.map((w) => (
                 <span key={w.workspaceKey} className="rounded-full border border-border/60 px-2 py-0.5 text-[11px]">
                   {w.workspaceName} · <span className="num">{fmtTokens(w.totalTokens)}</span>
                 </span>
               ))}
-            </div>
-          </div>
-        ) : null}
-
-        {records ? (
-          <div>
-            <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              {t("dayRecords")}
-              <Badge variant="secondary">{fmtInt(records.total, locale)}</Badge>
-            </div>
-            <div className="max-h-[220px] overflow-auto thin-scroll">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-card">
-                  <TableRow>
-                    <TableHead className="w-[120px]">{t("time")}</TableHead>
-                    {showToolColumn ? <TableHead>{t("tool")}</TableHead> : null}
-                    <TableHead>{t("model")}</TableHead>
-                    <TableHead className="text-right">{t("inputOther")}</TableHead>
-                    <TableHead className="text-right">{t("output")}</TableHead>
-                    <TableHead className="text-right">{t("cacheRead")}</TableHead>
-                    <TableHead className="text-right">{t("cacheCreate")}</TableHead>
-                    <TableHead className="text-right">{t("cost")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {records.rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={showToolColumn ? 8 : 7} className="text-center text-muted-foreground">
-                        {t("noData")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    records.rows.map((r, i) => (
-                      <TableRow key={`${r.time}-${r.model}-${i}`}>
-                        <TableCell className="num whitespace-nowrap text-muted-foreground">{fmtTime(r.time, locale)}</TableCell>
-                        {showToolColumn ? <TableCell className="text-[11px] text-muted-foreground">{toolById?.get(r.tool)?.label || r.tool}</TableCell> : null}
-                        <TableCell className="max-w-[180px] truncate" title={r.model}>{modelLabel(r)}</TableCell>
-                        <TableCell className="text-right num">{fmtTokens(r.inputOther)}</TableCell>
-                        <TableCell className="text-right num">{fmtTokens(r.output)}</TableCell>
-                        <TableCell className="text-right num">{fmtTokens(r.inputCacheRead)}</TableCell>
-                        <TableCell className="text-right num">{fmtTokens(r.inputCacheCreation)}</TableCell>
-                        <TableCell className="text-right num">{r.credits > 0 ? `${r.credits} cr` : "—"}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
             </div>
           </div>
         ) : null}

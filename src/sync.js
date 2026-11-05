@@ -830,7 +830,8 @@ function peerRecordsCached() {
  * "peer:<hash>" slots (reserved keys surface as "peer:unknown" etc.).
  * device: "all" (every peer combined) or one peer device name.
  */
-function peerWorkspaceSummaries(device = "all") {
+function peerWorkspaceSummaries(device = "all", filter = {}) {
+  const { startDay = null, endDay = null, tool = "all" } = filter || {};
   const map = new Map();
   for (const peer of loadCachedPeers()) {
     if (!peer || !peer.wsDaily) continue;
@@ -841,6 +842,8 @@ function peerWorkspaceSummaries(device = "all") {
       // 共享存储上的对端摘要不可信:保留前缀键(__proto__/constructor 等)一律跳过,
       // 防止原型污染;数值统一 Number.isFinite 强转,字符串不参与累加。
       if (String(rawDay).startsWith("__")) continue;
+      if (startDay && rawDay < startDay) continue;
+      if (endDay && rawDay > endDay) continue;
       const day = rawDay;
       for (const [rawToolOrSlot, level] of Object.entries(buckets || {})) {
         if (String(rawToolOrSlot).startsWith("__")) continue;
@@ -848,9 +851,10 @@ function peerWorkspaceSummaries(device = "all") {
         const entries = nested
           ? Object.entries(level || {}).map(([slot, cell]) => [slot, toolOrSlot, cell])
           : [["__peer__", toolOrSlot, level]];
-        for (const [rawSlot, tool, rawCell] of entries) {
+        for (const [rawSlot, cellTool, rawCell] of entries) {
           const slot = String(rawSlot);
           if (slot.startsWith("__")) continue;
+          if (tool !== "all" && cellTool !== tool) continue;
           const cell = rawCell || {};
           const num = (v) => {
             const x = Number(v);

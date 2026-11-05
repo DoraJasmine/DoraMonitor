@@ -642,6 +642,30 @@ async function handleApi(req, res, url, cliHome) {
       customPrices: settings.customPrices,
     });
     if (!result) return json(res, 503, { error: "store_unavailable" });
+    // 多设备口径:趋势图默认含对端,弹窗也必须并入对端的日汇总,
+    // 否则同一天的合计会对不上(对端只有 day/model 粒度)。
+    const deviceParam = url.searchParams.get("device") || "local";
+    if (deviceParam !== "local" && syncEnabled(settings)) {
+      const merged = mergePeerUsage(result, peerRecordsCached(), {
+        device: deviceParam,
+        startDay,
+        endDay,
+        tool,
+        workspace,
+        model,
+      });
+      const wsDevices =
+        model === "all" && workspace === "all"
+          ? mergePeerWorkspaces(result, peerWorkspaceSummaries(deviceParam, { startDay, endDay, tool }))
+          : null;
+      if (merged || wsDevices) {
+        result.peerMerged = {
+          devices: merged ? merged.devices : wsDevices,
+          totals: merged ? merged.totals : null,
+          workspacesIncluded: Boolean(wsDevices),
+        };
+      }
+    }
     return json(res, 200, displayUsageCosts(result, settings));
   }
 
@@ -1134,6 +1158,155 @@ function displayCosts(aggregateResult, settings) {
   };
 }
 
+/**
+ * 把对端设备(同步摘要,日/model 粒度)并进本机当日查询结果。
+ * 对端只同步到天:合并 totals/daily/models,小时分布与逐请求列表
+ * 仍是本机数据,由前端标注说明。
+ */
+function mergePeerUsage(result, records, { device, startDay, endDay, tool, workspace, model }) {
+  if (!result || (workspace && workspace !== "all")) return null;
+  const rows = records.filter((r) => {
+    if (device !== "all" && r.device !== device) return false;
+    const day = dayKey(r.time);
+    if (startDay && day < startDay) return false;
+    if (endDay && day > endDay) return false;
+    if (tool !== "all" && r.tool !== tool) return false;
+    if (model !== "all" && r.model !== model && r.modelResolved !== model) return false;
+    return true;
+  });
+  if (!rows.length) return null;
+
+  const zero = () => ({ requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, credits: 0, totalTokens: 0 });
+  const hitRate = (t) =>
+    (t.inputCacheRead + t.inputCacheCreation) /
+    Math.max(1, t.inputCacheRead + t.inputCacheCreation + t.inputOther + t.output);
+
+  const acc = zero();
+  const devices = new Set();
+  const byDay = new Map();
+  const byModel = new Map();
+
+  for (const r of rows) {
+    const requests = Number.isFinite(Number(r.requests)) ? Number(r.requests) : 1;
+    const tokens = (r.inputOther || 0) + (r.output || 0) + (r.inputCacheRead || 0) + (r.inputCacheCreation || 0);
+    const add = (target) => {
+      target.requests += requests;
+      target.inputOther += r.inputOther || 0;
+      target.output += r.output || 0;
+      target.inputCacheRead += r.inputCacheRead || 0;
+      target.inputCacheCreation += r.inputCacheCreation || 0;
+      target.costCny += r.costCny || 0;
+      target.credits += r.credits || 0;
+      target.totalTokens += tokens;
+    };
+    add(acc);
+    devices.add(r.device);
+
+    const day = dayKey(r.time);
+    if (!byDay.has(day)) byDay.set(day, zero());
+    add(byDay.get(day));
+
+    const mk = `${r.tool}\u0000${r.model}`;
+    if (!byModel.has(mk)) {
+      byModel.set(mk, {
+        model: r.model,
+        modelDisplay: r.modelDisplay || r.model,
+        modelResolved: r.modelResolved || r.model,
+        tool: r.tool,
+        priceId: r.priceId || null,
+        costEstimated: Boolean(r.costEstimated),
+        estReq: 0,
+        ...zero(),
+      });
+    }
+    add(byModel.get(mk));
+  }
+
+  for (const key of Object.keys(acc)) result.totals[key] = (result.totals[key] || 0) + acc[key];
+  result.totals.cacheHitRate = hitRate(result.totals);
+
+  const dailyMap = new Map((result.daily || []).map((row) => [row.date, row]));
+  for (const [date, t] of byDay) {
+    const row = dailyMap.get(date) || { date, ...zero() };
+    for (const key of Object.keys(zero())) row[key] = (row[key] || 0) + t[key];
+    row.cacheHitRate = hitRate(row);
+    dailyMap.set(date, row);
+  }
+  result.daily = [...dailyMap.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const modelMap = new Map((result.models || []).map((row) => [`${row.tool}\u0000${row.model}`, row]));
+  for (const [mk, t] of byModel) {
+    const row = modelMap.get(mk);
+    if (!row) {
+      modelMap.set(mk, t);
+      continue;
+    }
+    for (const key of ["requests", "inputOther", "output", "inputCacheRead", "inputCacheCreation", "costCny", "credits", "totalTokens", "estReq"]) {
+      row[key] = (row[key] || 0) + (t[key] || 0);
+    }
+    if (t.costEstimated) row.costEstimated = true;
+    if (!row.priceId && t.priceId) row.priceId = t.priceId;
+  }
+  result.models = [...modelMap.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+
+  return { devices: [...devices].sort(), totals: acc };
+}
+
+/**
+ * 合并对端的工作区日汇总。对端工作区键是加盐哈希,若本机存在同名
+ * 工作区(同一路径)则并入同一行,否则作为独立行追加。
+ * 返回参与合并的设备名数组;无数据返回 null。
+ */
+function mergePeerWorkspaces(result, rows) {
+  if (!rows || !rows.length || !Array.isArray(result.workspaces)) return null;
+  const byName = new Map();
+  for (const w of result.workspaces) {
+    if (w.workspaceName) byName.set(w.workspaceName, w);
+  }
+  const devices = new Set();
+  let merged = false;
+  for (const row of rows) {
+    const tokens = Number(row.totalTokens) || 0;
+    const requests = Number(row.requests) || 0;
+    if (!tokens && !requests) continue;
+    for (const d of row.devices || []) devices.add(d);
+    const name = row.workspaceName || null;
+    let target = name ? byName.get(name) : null;
+    if (!target) {
+      target = {
+        workspaceKey: row.workspaceKey,
+        workspaceName: name || `对端工作区 ${String(row.workspaceKey || "").slice(-8)}`,
+        requests: 0,
+        totalTokens: 0,
+        inputOther: 0,
+        output: 0,
+        inputCacheRead: 0,
+        inputCacheCreation: 0,
+        credits: 0,
+        tools: [],
+      };
+      result.workspaces.push(target);
+      if (name) byName.set(name, target);
+    }
+    target.requests += requests;
+    target.totalTokens += tokens;
+    target.credits += Number(row.credits) || 0;
+    for (const c of Object.values(row.daily || {})) {
+      target.inputOther += Number(c.i) || 0;
+      target.output += Number(c.o) || 0;
+      target.inputCacheRead += Number(c.cr) || 0;
+      target.inputCacheCreation += Number(c.cc) || 0;
+    }
+    target.cacheHitRate =
+      (target.inputCacheRead + target.inputCacheCreation) /
+      Math.max(1, target.inputCacheRead + target.inputCacheCreation + target.inputOther + target.output);
+    merged = true;
+  }
+  if (!merged) return null;
+  result.workspaces.sort((a, b) => b.totalTokens - a.totalTokens);
+  return [...devices].sort();
+}
+
 function createServer(cliHome, bindHost = DEFAULT_HOST) {
   return http.createServer((req, res) => {
     if (!requestAllowed(req, bindHost)) {
@@ -1214,4 +1387,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createServer, parseArgs, urlHost, requestAllowed, settingsView, DEFAULT_HOST };
+module.exports = { createServer, parseArgs, urlHost, requestAllowed, settingsView, DEFAULT_HOST, mergePeerUsage, mergePeerWorkspaces };

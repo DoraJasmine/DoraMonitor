@@ -1638,14 +1638,13 @@ export default function App() {
         day={dayDetail}
         open={!!dayDetail}
         onOpenChange={(v) => !v && setDayDetail(null)}
+        device={device}
         tool={tool}
         workspace={wsFilter}
         model={modelFilter}
         t={t}
         locale={locale}
         moneyCfg={moneyCfg}
-        toolById={toolById}
-        showToolColumn={showToolColumn}
       />
       <ModelDetailDialog
         model={modelDetail?.model || null}
