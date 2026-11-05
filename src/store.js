@@ -205,20 +205,40 @@ function setMeta(key, value) {
   db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(value));
 }
 
-/** Cheap per-tool fingerprint so unchanged light tools skip re-ingestion. */
+/** Cheap per-tool fingerprint so unchanged light tools skip re-ingestion.
+ *
+ * Includes the DERIVED pricing fields (modelResolved / costEstimated /
+ * priceId), not just the raw token counts: an identity-mapping or price-table
+ * fix changes those without touching any source record, and a token-only
+ * fingerprint would keep the stale rows forever. Bumping a version prefix by
+ * hand (fp6 → fp7 …) only papers over that for one release. */
 function fingerprintOf(records, events) {
   let sumTime = 0;
   let sumTokens = 0;
   let sumReq = 0;
+  let derived = 0;
   for (const r of records || []) {
     sumTime += r.time || 0;
     sumTokens += (r.inputOther || 0) + (r.output || 0) + (r.inputCacheRead || 0) + (r.inputCacheCreation || 0);
     const n = Number(r.requests);
     sumReq += Number.isFinite(n) && n >= 0 ? n : 1;
+    // Cheap order-sensitive mix of the derived fields; collisions are
+    // harmless (a rare needless re-ingest), misses are not.
+    derived = (derived * 31 + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + (r.costEstimated ? 7 : 0)) | 0;
   }
   let evCount = 0;
   for (const e of events || []) evCount += 1;
-  return `${(records || []).length}|${sumTime}|${sumTokens}|${sumReq}|${evCount}`;
+  return `${(records || []).length}|${sumTime}|${sumTokens}|${sumReq}|${evCount}|${derived}`;
+}
+
+/** 32-bit FNV-1a; only used to mix strings into the fingerprint. */
+function hash32(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h | 0;
 }
 
 function recordSig(rec) {
@@ -248,7 +268,9 @@ function recordSig(rec) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  if (!force && getMeta(`fp5:${tool}`) === fp) return { ok: true, skipped: true };
+  // fp7: recostRecords now re-resolves model identity too; force one more
+  // re-ingest (fp6 was consumed by a build without that fix).
+  if (!force && getMeta(`fp7:${tool}`) === fp) return { ok: true, skipped: true };
 
   // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
   // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
@@ -322,7 +344,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp5:${tool}`, fp);
+    setMeta(`fp7:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {

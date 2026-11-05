@@ -132,6 +132,34 @@ describe("pricing", () => {
     }
   });
 
+  it("strips routing prefixes and serving suffixes for all vendors with erosion guards", () => {
+    const { matchRow } = require("../src/pricing");
+    // Patterned noise (routing prefix, dated build, context tier) strips
+    // confidently and keeps the official-price badge.
+    for (const name of ["k3.1-pro-256k", "deepseek-v4.1-flash-1017-512k", "sn-deepseek-v4.1-flash-1017", "sn-glm-5-3-flash", "glm-5-3-flash-512k"]) {
+      const row = matchRow(name);
+      assert.ok(row, name);
+      assert.equal(row.estimated, false, `${name} must not be flagged estimated`);
+    }
+    // An UNKNOWN word suffix strips only as a cautious guess: the row is
+    // found but flagged estimated so the dashboard shows the uncertainty.
+    const guess = matchRow("deepseek-flash-turbo");
+    assert.equal(guess.id, "deepseek-flash");
+    assert.equal(guess.estimated, true);
+    // Version segments are model identity: stripping "pro" from
+    // deepseek-v4-pro must not be needed (direct hit), and a version-looking
+    // trailing segment must never be eroded to a sibling price row.
+    assert.equal(matchRow("deepseek-v4-pro").id, "deepseek-v4-pro");
+    assert.equal(matchRow("glm-5.3").id, "glm-5.3");
+    assert.equal(matchRow("glm-5.3").estimated, false);
+    // Generic tokens carry no identity: an id eroding to one must fall back
+    // to the estimate instead of substring-landing on an unrelated row.
+    assert.equal(matchRow("model-router"), null);
+    assert.equal(matchRow("gemini-default"), null);
+    // True unknowns stay unresolved.
+    assert.equal(matchRow("grok-4.5-x"), null);
+  });
+
   it("falls back for non-kimi models", () => {
     const p = matchPrice("grok-api/grok-4.5");
     assert.equal(p.estimated, true);

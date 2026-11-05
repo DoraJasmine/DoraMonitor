@@ -122,7 +122,8 @@ const DEEPSEEK_PRICES = [
       // deepseek-v4.1-flash-1017); -512k etc. is a context-limited serving
       // variant; "sn-" is a client routing prefix — all the same model at
       // the same price row, so this pattern is intentionally unanchored.
-      /deepseek[-_ ]?v4(?:\.1)?[-_ ]?flash(?:[-_ ]?\d{4})?(?:[-_ ]?\d{3,4}k)?(?:[-_ ]?vision[-_ ]?exp)?/i,
+      // Dashes may substitute the dot in the version (v4-1).
+      /deepseek[-_ ]?v4[-_. ]?1?[-_ ]?flash(?:[-_ ]?\d{4})?(?:[-_ ]?\d{3,4}k)?(?:[-_ ]?vision[-_ ]?exp)?/i,
       /^deepseek[-_ ]?(chat|reasoner)$/i,
       /^dfmodel$/i,
     ],
@@ -193,7 +194,9 @@ const GOOGLE_PRICES = [
 const ZHIPU_PRICES = [
   {
     id: "glm-5.3-flash",
-    patterns: [/^glm[-_ ]?5\.3[-_ ]?flash$/i],
+    // Dashes may substitute the dot in recorded ids (sn-glm-5-3-flash);
+    // unanchored so serving suffixes ("-512k") keep matching too.
+    patterns: [/glm[-_. ]?5[.-]3[-_. ]?flash/i],
     cacheHit: 0.23,
     cacheWrite: 0,
     input: 0.8,
@@ -635,15 +638,57 @@ const CLAUDE_PRICES = [
 ].map((row) => ({ ...row, cacheWriteLong: row.cacheWrite * 2 }));
 
 /** Find the first matching price row for a model id (first match wins). */
+function rowFor(name) {
+  if (!name) return null;
+  for (const row of ALL_PRICE_TABLES()) {
+    for (const re of row.patterns) {
+      if (re.test(name)) return row;
+    }
+  }
+  return null;
+}
+
+// --- Variant ladder guards (adopted from missuo/tokens pricing/lookup.rs) ---
+// A trailing segment that is a short version number ("5", "4.5", "2.6") is
+// model identity, not noise — stripping it erodes onto a sibling model's
+// price row. Dated builds (-1017, -20241022) and context tiers (-512k, -1m)
+// are serving metadata: stripping them is safe and stays "official price".
+// Generic words carry no identity; an id that would erode to one must fall
+// back to the estimate instead of substring-landing on an unrelated row.
+const SHORT_VERSION_RE = /^\d{1,3}(?:\.\d{1,2})?$/;
+const NOISE_SUFFIX_RE = /^(?:\d{4}|\d{8}|\d{1,4}[km])$/i;
+const ROUTING_PREFIX_RE = /^(?:sn|sd|sv)[-_/]/i;
+const GENERIC_TOKENS = new Set([
+  "model", "router", "default", "auto", "chat", "base", "mini", "latest", "preview",
+]);
+
 function matchRow(modelName) {
   if (!modelName) return null;
   const name = String(modelName);
   // Prefer the bare model segment after provider/
   const bare = name.includes("/") ? name.split("/").pop() : name;
-  for (const row of ALL_PRICE_TABLES()) {
-    for (const re of row.patterns) {
-      if (re.test(bare) || re.test(name)) return row;
-    }
+  const direct = rowFor(bare) || rowFor(name);
+  if (direct) return { ...direct, estimated: !!direct.estimated };
+
+  // Variant ladder: strip a client routing prefix ("sn-deepseek-...") and
+  // trailing noise segments one at a time, retrying the tables after each
+  // strip. Patterned noise (routing prefix, dated build, context tier)
+  // strips confidently — the match keeps the official-price badge. An
+  // unknown word strips only as a cautious guess: if the remainder matches,
+  // the result is flagged estimated so the dashboard shows the uncertainty
+  // instead of passing a guess off as a list price.
+  let confident = false;
+  let candidate = bare.replace(ROUTING_PREFIX_RE, "");
+  if (candidate !== bare) confident = true;
+  const segments = candidate.split(/[-_ ]+/).filter(Boolean);
+  while (segments.length > 1) {
+    const last = segments[segments.length - 1].toLowerCase();
+    if (SHORT_VERSION_RE.test(last) || GENERIC_TOKENS.has(last)) break;
+    if (NOISE_SUFFIX_RE.test(last)) confident = true;
+    segments.pop();
+    candidate = segments.join("-");
+    const row = rowFor(candidate);
+    if (row) return confident ? row : { ...row, estimated: true };
   }
   return null;
 }
@@ -665,7 +710,11 @@ const RATE_KEYS = Object.freeze(["std", "peak", "off", "long"]);
 
 function rateKeyFor(modelName, usage = {}, time) {
   const row = matchRow(modelName);
-  if (!row) return { key: "std", estimated: true }; // FALLBACK_PRICE is estimated
+  // No row → the query-time priceForCell marks the fallback as estimated;
+  // this flag must stay record-derived only (TTL / peak unknowns), otherwise
+  // a scan-time fallback pollutes the persisted est_req and a later price-row
+  // addition could never clear the estimate badge (buckets.js contract).
+  if (!row) return { key: "std", estimated: false };
   const ttlEstimated = hasEstimatedCacheCreation(usage, row);
   if (row.longContextThreshold) {
     const tokens =

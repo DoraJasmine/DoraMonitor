@@ -228,5 +228,8 @@ test("bucket pricing: rateKey classification sanity", () => {
   assert.equal(noTime.key, "peak");
   assert.equal(noTime.estimated, true, "no-timestamp DeepSeek stays estimated");
   assert.equal(rateKeyFor("kimi-k2.6", randomUsage(), undefined).key, "std");
-  assert.equal(rateKeyFor("nope", randomUsage(), undefined).estimated, true);
+  // No price row: the fallback estimate is applied at query time by
+  // priceForCell — est_req must NOT be polluted at fold time, or a later
+  // price-row addition could never clear the model's estimate badge.
+  assert.equal(rateKeyFor("nope", randomUsage(), undefined).estimated, false);
 });

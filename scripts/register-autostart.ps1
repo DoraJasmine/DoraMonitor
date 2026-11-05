@@ -1,4 +1,4 @@
-# register-autostart.ps1 — 注册登录自启（doramonitor-daemon + doramonitor-web）
+﻿# register-autostart.ps1 — 注册登录自启（doramonitor-daemon + doramonitor-web）
 #
 # - 自动定位安装目录（本脚本位于 <安装目录>\scripts\，全局 npm 安装、
 #   git 克隆、任意盘符均可）
@@ -44,18 +44,34 @@ $tasks = @{
   "doramonitor-daemon" = "daemon-hidden.vbs"
   "doramonitor-web"    = "web-hidden.vbs"
 }
+$failed = @()
 foreach ($name in $tasks.Keys) {
   $vbs = Join-Path $InstallDir $tasks[$name]
-  $act = New-ScheduledTaskAction -Execute $wscript -Argument "`"$vbs`""
-  if ($name -eq "doramonitor-web") {
-    # The VBS waits for Node and exits nonzero if it stops. Task Scheduler then
-    # relaunches the web server; no default 72-hour execution limit applies.
-    $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
-    Register-ScheduledTask -TaskName $name -Action $act -Trigger $trigger -Settings $settings -Force | Out-Null
-  } else {
-    Register-ScheduledTask -TaskName $name -Action $act -Trigger $trigger -Force | Out-Null
+  try {
+    $act = New-ScheduledTaskAction -Execute $wscript -Argument "`"$vbs`"" -ErrorAction Stop
+    if ($name -eq "doramonitor-web") {
+      # The VBS waits for Node and exits nonzero if it stops. Task Scheduler then
+      # relaunches the web server; no default 72-hour execution limit applies.
+      $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -ErrorAction Stop
+      Register-ScheduledTask -TaskName $name -Action $act -Trigger $trigger -Settings $settings -Force -ErrorAction Stop | Out-Null
+    } else {
+      Register-ScheduledTask -TaskName $name -Action $act -Trigger $trigger -Force -ErrorAction Stop | Out-Null
+    }
+    Write-Host "已注册计划任务 $name" -ForegroundColor Green
+  } catch {
+    # Task Scheduler can be unreachable (restricted session, service stopped,
+    # policy). Report it instead of printing a success line that is not true.
+    $failed += $name
+    Write-Host "注册计划任务 $name 失败: $($_.Exception.Message)" -ForegroundColor Red
   }
-  Write-Host "已注册计划任务 $name" -ForegroundColor Green
+}
+
+if ($failed.Count) {
+  Write-Host ""
+  Write-Host "部分计划任务未注册: $($failed -join ', ')" -ForegroundColor Yellow
+  Write-Host "计划任务不可用时,请改用 scripts\keep-alive.cmd 循环守护(进程退出 5 秒后自动重启)。" -ForegroundColor Yellow
+  # Non-zero so callers (start-windows.bat) can fall back to the loop guard.
+  exit 2
 }
 
 Write-Host ""

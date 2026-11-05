@@ -8,6 +8,7 @@ const {
   writeStoredBucket,
 } = require("../buckets");
 const { rateKeyFor, priceForCell, costCacheCreation } = require("../pricing");
+const { resolveModelIdentity } = require("../model-identity");
 
 /**
  * Shared per-file incremental scan skeleton for the heavy tools
@@ -61,16 +62,25 @@ const { rateKeyFor, priceForCell, costCacheCreation } = require("../pricing");
  * carry the costCny of their original parse; after a price-table update
  * (code change + restart) those amounts would disagree with the bucket
  * aggregates, which price at query time. Credits-only rows keep zero cost.
+ * Model identity is re-resolved too: a persisted record's model_resolved
+ * reflects the mapping code of its original parse, and a mapping/variant
+ * fix must reach rows whose source files are no longer re-parsed.
  */
 function recostRecords(records, settings) {
   for (const rec of records) {
     if (!rec || rec.kind === "event") continue;
-    const rate = rateKeyFor(rec.modelResolved || rec.model, rec, rec.time);
+    const rawModel = rec.model || "unknown";
+    if (rec.tool === "dsh" || rec.modelResolved) {
+      const identity = resolveModelIdentity(rawModel, { provider: rec.modelProvider || null });
+      rec.modelResolved = identity.pricingKey || rawModel;
+      if (rec.modelDisplay && rec.modelDisplay !== rawModel) rec.modelDisplay = identity.modelDisplay;
+    }
+    const rate = rateKeyFor(rec.modelResolved || rawModel, rec, rec.time);
     let priceEstimated = false;
     if (rec.credits > 0) {
       rec.costCny = 0;
     } else {
-      const p = priceForCell(rec.modelResolved || rec.model, rate.key, settings || {});
+      const p = priceForCell(rec.modelResolved || rawModel, rate.key, settings || {});
       priceEstimated = !!p.estimated;
       rec.costCny =
         ((rec.inputOther || 0) / 1e6) * p.input +

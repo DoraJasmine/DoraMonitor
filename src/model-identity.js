@@ -101,6 +101,7 @@ const PRICING_KEYS = Object.freeze({
   dashscope_qwen_max_latest: "qwen3-max",
   dfmodel: "deepseek-flash",
   dmodel: "deepseek-v4-pro",
+  gfmodel: "glm-5.3-flash",
   gmodel: "glm-5",
   gm51model: "glm-5.2",
   kmodel: "kimi-k2.7-code",
@@ -116,6 +117,23 @@ function normalizeCode(value) {
   return String(value == null ? "" : value)
     .trim()
     .toLowerCase();
+}
+
+/**
+ * Strip client routing prefixes and serving-variant suffixes that every
+ * vendor attaches without changing the model: dsh proxies record "sn-..."
+ * (session/serve nonce), dated builds add "-1017", context-limited serving
+ * adds "-512k"/"-256k". What remains is the family id the price tables
+ * match on. Returns null when nothing recognizable survives (e.g. bare
+ * routing codes like "gfmodel", which stay in PRICING_KEYS instead).
+ */
+function variantKey(code) {
+  let k = normalizeCode(code);
+  if (!k) return null;
+  k = k.replace(/^(sn|sd|sv)[-_/]/, ""); // client routing prefixes
+  k = k.replace(/[-_]\d{3,4}k$/, ""); // context-limited serving (-512k / -256k)
+  k = k.replace(/[-_]\d{4}$/, ""); // dated builds (-1017)
+  return k === normalizeCode(code) ? null : k;
 }
 
 /**
@@ -151,13 +169,24 @@ function resolveModelIdentity(code, opts = {}) {
 
   const pricingKey = PRICING_KEYS[bare] || PRICING_KEYS[key] || null;
 
+  // Variant fallback: strip routing prefixes / serving suffixes and retry the
+  // pricing tables. "sn-deepseek-v4.1-flash-1017-512k" prices as
+  // "deepseek-v4.1-flash", "sn-glm-5-3-flash" as "glm-5-3-flash". The
+  // display name stays the raw id — users see exactly what was served.
+  let variantPricingKey = null;
+  if (!pricingKey) {
+    for (let candidate = variantKey(key); candidate && !variantPricingKey; candidate = variantKey(candidate)) {
+      variantPricingKey = PRICING_KEYS[candidate] || null;
+    }
+  }
+
   return {
     model: raw,
     modelDisplay: display,
     // Pricing still runs on the raw id as a fallback so custom user prices
     // keyed on the code keep matching; `pricingKey` is the better hint.
-    pricingKey,
-    known: display !== raw || pricingKey !== null,
+    pricingKey: pricingKey || variantPricingKey,
+    known: display !== raw || pricingKey !== null || variantPricingKey !== null,
     provider,
   };
 }
@@ -171,6 +200,7 @@ module.exports = {
   QODER_DISPLAY_NAMES,
   EXTRA_DISPLAY_NAMES,
   PRICING_KEYS,
+  variantKey,
   resolveModelIdentity,
   displayNameFor,
 };

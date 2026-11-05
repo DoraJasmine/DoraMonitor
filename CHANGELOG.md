@@ -2,6 +2,21 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [1.3.2] - 2026-11-05
+
+### 新增
+
+- Windows 启动脚本内置守护：`start-windows.bat` 先注册计划任务再从任务启动，注册不可用时自动回退到 `keep-alive.cmd` 循环守护（进程退出 5 秒后重启）；启动前先释放 3847 端口，避免旧实例占用导致 `EADDRINUSE` 重启死循环。
+
+### 修复
+
+- 模型匹配鲁棒性：价目表匹配改为阶梯式降级（直连 → 剥客户端路由前缀 `sn-`/`sd-`/`sv-` → 逐段剥尾部署名），模式化噪音（日期构建 `-1017`、上下文档位 `-512k`）剥离后保持官方价，未知词后缀剥离后降级为估算；版本段（`5`/`4.5`）与泛词（`model`/`router`/`default`）永不剥离——防止侵蚀到相邻模型的错误价格。
+- `gfmodel`、`sn-glm-5-3-flash`、`sn-deepseek-v4-1-flash-1017` 等路由码不再落入 Kimi K2.6 兜底估算；`gfmodel` 补入计价映射（GLM-5.3-Flash），DeepSeek 与 GLM 正则补破折号代替点号的变体。
+- 估算标识污染：`rateKeyFor` 在无价目行时不再标记 estimated（该判断应由查询时 `priceForCell` 派生），修复合约违背——补价目行后估算徽标永久无法清除的问题。
+- 入库指纹未覆盖派生字段：`fingerprintOf` 现包含 `modelResolved`/`priceId`/`costEstimated`，修复身份映射或计价逻辑变更时指纹不变、旧数据永不重写的问题（此前只能靠手工递增 fp 版本号绕过）。
+- `recostRecords` 现在同时重新解析模型身份：磁盘 bucket 缓存中旧解析的 `model_resolved` 也能修正，无需触碰源文件。
+- `register-autostart.ps1` 不再静默吞掉注册失败（此前 `| Out-Null` 使其假报「已注册」，服务实际无守护）；失败时明确报错并以退出码 2 通知调用方回退。
+
 ## [1.3.1] - 2026-11-03
 
 ### 修复

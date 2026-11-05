@@ -87,6 +87,29 @@ test("model-identity: provider is echoed back for provenance", () => {
   assert.strictEqual(id.provider, "qodercn");
 });
 
+test("model-identity: routing prefixes and serving suffixes resolve to the family pricing key", () => {
+  // sn- = client routing prefix, -1017 = dated build, -512k = context-limited
+  // serving — none of these change the model or its price row. The family id
+  // may come from PRICING_KEYS (via variantKey) or from the unanchored
+  // price-table regex on the raw id; either way the row must match.
+  const { matchRow } = require("../src/pricing");
+  const cases = [
+    ["sn-deepseek-v4.1-flash-1017", "deepseek-flash"],
+    ["sn-deepseek-v4.1-flash-1017-512k", "deepseek-flash"],
+    ["sn-glm-5-3-flash", "glm-5.3-flash"],
+  ];
+  for (const [code, expected] of cases) {
+    const id = resolveModelIdentity(code);
+    const row = matchRow(id.pricingKey || code);
+    assert.ok(row, code);
+    assert.strictEqual(row.id, expected, code);
+    // display stays the raw id — users see exactly what was served
+    assert.strictEqual(id.modelDisplay, code);
+  }
+  // gfmodel is a bare routing code: PRICING_KEYS is the only path.
+  assert.strictEqual(resolveModelIdentity("gfmodel").pricingKey, "glm-5.3-flash");
+});
+
 test("model-identity: empty / unknown input is tolerated", () => {
   assert.strictEqual(displayNameFor(""), "unknown");
   assert.strictEqual(displayNameFor(null), "unknown");
