@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { fmtPct, fmtTokens, fmtMoney } from "@/format";
 import { cn } from "@/lib/utils";
+import { nearestIndex } from "@/components/chart-geometry.mjs";
 
 /** Distinct series colors for dark UI */
 const SERIES_COLORS = [
@@ -58,6 +59,7 @@ function areaPath(points, baselineY) {
  */
 export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
   const wrapRef = useRef(null);
+  const svgRef = useRef(null);
   const [hover, setHover] = useState(null); // index
   const [hidden, setHidden] = useState(() => new Set());
 
@@ -114,6 +116,7 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
     const xAt = (i) =>
       pad.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
     const yAt = (v) => pad.top + innerH - (v / maxVal) * innerH;
+    const xs = dates.map((_, i) => xAt(i));
     const totalPoints = totals.map((row, i) => ({
       x: xAt(i),
       y: yAt(row.totalTokens || 0),
@@ -125,10 +128,10 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
       }));
       return smoothPath(pts);
     });
-    return { xAt, yAt, totalPoints, modelPaths };
-  }, [n, maxVal, totals, visibleSeries]);
+    return { xAt, yAt, xs, totalPoints, modelPaths };
+  }, [n, maxVal, totals, visibleSeries, dates]);
 
-  const { xAt, yAt, totalPoints, modelPaths } = geometry;
+  const { xAt, yAt, xs, totalPoints, modelPaths } = geometry;
 
   if (!chart) {
     return (
@@ -140,15 +143,24 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
 
   const labelStep = Math.max(1, Math.ceil(n / 8));
 
-  const onMove = (e) => {
-    const el = wrapRef.current;
-    if (!el || n === 0) return;
-    const rect = el.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const ratio = Math.min(1, Math.max(0, x / rect.width));
-    const idx = Math.round(ratio * (n - 1));
-    setHover(idx);
+  // 指针 → SVG 用户坐标 → 最近刻度。容器宽高比与 viewBox 不一致时
+  // 浏览器会按 preserveAspectRatio 居中留黑边,按容器宽度线性映射索引
+  // 会整体偏移(点 11-04 落到 11-03 即此因),必须用 CTM 反算。
+  const pointerIndex = (e) => {
+    const svg = svgRef.current;
+    if (!svg || n === 0) return null;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    // 绘图区左右留白不响应
+    if (p.x < pad.left || p.x > W - pad.right) return null;
+    return nearestIndex(p.x, xs);
   };
+
+  const onMove = (e) => setHover(pointerIndex(e));
 
   // Keyboard navigation: ←/→ move the readout, Enter/Home/Escape reset.
   const onKeyDown = (e) => {
@@ -179,10 +191,18 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
   };
 
   // Click (after the pointer settled on a day) opens the day detail too.
-  const onClick = () => {
-    if (typeof onDayClick === "function" && hi != null && totals[hi]) {
-      onDayClick(totals[hi]);
-    }
+  // 直接用本次事件的坐标换算,不依赖 hover——触屏或从外部点入时 hover
+  // 可能是 null 或旧值。
+  const onClick = (e) => {
+    if (typeof onDayClick !== "function") return;
+    const idx = pointerIndex(e);
+    if (idx != null && totals[idx]) onDayClick(totals[idx]);
+  };
+
+  const onDoubleClick = (e) => {
+    if (typeof onDayClick !== "function") return;
+    const idx = pointerIndex(e);
+    if (idx != null && totals[idx]) onDayClick(totals[idx]);
   };
 
   const toggle = (key) => {
@@ -197,6 +217,18 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
 
   const hi = hover != null ? hover : null;
   const tip = hi != null ? totals[hi] : null;
+
+  // tooltip 用 SVG 用户坐标换算成元素内像素,与虚线指示线同一坐标系;
+  // 百分比定位在留黑边时会与数据点错位。
+  const tooltipLeft = (() => {
+    if (hi == null) return null;
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const ctm = svg.getScreenCTM();
+    const rect = svg.getBoundingClientRect();
+    if (!ctm || !rect.width) return null;
+    return ctm.a * xs[hi] + ctm.e - rect.left;
+  })();
 
   return (
     <div className="space-y-3">
@@ -262,11 +294,10 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
         onPointerLeave={() => setHover(null)}
         onKeyDown={onKeyDown}
         onClick={typeof onDayClick === "function" ? onClick : undefined}
-        onDoubleClick={() => {
-          if (typeof onDayClick === "function" && hi != null && totals[hi]) onDayClick(totals[hi]);
-        }}
+        onDoubleClick={typeof onDayClick === "function" ? onDoubleClick : undefined}
       >
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           className="h-52 w-full overflow-visible"
           role="img"
@@ -394,7 +425,7 @@ export function DailyBars({ daily, dailyByModel, t, moneyCfg, onDayClick }) {
             role="status"
             aria-live="polite"
             style={{
-              left: `${(hi / Math.max(n - 1, 1)) * 100}%`,
+              left: tooltipLeft != null ? `${tooltipLeft}px` : `${(xAt(hi) / W) * 100}%`,
               top: 8,
               // Solid card surface — avoid see-through over chart lines
               backgroundColor: "hsl(var(--card))",

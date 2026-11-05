@@ -6,6 +6,10 @@ import { fmtInt, fmtPct, fmtTokens, fmtMoney, fmtCredits } from "@/format";
 import { modelLabel } from "@/lib/labels";
 
 const PIE_COLORS = ["#2dd4bf", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#34d399", "#fb923c", "#e2e8f0"];
+/** 前 7 个为模型专属色,最后一个留给"其他"分组;表格行色点沿用同一规则。 */
+const TOP_SLICES = PIE_COLORS.length - 1;
+const OTHERS_COLOR = PIE_COLORS[PIE_COLORS.length - 1];
+const rowColor = (i) => (i < TOP_SLICES ? PIE_COLORS[i] : OTHERS_COLOR);
 
 function hitRate(row) {
   const denom = (row.inputOther || 0) + (row.inputCacheRead || 0) + (row.inputCacheCreation || 0);
@@ -81,7 +85,9 @@ function Donut({ slices, centerValue }) {
               stroke={s.color}
               strokeDasharray={dash}
               strokeDashoffset={-offset}
-            />
+            >
+              <title>{`${s.label} · ${fmtTokens(s.value)} · ${(frac * 100).toFixed(1)}%`}</title>
+            </circle>
           );
           offset += frac * C;
           return el;
@@ -98,15 +104,15 @@ function Donut({ slices, centerValue }) {
 export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, loading, note }) {
   const rows = useMemo(() => mergeByResolved(models || []), [models]);
   const totalTokens = rows.reduce((s, m) => s + (m.totalTokens || 0), 0) || 1;
-  const top = rows.slice(0, 8);
-  const others = rows.slice(8);
-  const slices = top.map((m, i) => ({ key: m.key, label: modelLabel(m), value: m.totalTokens || 0, color: PIE_COLORS[i % (PIE_COLORS.length - 1)] }));
+  const top = rows.slice(0, TOP_SLICES);
+  const others = rows.slice(TOP_SLICES);
+  const slices = top.map((m, i) => ({ key: m.key, label: modelLabel(m), value: m.totalTokens || 0, color: PIE_COLORS[i] }));
   if (others.length) {
     slices.push({
       key: "__others__",
       label: `${t("others")} (${others.length})`,
       value: others.reduce((s, m) => s + (m.totalTokens || 0), 0),
-      color: PIE_COLORS[PIE_COLORS.length - 1],
+      color: OTHERS_COLOR,
     });
   }
 
@@ -129,20 +135,7 @@ export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, load
               <Donut slices={slices} centerValue={fmtTokens(rows.reduce((s, m) => s + (m.totalTokens || 0), 0))} />
             </div>
             <div>
-              <div className="space-y-1.5">
-                {slices.map((s) => {
-                  const share = s.value / totalTokens;
-                  return (
-                    <div key={s.key} className="flex items-center gap-2 text-sm">
-                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} aria-hidden />
-                      <span className="min-w-0 flex-1 truncate font-medium">{s.label}</span>
-                      <span className="num text-xs text-muted-foreground">{fmtTokens(s.value)}</span>
-                      <span className="num w-12 text-right text-xs text-muted-foreground">{(share * 100).toFixed(1)}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-4 max-h-[300px] overflow-auto thin-scroll border-t border-border/60 pt-2">
+              <div className="max-h-[360px] overflow-auto thin-scroll">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-muted-foreground">
@@ -154,7 +147,7 @@ export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, load
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((m) => (
+                    {rows.map((m, i) => (
                       <tr
                         key={m.key}
                         tabIndex={0}
@@ -171,6 +164,11 @@ export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, load
                       >
                         <td className="max-w-[260px] py-1.5">
                           <div className="flex min-w-0 items-center gap-1.5">
+                            <span
+                              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: rowColor(i) }}
+                              aria-hidden
+                            />
                             <span className="truncate font-medium" title={m.key}>
                               {modelLabel(m)}
                             </span>
@@ -178,15 +176,18 @@ export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, load
                           </div>
                         </td>
                         <td className="py-1.5 text-right num">{fmtInt(m.requests, locale)}</td>
-                        <td className="py-1.5 text-right num">{fmtTokens(m.totalTokens)}</td>
+                        <td className="py-1.5 text-right num whitespace-nowrap">
+                          {fmtTokens(m.totalTokens)}
+                          <span className="ml-1 text-[11px] text-muted-foreground">{fmtPct((m.totalTokens || 0) / totalTokens)}</span>
+                        </td>
                         <td className="py-1.5 text-right num">{fmtPct(m.cacheHitRate || 0)}</td>
                         <td className="py-1.5 text-right num">{m.credits > 0 ? `${fmtCredits(m.credits)} cr` : fmtMoney(m.cost || m.costCny, moneyCfg)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="pt-2 text-[11px] text-muted-foreground">{t("modelMergeHint")}</div>
               </div>
+              <div className="pt-2 text-[11px] text-muted-foreground">{t("modelMergeHint")}</div>
             </div>
           </div>
         )}
