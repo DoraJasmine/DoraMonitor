@@ -161,9 +161,9 @@ test("peerWorkspaceSummaries: records actual cell tool (never 'all') and filters
     savePeersToCache([
       {
         version: 4,
-        device: "wsl",
+        device: "peer-ssh",
         days: { "2026-11-26": { "kimi-code": { k3: { i: 100, o: 10, cr: 0, cc: 0, req: 1 } } } },
-        wsNames: { abc123: "compareExp" },
+        wsNames: { abc123: "demo-ws" },
         wsDaily: {
           "2026-11-26": {
             "kimi-code": { abc123: { i: 100, o: 10, cr: 0, cc: 0, req: 1, credits: 0 } },
@@ -172,7 +172,7 @@ test("peerWorkspaceSummaries: records actual cell tool (never 'all') and filters
         },
       },
     ]);
-    const allTools = peerWorkspaceSummaries("wsl", { tool: "all" });
+    const allTools = peerWorkspaceSummaries("peer-ssh", { tool: "all" });
     assert.equal(allTools.length, 1);
     assert.deepEqual(
       allTools[0].tools.map((t) => t.tool),
@@ -180,11 +180,11 @@ test("peerWorkspaceSummaries: records actual cell tool (never 'all') and filters
     );
     assert.equal(allTools[0].totalTokens, 330);
 
-    const codexOnly = peerWorkspaceSummaries("wsl", { tool: "codex" });
+    const codexOnly = peerWorkspaceSummaries("peer-ssh", { tool: "codex" });
     assert.equal(codexOnly.length, 1);
     assert.deepEqual(codexOnly[0].tools, [{ tool: "codex", totalTokens: 220, requests: 2 }]);
 
-    const agyOnly = peerWorkspaceSummaries("wsl", { tool: "antigravity" });
+    const agyOnly = peerWorkspaceSummaries("peer-ssh", { tool: "antigravity" });
     assert.equal(agyOnly.length, 0);
   } finally {
     if (prevHome === undefined) delete process.env.USERPROFILE;

@@ -13,13 +13,13 @@
 
 - 自动更新链路加固（`update-check.js`、`self-update.js`、`UpdateDialog.jsx`）：
   - 源码部署将 `git status`、游离 `HEAD`/分支上游解析、`git fetch` 与分叉检测提前到停服务之前，前置校验失败时不再误杀在线服务；不再硬编码 `origin/main`；
-  - 取消 `3847` 端口与 `127.0.0.1` 硬编码，从请求真实端口/绑定地址向脱离进程传入 `--port` / `--host`，修复 WSL（`3848`）与自定义端口健康检查必败的问题，并在无计划任务或无 systemd 单元时自动回退至 `doramonitor web/daemon --background` 重启；
+  - 取消 `3847` 端口与 `127.0.0.1` 硬编码，从请求真实端口/绑定地址向脱离进程传入 `--port` / `--host`，修复非默认端口（如 `3848`）与自定义绑定地址健康检查必败的问题，并在无计划任务或无 systemd 单元时自动回退至 `doramonitor web/daemon --background` 重启；
   - 从磁盘读取更新后 `package.json` 解决 `require.cache` 导致目标版本号仍记录旧版本的问题；为 `npm install -g` 补全安装前缀（`--prefix`）推导以适配 `install-linux.sh`（`~/.local`）；Windows 改用 `cmd.exe /d /c` 消除 Node 24 `DEP0190` 警告并保留命令错误尾日志；
   - 全量覆盖 `running / fetching / installing / building / restarting` 进行中状态的并发锁与 10 分钟超时检测，并在 `spawnApply` 启动子进程前立即预写入初始状态消除首轮轮询竞态；
   - `update-check.js` 放宽回退超时至 10 秒，避免冷连接环境下 302 跳转回退来不及完成；`UpdateDialog` 补齐中英文阶段文案、重试进度重置与重新打开弹窗时续接进行中状态。
-- 对端工作区面板（`peerWorkspaceSummaries` / `/api/usage/peer-workspaces`）：修复未按当前所选 `tool` 或时间范围（`range`）过滤对端工作区、以及工具标签错用筛选参数导致全部显示为 `wsl · all` 的问题；`buildWsDaily` 随表携带 `c`（CNY 账本费用），选中对端工作区时四张概览卡（`today`/`7d`/`30d`/`all`）、估算费用与连续日历日 `每日趋势` 均与所选工作区保持一致；工作区面板与下拉选项统一随当前时间范围、设备与工具联动；工具标签页支持展示仅存在于对端同步中的工具。
-- 多设备口径与详情弹窗一致性：`GET /api/usage/query` 在指定单个对端设备（如 `device=wsl`）时不再混入本机行存数据；`mergePeerUsage` 补齐 `resolved` 计价身份过滤并修正对端合并后 `cacheHitRate` 的计算口径（与 `inputCacheRead / (inputOther + inputCacheRead + inputCacheCreation)` 一致）；桶聚合路径下的 `recentFromRecords` 改为按相同日历日起点过滤 `7d`/`30d`；前端 `ModelInsights` 保留 Antigravity 思考/编排档位分开统计，修复全局模型筛选在合并/对端视图下 `估算费用` 误归零及 `App.jsx` 初始默认汇率残留 `7.2`（现统一为 `6.67`）的问题；当前视图 CSV 导出与展示模型列表保持一致。
-- Antigravity 多端与路径适配：WSL 发行版自身 DoraMonitor 已通过同步上报 `antigravity` 时自动跳过 `\\wsl.localhost` 扫描以防合并双算；`sourceFiles` 纳入活动 `-wal` 与 `conversation_summaries.db`；Windows 盘符路径（`d:/...` → `D:\...`）在工作区归一化时统一格式；`pricing.js` 支持按 Antigravity 显示名（如 `Claude Opus 5.5 (High)`、`Claude Opus 4.6 (Thinking)`、`Orchestrator (Argon)`）直接匹配官方价目，确保对端同步记录计价一致。
+- 对端工作区面板（`peerWorkspaceSummaries` / `/api/usage/peer-workspaces`）：修复未按当前所选 `tool` 或时间范围（`range`）过滤对端工作区、以及工具标签错用筛选参数导致对端行统一显示为 `<设备名> · all` 的问题；`buildWsDaily` 随表携带 `c`（CNY 账本费用），选中对端工作区时四张概览卡（`today`/`7d`/`30d`/`all`）、估算费用与连续日历日 `每日趋势` 均与所选工作区保持一致；工作区面板与下拉选项统一随当前时间范围、设备与工具联动；工具标签页支持展示仅存在于对端同步中的工具。
+- 多设备口径与详情弹窗一致性：`GET /api/usage/query` 在指定单个对端设备（`device=<对端设备名>`）时不再混入本机行存数据；`mergePeerUsage` 补齐 `resolved` 计价身份过滤并修正对端合并后 `cacheHitRate` 的计算口径（与 `inputCacheRead / (inputOther + inputCacheRead + inputCacheCreation)` 一致）；桶聚合路径下的 `recentFromRecords` 改为按相同日历日起点过滤 `7d`/`30d`；前端 `ModelInsights` 保留 Antigravity 思考/编排档位分开统计，修复全局模型筛选在合并/对端视图下 `估算费用` 误归零及 `App.jsx` 初始默认汇率残留 `7.2`（现统一为 `6.67`）的问题；当前视图 CSV 导出与展示模型列表保持一致。
+- Antigravity 多端与路径适配：同一 Windows 宿主机上的 WSL 发行版已通过多设备同步（本地目录 / SSH / WebDAV）上报 `antigravity` 时，Windows 采集器会自动跳过 `\\wsl.localhost` 扫描以防双算；`sourceFiles` 纳入活动 `-wal` 与 `conversation_summaries.db`；Windows 盘符路径（`d:/...` → `D:\...`）在工作区归一化时统一格式；`pricing.js` 支持按 Antigravity 显示名（如 `Claude Opus 5.5 (High)`、`Claude Opus 4.6 (Thinking)`、`Orchestrator (Argon)`）直接匹配官方价目，确保各对端同步记录计价一致。
 
 ## [1.3.3] - 2026-11-05
 

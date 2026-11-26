@@ -77,22 +77,22 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
     savePeersToCache([
       {
         version: 4,
-        device: "wsl",
+        device: "peer-box",
         days: {
           [today]: { antigravity: { "Gemini 4 Hydrogen (High)": { i: 100, o: 10, cr: 0, cc: 0, req: 1 } } },
           [oldDay]: { antigravity: { "Gemini 4 Hydrogen (High)": { i: 500, o: 50, cr: 0, cc: 0, req: 5 } } },
         },
-        wsNames: { abc: "compareExp" },
+        wsNames: { abc: "demo-ws" },
         wsDaily: {
           [today]: { antigravity: { abc: { i: 100, o: 10, cr: 0, cc: 0, req: 1, credits: 0 } } },
           [oldDay]: { antigravity: { abc: { i: 500, o: 50, cr: 0, cc: 0, req: 5, credits: 0 } } },
         },
       },
     ]);
-    const r7d = await (await fetch(`${base}/api/usage/peer-workspaces?device=wsl&tool=antigravity&range=7d`)).json();
+    const r7d = await (await fetch(`${base}/api/usage/peer-workspaces?device=peer-box&tool=antigravity&range=7d`)).json();
     assert.equal(r7d.rows.length, 1);
     assert.equal(r7d.rows[0].totalTokens, 110);
-    const rAll = await (await fetch(`${base}/api/usage/peer-workspaces?device=wsl&tool=antigravity&range=all`)).json();
+    const rAll = await (await fetch(`${base}/api/usage/peer-workspaces?device=peer-box&tool=antigravity&range=all`)).json();
     assert.equal(rAll.rows[0].totalTokens, 660);
 
     // /api/usage/query: device=<peer> isolates peer totals; resolved filters peer records too.
@@ -103,7 +103,7 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
     savePeersToCache([
       {
         version: 4,
-        device: "wsl",
+        device: "peer-box",
         days: {
           [today]: {
             antigravity: {
@@ -112,7 +112,7 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
             },
           },
         },
-        wsNames: { w1: "compareExp" },
+        wsNames: { w1: "demo-ws" },
         wsDaily: {
           [today]: {
             antigravity: { w1: { i: 700, o: 70, cr: 2300, cc: 0, req: 7, credits: 0 } },
@@ -145,12 +145,12 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
         events: [],
       });
 
-      const wslOnly = await (
-        await fetch(`${base}/api/usage/query?range=7d&device=wsl&tool=antigravity`)
+      const peerOnly = await (
+        await fetch(`${base}/api/usage/query?range=7d&device=peer-box&tool=antigravity`)
       ).json();
-      assert.equal(wslOnly.totals.requests, 7);
-      assert.equal(wslOnly.totals.totalTokens, 3070);
-      assert.deepEqual(wslOnly.workspaces.map((w) => w.workspaceName), ["compareExp"]);
+      assert.equal(peerOnly.totals.requests, 7);
+      assert.equal(peerOnly.totals.totalTokens, 3070);
+      assert.deepEqual(peerOnly.workspaces.map((w) => w.workspaceName), ["demo-ws"]);
 
       const mergedHydrogen = await (
         await fetch(`${base}/api/usage/query?range=7d&device=all&tool=antigravity&resolved=gemini-4-hydrogen`)
