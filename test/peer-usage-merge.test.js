@@ -146,3 +146,114 @@ test("mergePeerWorkspaces: 空数据返回 null", () => {
   assert.equal(mergePeerWorkspaces(localResult(), []), null);
   assert.equal(mergePeerWorkspaces(localResult(), [peerWsRow({ daily: {}, totalTokens: 0, requests: 0 })]), null);
 });
+
+test("peerWorkspaceSummaries: records actual cell tool (never 'all') and filters by tool", () => {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const { peerWorkspaceSummaries, savePeersToCache } = require("../src/sync");
+  const prevHome = process.env.USERPROFILE;
+  const prevUnixHome = process.env.HOME;
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "dora-peer-ws-"));
+  process.env.USERPROFILE = tmpHome;
+  process.env.HOME = tmpHome;
+  try {
+    savePeersToCache([
+      {
+        version: 4,
+        device: "wsl",
+        days: { "2026-11-26": { "kimi-code": { k3: { i: 100, o: 10, cr: 0, cc: 0, req: 1 } } } },
+        wsNames: { abc123: "compareExp" },
+        wsDaily: {
+          "2026-11-26": {
+            "kimi-code": { abc123: { i: 100, o: 10, cr: 0, cc: 0, req: 1, credits: 0 } },
+            codex: { abc123: { i: 200, o: 20, cr: 0, cc: 0, req: 2, credits: 0 } },
+          },
+        },
+      },
+    ]);
+    const allTools = peerWorkspaceSummaries("wsl", { tool: "all" });
+    assert.equal(allTools.length, 1);
+    assert.deepEqual(
+      allTools[0].tools.map((t) => t.tool),
+      ["codex", "kimi-code"]
+    );
+    assert.equal(allTools[0].totalTokens, 330);
+
+    const codexOnly = peerWorkspaceSummaries("wsl", { tool: "codex" });
+    assert.equal(codexOnly.length, 1);
+    assert.deepEqual(codexOnly[0].tools, [{ tool: "codex", totalTokens: 220, requests: 2 }]);
+
+    const agyOnly = peerWorkspaceSummaries("wsl", { tool: "antigravity" });
+    assert.equal(agyOnly.length, 0);
+  } finally {
+    if (prevHome === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = prevHome;
+    if (prevUnixHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevUnixHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+test("mergePeerUsage: resolved 筛选只并入匹配计价身份的对端记录,且命中率与全站口径一致", () => {
+  const result = {
+    totals: {
+      requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0,
+      costCny: 0, credits: 0, totalTokens: 0, cacheHitRate: 0,
+    },
+    models: [],
+    daily: [],
+    hourly: [],
+    workspaces: [],
+  };
+  const hydrogen = peerRecord({
+    tool: "antigravity",
+    model: "Gemini 4 Hydrogen (High)",
+    modelDisplay: "Gemini 4 Hydrogen (High)",
+    modelResolved: "Gemini 4 Hydrogen (High)",
+    requests: 10,
+    inputOther: 1000,
+    output: 500,
+    inputCacheRead: 9000,
+    inputCacheCreation: 0,
+  });
+  const neon = peerRecord({
+    tool: "antigravity",
+    model: "Gemini 4 Neon (XHigh)",
+    modelDisplay: "Gemini 4 Neon (XHigh)",
+    modelResolved: "Gemini 4 Neon (XHigh)",
+    requests: 5,
+    inputOther: 2000,
+    output: 1000,
+    inputCacheRead: 2000,
+    inputCacheCreation: 0,
+  });
+  const merged = mergePeerUsage(result, [hydrogen, neon], {
+    device: "all",
+    startDay: "2026-11-04",
+    endDay: "2026-11-04",
+    tool: "antigravity",
+    workspace: "all",
+    model: "all",
+    resolved: "gemini-4-hydrogen",
+  });
+  assert.ok(merged);
+  assert.equal(result.totals.requests, 10);
+  assert.equal(result.models.length, 1);
+  assert.equal(result.models[0].model, "Gemini 4 Hydrogen (High)");
+  // 命中率 = cacheRead / (inputOther + cacheRead + cacheCreation) = 9000 / 10000 = 0.9（不含 output，不含 cacheWrite）
+  assert.equal(result.totals.cacheHitRate, 0.9);
+  assert.equal(result.models[0].cacheHitRate, 0.9);
+});
+
+test("mergePeerWorkspaces: 缓存命中率排除 output 与 cacheCreation 误记分子", () => {
+  const result = { workspaces: [] };
+  mergePeerWorkspaces(result, [
+    peerWsRow({
+      daily: { "2026-11-04": { i: 1000, o: 5000, cr: 9000, cc: 0, req: 10, credits: 0 } },
+      totalTokens: 15000,
+      requests: 10,
+    }),
+  ]);
+  assert.equal(result.workspaces[0].cacheHitRate, 0.9);
+});

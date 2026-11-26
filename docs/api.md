@@ -31,6 +31,12 @@
 | 16–21 | `/api/config/*` | Provider / 模型别名 / 默认模型 / 副模型管理 |
 | 22 | `GET /api/catalog` | models.dev 目录 |
 | 23 | `POST /api/catalog/import` | 从目录导入 provider |
+| 24 | `GET /api/usage/query` | 行存与对端多维聚合 |
+| 25 | `GET /api/usage/records` | 全历史逐请求分页明细 |
+| 26 | `GET /api/usage/peer-workspaces` | 对端工作区按范围/工具日汇总 |
+| 27 | `GET /api/workspace-aliases` / `POST` | 本机工作区别名读写 |
+| 28 | `GET /api/summary` 行存扩展字段 | `storeEnabled` / `rangeModels` / `peerTools` 等 |
+| 29 | `GET /api/version-check` / `POST /api/update/apply` / `GET /api/update/status` | 版本检查与一键自更新 |
 
 ## 1. GET /api/health
 
@@ -328,24 +334,30 @@ body：`{ "providerId", "apiKey", "baseUrl", "defaultModel }`。
 | 静态文件越界 | `403 Forbidden` |
 | SPA 回退 | `/quota`、`/sessions`、`/models` 及其子路径（不含 `.`）→ `index.html` |
 
-## 23. GET /api/usage/query（v1.1.0 新增）
+## 24. GET /api/usage/query（v1.1.0 新增）
 
-本地 SQLite 行存的多维聚合。参数（均可选）：`range`（today/7d/30d/90d/all，默认 30d）、`start`/`end`（`YYYY-MM-DD` 自定义区间，优先于 range）、`day`（单日下钻，等价 start=end 并填充 hourly）、`tool`、`workspace`（workspace_key 或 `peer:<hash>`）、`model`（原始模型名精确匹配）、`resolved`（计价身份匹配）、`perRange=1`（同时返回 today/7d/30d/all 四组 totals）。
+行存与同步对端的多维聚合。参数（均可选）：`range`（today/7d/30d/90d/all，默认 30d）、`start`/`end`（`YYYY-MM-DD` 自定义区间，优先于 range）、`day`（单日下钻，等价 start=end 并填充 hourly）、`device`（`local` 默认 / `all` / 具体对端设备名；为单个对端名时仅返回该对端日汇总，不混入本机行存）、`tool`、`workspace`（workspace_key 或 `peer:<hash>`）、`model`（原始模型名精确匹配）、`resolved`（计价身份匹配，同样过滤对端记录）、`perRange=1`（同时返回 today/7d/30d/all 四组 totals）。
 
-响应：`totals`、`perRange?`、`daily[]`、`hourly[]`（仅单日）、`models[]`（含 `cacheHitRate`、`cost`）、`workspaces[]`（含 `tools[]` 贡献工具拆分）。金额字段同时提供内部 `costCny` 与展示币种 `cost`。
+响应：`totals`、`perRange?`、`daily[]`、`hourly[]`（仅本机单日）、`models[]`（含 `cacheHitRate`、`cost`）、`workspaces[]`（含 `tools[]` 贡献工具拆分）、`peerMerged?`。金额字段同时提供内部 `costCny` 与展示币种 `cost`。
 
-## 24. GET /api/usage/records（v1.1.0 新增）
+## 25. GET /api/usage/records（v1.1.0 新增）
 
 全历史逐请求分页明细。参数：`from`/`to`（epoch ms）、`tool`、`workspace`、`model`、`resolved`、`limit`（≤500）、`offset`。响应：`rows[]`、`total`、`limit`、`offset`。
 
-## 25. GET /api/usage/peer-workspaces（v1.1.0 新增）
+## 26. GET /api/usage/peer-workspaces（v1.1.0 新增）
 
-对端工作区日汇总（同步协议 v4 的 `wsDaily` 聚合）。参数：`device`（all 或对端设备名）。响应：`rows[]`，每行含 `key`（`peer:<hash>`）、`workspaceName`（对端真实目录名，v4 `wsNames`）、`daily`、`tools[]`、`totalTokens`、`requests`。
+对端工作区日汇总（同步协议 v4 的 `wsDaily` 聚合）。参数：`device`（`all` 或对端设备名；`local` 返回空数组）、`tool`（`all` 或具体工具 id）、`range`（`today`/`7d`/`30d`/`90d`/`all`，默认 `all`，按与 `/api/usage/query` 一致的本地日历起点过滤）。响应：`rows[]`，每行含 `key`（`peer:<hash>`）、`workspaceName`（对端真实目录名，v4 `wsNames`）、`daily`（含 `i/o/cr/cc/c/req/credits`）、`tools[]`、`totalTokens`、`requests`、`costCny`、`cost`。
 
-## 26. GET/POST /api/workspace-aliases（v1.1.0 新增）
+## 27. GET/POST /api/workspace-aliases（v1.1.0 新增）
 
 工作区别名（仅本机展示，不同步）。GET 返回 `{aliases}`；POST 接收 `{workspaceKey, alias}`，`alias` 为空表示移除。
 
-## 27. GET /api/summary 的 v1.1.0 新增字段
+## 28. GET /api/summary 的行存与对端扩展字段
 
-`storeEnabled`（行存是否可用）、`storeWorkspaces[]`（工作区筛选选项）、`rangeModels`（today/7d/30d/all 四组模型统计，供合并口径的模型筛选）。
+`storeEnabled`（行存是否可用）、`storeWorkspaces[]`（工作区筛选选项）、`rangeModels`（today/7d/30d/all 四组模型统计，供合并口径的模型筛选）、`peerTools`（当前设备视角下对端同步包含的工具 id 列表）。
+
+## 29. 版本探测与一键自更新
+
+- `GET /api/version-check`：参数 `force=1` 绕过 6 小时缓存。请求 `api.github.com` 失败或超限后回退 `github.com/.../releases/latest` 302 跳转（超时 10 秒）。返回 `{ current, latest, updateAvailable, enabled, releaseUrl, checkedAt, mode }`；`mode` 为 `"source"` 或 `"npm"`。
+- `POST /api/update/apply`：body 须含 `{ "confirm": true }`（否则 `400 confirm_required`）。写入初始 `running` 状态并脱离进程启动 `self-update.js --run --port <当前端口> --host <绑定地址>`；若已有进行中更新（`running/fetching/installing/building/restarting`）则返回 `409`。
+- `GET /api/update/status`：返回 `{ status, version }`，超过 10 分钟无心跳刷新时判定超时出错。

@@ -737,13 +737,18 @@ function byToolFromBuckets(buckets, range, toolMeta, nowMs = Date.now(), options
 /**
  * Recent-requests rows from the raw-record window (the only consumer of
  * raw records). Same field whitelist as aggregate()'s recent.
+ * Pass `calendar: true` on the bucket path so 7d/30d cutoffs match
+ * calendarStartDay() instead of straddling an extra partial day.
  */
-function recentFromRecords(records, range, nowMs = Date.now(), tool = "all", limit = RECENT_LIMIT) {
-  const filtered = filterByRange(
-    tool !== "all" ? records.filter((r) => r.tool === tool) : records,
-    range,
-    nowMs
-  );
+function recentFromRecords(records, range, nowMs = Date.now(), tool = "all", limit = RECENT_LIMIT, opts = {}) {
+  const scoped = tool !== "all" ? records.filter((r) => r.tool === tool) : records;
+  let filtered;
+  if (opts && opts.calendar && range !== "all") {
+    const startDay = calendarStartDay(range, nowMs);
+    filtered = startDay ? scoped.filter((r) => dayKey(r.time) >= startDay) : scoped;
+  } else {
+    filtered = filterByRange(scoped, range, nowMs);
+  }
   return {
     recent: filtered.slice(0, limit).map((r) => ({
       time: r.time,

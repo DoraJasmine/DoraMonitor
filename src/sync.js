@@ -143,11 +143,12 @@ function buildWsDaily(records, salt) {
     const day = dayKey(r.time);
     if (!wsDaily[day]) wsDaily[day] = {};
     if (!wsDaily[day][r.tool]) wsDaily[day][r.tool] = {};
-    const cell = wsDaily[day][r.tool][slot] || (wsDaily[day][r.tool][slot] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+    const cell = wsDaily[day][r.tool][slot] || (wsDaily[day][r.tool][slot] = { i: 0, o: 0, cr: 0, cc: 0, c: 0, req: 0, credits: 0 });
     cell.i += r.inputOther || 0;
     cell.o += r.output || 0;
     cell.cr += r.inputCacheRead || 0;
     cell.cc += r.inputCacheCreation || 0;
+    cell.c += r.credits > 0 ? 0 : (r.costCny || 0);
     cell.req += Number.isFinite(Number(r.requests)) && Number(r.requests) >= 0 ? Number(r.requests) : 1;
     cell.credits += r.credits || 0;
   }
@@ -862,26 +863,28 @@ function peerWorkspaceSummaries(device = "all", filter = {}) {
           };
           const key = `peer:${slot}`;
           if (!map.has(key)) {
-            map.set(key, { key, workspaceKey: key, devices: new Set(), daily: {}, tools: new Map(), totalTokens: 0, requests: 0, credits: 0 });
+            map.set(key, { key, workspaceKey: key, devices: new Set(), daily: {}, tools: new Map(), totalTokens: 0, requests: 0, credits: 0, costCny: 0 });
           }
           const row = map.get(key);
           row.devices.add(peerDevice);
           if (!row.wsName && peer.wsNames && peer.wsNames[slot]) row.wsName = peer.wsNames[slot];
-          const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, req: 0, credits: 0 });
+          const d = row.daily[day] || (row.daily[day] = { i: 0, o: 0, cr: 0, cc: 0, c: 0, req: 0, credits: 0 });
           d.i += num(cell.i);
           d.o += num(cell.o);
           d.cr += num(cell.cr);
           d.cc += num(cell.cc);
+          d.c += num(cell.c);
           d.req += num(cell.req);
           d.credits += num(cell.credits);
           const tk = num(cell.i) + num(cell.o) + num(cell.cr) + num(cell.cc);
-          const t = row.tools.get(tool) || { tool, totalTokens: 0, requests: 0 };
+          const t = row.tools.get(cellTool) || { tool: cellTool, totalTokens: 0, requests: 0 };
           t.totalTokens += tk;
           t.requests += num(cell.req);
-          row.tools.set(tool, t);
+          row.tools.set(cellTool, t);
           row.totalTokens += tk;
           row.requests += num(cell.req);
           row.credits += num(cell.credits);
+          row.costCny += num(cell.c);
         }
       }
     }
@@ -896,6 +899,7 @@ function peerWorkspaceSummaries(device = "all", filter = {}) {
     totalTokens: row.totalTokens,
     requests: row.requests,
     credits: row.credits,
+    costCny: row.costCny,
   })).sort((a, b) => b.totalTokens - a.totalTokens);
 }
 

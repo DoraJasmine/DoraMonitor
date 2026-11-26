@@ -26,6 +26,7 @@ process.on("unhandledRejection", (reason) => {
 const { resolveKimiHome, isKimiHome, defaultCandidates } = require("./paths");
 const { collect, invalidate: invalidateCollect } = require("./collect");
 const { listTools } = require("./tools");
+const { cursorHome, isCursorInstalled, wakeCursorRefresh } = require("./cursor-usage");
 const {
   aggregate,
   summaryAllRanges,
@@ -189,7 +190,7 @@ function ensureAggregates(collected, key, records, tool, buckets, settings) {
         fxRate: settings?.fxRate,
         customPrices: settings?.customPrices,
       });
-      Object.assign(agg, recentFromRecords(records, range, now, tool));
+      Object.assign(agg, recentFromRecords(records, range, now, tool, undefined, { calendar: true }));
       perRange[range] = agg;
     }
     // Heatmap spans all history: reuse the "all" aggregation's daily rows.
@@ -377,7 +378,7 @@ function sendFile(res, filePath, reqHeaders) {
   });
 }
 
-async function handleApi(req, res, url, cliHome) {
+async function handleApi(req, res, url, cliHome, bindHost = DEFAULT_HOST) {
   const home = getHome(url.searchParams.get("home"), cliHome);
 
   if (url.pathname === "/api/health") {
@@ -386,14 +387,17 @@ async function handleApi(req, res, url, cliHome) {
 
   // 唯一的自动出站请求:GitHub Releases 只读版本探测(缓存 6 小时,可经
   // settings.updates.check 关闭)。见 docs/privacy.md。
-  // 一键更新:以脱离进程方式执行(停服务 → 拉取 → 构建 → 重启),
+  // 一键更新:以脱离进程方式执行(预检 → 停服务 → 拉取 → 构建 → 重启),
   // 端点立即返回;进度经 /api/update/status 轮询。仅本机回环可用。
   if (url.pathname === "/api/update/apply" && req.method === "POST") {
     const body = await readBody(req);
     if (!body || body.confirm !== true) {
       return json(res, 400, { error: "confirm_required" });
     }
-    const result = selfUpdate.spawnApply();
+    const result = selfUpdate.spawnApply(undefined, {
+      port: (req.socket && req.socket.localPort) || 3847,
+      host: bindHost,
+    });
     return json(res, result.started ? 200 : 409, result);
   }
 
@@ -539,6 +543,9 @@ async function handleApi(req, res, url, cliHome) {
     const displayRangeTotals = Object.fromEntries(
       Object.entries(rangeTotals).map(([key, totals]) => [key, displayCost(totals, settingsNow)])
     );
+    const peerTools = deviceParam === "local"
+      ? []
+      : [...new Set((deviceParam === "all" ? peerRecords : aggRecords).map((r) => r.tool).filter(Boolean))];
 
     return json(res, 200, {
       valid: true,
@@ -549,6 +556,7 @@ async function handleApi(req, res, url, cliHome) {
       range,
       tool,
       tools: toolList,
+      peerTools,
       byTool: byToolRange,
       stats: displayAggregate,
       toolEvents: cached.toolEvents
@@ -612,6 +620,7 @@ async function handleApi(req, res, url, cliHome) {
     const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
     const workspace = url.searchParams.get("workspace") || "all";
     const model = url.searchParams.get("model") || "all";
+    const resolved = url.searchParams.get("resolved") || "all";
     const day = url.searchParams.get("day"); // FR-11: single-day drill-down
     const start = url.searchParams.get("start"); // custom range (YYYY-MM-DD)
     const end = url.searchParams.get("end");
@@ -629,22 +638,45 @@ async function handleApi(req, res, url, cliHome) {
       const range = url.searchParams.get("range") || "30d";
       startDay = usageStartDay(range, nowMs);
     }
-    const result = store.usageQuery({
-      startDay,
-      endDay,
-      tool,
-      workspace,
-      model,
-      resolved: url.searchParams.get("resolved") || "all",
-      singleDay,
-      perRange: url.searchParams.get("perRange") === "1",
-      fxRate: settings.fxRate,
-      customPrices: settings.customPrices,
-    });
-    if (!result) return json(res, 503, { error: "store_unavailable" });
-    // 多设备口径:趋势图默认含对端,弹窗也必须并入对端的日汇总,
-    // 否则同一天的合计会对不上(对端只有 day/model 粒度)。
     const deviceParam = url.searchParams.get("device") || "local";
+    const includeLocal = deviceParam === "all" || deviceParam === "local";
+    const result = includeLocal
+      ? store.usageQuery({
+          startDay,
+          endDay,
+          tool,
+          workspace,
+          model,
+          resolved,
+          singleDay,
+          perRange: url.searchParams.get("perRange") === "1",
+          fxRate: settings.fxRate,
+          customPrices: settings.customPrices,
+        })
+      : {
+          range: { startDay, endDay, singleDay },
+          tool,
+          workspace,
+          model,
+          totals: {
+            requests: 0,
+            inputOther: 0,
+            output: 0,
+            inputCacheRead: 0,
+            inputCacheCreation: 0,
+            costCny: 0,
+            credits: 0,
+            totalTokens: 0,
+            cacheHitRate: 0,
+          },
+          daily: [],
+          hourly: [],
+          models: [],
+          workspaces: [],
+        };
+    if (!result) return json(res, 503, { error: "store_unavailable" });
+    // 多设备口径:合并视图与指定对端设备都需并入对端的日汇总;
+    // 指定单个对端时仅聚合该对端数据,不混入本机行存。
     if (deviceParam !== "local" && syncEnabled(settings)) {
       const merged = mergePeerUsage(result, peerRecordsCached(), {
         device: deviceParam,
@@ -653,9 +685,10 @@ async function handleApi(req, res, url, cliHome) {
         tool,
         workspace,
         model,
+        resolved,
       });
       const wsDevices =
-        model === "all" && workspace === "all"
+        model === "all" && workspace === "all" && resolved === "all"
           ? mergePeerWorkspaces(result, peerWorkspaceSummaries(deviceParam, { startDay, endDay, tool }))
           : null;
       if (merged || wsDevices) {
@@ -693,7 +726,18 @@ async function handleApi(req, res, url, cliHome) {
 
   // FP-06: per-workspace daily totals from cached peer summaries (hashed keys).
   if (url.pathname === "/api/usage/peer-workspaces") {
-    return json(res, 200, { rows: peerWorkspaceSummaries(url.searchParams.get("device") || "all") });
+    const deviceParam = url.searchParams.get("device") || "all";
+    if (deviceParam === "local") return json(res, 200, { rows: [] });
+    const settings = loadSettings();
+    const toolParam = url.searchParams.get("tool") || "all";
+    const tool = TOOL_IDS().includes(toolParam) ? toolParam : "all";
+    const range = url.searchParams.get("range") || "all";
+    const startDay = usageStartDay(range, Date.now());
+    const rows = peerWorkspaceSummaries(deviceParam, { startDay, tool }).map((r) => ({
+      ...r,
+      cost: toDisplay(r.costCny || 0, settings),
+    }));
+    return json(res, 200, { rows });
   }
 
   if (url.pathname === "/api/workspace-aliases" && req.method === "GET") {
@@ -1158,12 +1202,27 @@ function displayCosts(aggregateResult, settings) {
   };
 }
 
+function usageHitRate(t) {
+  const denom = (t.inputOther || 0) + (t.inputCacheRead || 0) + (t.inputCacheCreation || 0);
+  return denom > 0 ? (t.inputCacheRead || 0) / denom : 0;
+}
+
+function peerMatchesResolved(record, resolved) {
+  if (!resolved || resolved === "all") return true;
+  if (record.modelResolved === resolved || record.priceId === resolved || record.model === resolved) return true;
+  const { resolveModelIdentity } = require("./model-identity");
+  if (resolveModelIdentity(record.model).pricingKey === resolved) return true;
+  const { matchRow } = require("./pricing");
+  const row = matchRow(record.model);
+  return Boolean(row && row.id === resolved);
+}
+
 /**
- * 把对端设备(同步摘要,日/model 粒度)并进本机当日查询结果。
+ * 把对端设备(同步摘要,日/model 粒度)并进当日/模型查询结果。
  * 对端只同步到天:合并 totals/daily/models,小时分布与逐请求列表
  * 仍是本机数据,由前端标注说明。
  */
-function mergePeerUsage(result, records, { device, startDay, endDay, tool, workspace, model }) {
+function mergePeerUsage(result, records, { device, startDay, endDay, tool, workspace, model, resolved }) {
   if (!result || (workspace && workspace !== "all")) return null;
   const rows = records.filter((r) => {
     if (device !== "all" && r.device !== device) return false;
@@ -1172,14 +1231,13 @@ function mergePeerUsage(result, records, { device, startDay, endDay, tool, works
     if (endDay && day > endDay) return false;
     if (tool !== "all" && r.tool !== tool) return false;
     if (model !== "all" && r.model !== model && r.modelResolved !== model) return false;
+    if (resolved && resolved !== "all" && !peerMatchesResolved(r, resolved)) return false;
     return true;
   });
   if (!rows.length) return null;
 
   const zero = () => ({ requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, credits: 0, totalTokens: 0 });
-  const hitRate = (t) =>
-    (t.inputCacheRead + t.inputCacheCreation) /
-    Math.max(1, t.inputCacheRead + t.inputCacheCreation + t.inputOther + t.output);
+  const hitRate = usageHitRate;
 
   const acc = zero();
   const devices = new Set();
@@ -1238,12 +1296,14 @@ function mergePeerUsage(result, records, { device, startDay, endDay, tool, works
   for (const [mk, t] of byModel) {
     const row = modelMap.get(mk);
     if (!row) {
+      t.cacheHitRate = hitRate(t);
       modelMap.set(mk, t);
       continue;
     }
     for (const key of ["requests", "inputOther", "output", "inputCacheRead", "inputCacheCreation", "costCny", "credits", "totalTokens", "estReq"]) {
       row[key] = (row[key] || 0) + (t[key] || 0);
     }
+    row.cacheHitRate = hitRate(row);
     if (t.costEstimated) row.costEstimated = true;
     if (!row.priceId && t.priceId) row.priceId = t.priceId;
   }
@@ -1297,9 +1357,7 @@ function mergePeerWorkspaces(result, rows) {
       target.inputCacheRead += Number(c.cr) || 0;
       target.inputCacheCreation += Number(c.cc) || 0;
     }
-    target.cacheHitRate =
-      (target.inputCacheRead + target.inputCacheCreation) /
-      Math.max(1, target.inputCacheRead + target.inputCacheCreation + target.inputOther + target.output);
+    target.cacheHitRate = usageHitRate(target);
     merged = true;
   }
   if (!merged) return null;
@@ -1314,7 +1372,7 @@ function createServer(cliHome, bindHost = DEFAULT_HOST) {
     }
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname.startsWith("/api/")) {
-      Promise.resolve(handleApi(req, res, url, cliHome)).catch((err) => {
+      Promise.resolve(handleApi(req, res, url, cliHome, bindHost)).catch((err) => {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: String(err.message || err) }));
       });
@@ -1368,6 +1426,14 @@ function main() {
   }
   const server = createServer(opts.home, opts.host);
   startQuotaSampler(opts.home, { deferToDaemon: true });
+  // Cursor's numbers come from an async HTTP call while collection is
+  // synchronous — warm the disk cache so the first dashboard load has data.
+  try {
+    const cursorDir = cursorHome();
+    if (isCursorInstalled(cursorDir)) wakeCursorRefresh({ home: cursorDir });
+  } catch {
+    /* Cursor is optional */
+  }
   server.listen(opts.port, opts.host, () => {
     // Show an address the user can actually click; the wildcard binds are
     // not valid literals in a URL.
@@ -1378,7 +1444,8 @@ function main() {
       .map((t) => `${t.label}${t.available ? "" : " (not found)"}`)
       .join(", ");
     console.log(`  Tools: ${tools}`);
-    console.log(`  Privacy: usage metadata only — no prompts, keys, or credentials`);
+    console.log(`  Privacy: usage metadata only — no prompts or code; Cursor's local`);
+    console.log(`           session token is used only to call its own usage API`);
     if (opts.open) openBrowser(url);
   });
 }

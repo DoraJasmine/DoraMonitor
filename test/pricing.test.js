@@ -269,6 +269,73 @@ describe("pricing", () => {
     assert.equal(prices.find((p) => p.id === "gpt-6-sol").sourceUrl, "https://developers.openai.com/api/docs/models/gpt-6-sol");
   });
 
+  it("prices the Gemini 4 family at the official November 2026 USD rates", () => {
+    const prices = listPrices({ fxRate: 7.2 });
+    const carbon = prices.find((p) => p.id === "gemini-4-carbon");
+    assert.deepEqual([carbon.input, carbon.cacheHit, carbon.output], [2.0, 0.1, 10.0].map((v) => v * 7.2));
+    assert.equal(carbon.nativeCurrency, "USD");
+    assert.equal(carbon.cacheWrite, null); // implicit caching only — no write meter
+    const argon = prices.find((p) => p.id === "gemini-4-argon");
+    assert.deepEqual([argon.input, argon.cacheHit, argon.output], [2.0, 0.1, 10.0].map((v) => v * 7.2));
+    const neon = prices.find((p) => p.id === "gemini-4-neon");
+    assert.deepEqual([neon.input, neon.cacheHit, neon.output], [3.0, 0.15, 15.0].map((v) => v * 7.2));
+    const hydrogen = prices.find((p) => p.id === "gemini-4-hydrogen");
+    assert.deepEqual([hydrogen.input, hydrogen.cacheHit, hydrogen.output], [1.5, 0.075, 7.5].map((v) => v * 7.2));
+    assert.equal(hydrogen.context, 1_048_576);
+    assert.equal(hydrogen.sourceUrl, "https://ai.google.dev/gemini-api/docs/pricing");
+  });
+
+  it("prices Antigravity thinking-level variants as the bare Gemini 4 model", () => {
+    // Antigravity records gemini-4-hydrogen-xhigh / -high / -medium / -low —
+    // serving variants of the same list-price model, stripped by the variant
+    // ladder. Must never fall back to the Kimi estimate.
+    for (const name of ["gemini-4-hydrogen-xhigh", "gemini-4-hydrogen-high", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-low"]) {
+      const p = matchPrice(name, { fxRate: 7.2 });
+      assert.equal(p.id, "gemini-4-hydrogen", name);
+      assert.equal(p.estimated, false, name);
+      assert.equal(p.input, 1.5 * 7.2, name);
+      assert.equal(p.output, 7.5 * 7.2, name);
+    }
+    const cost = costForUsage("gemini-4-hydrogen-xhigh", {
+      inputOther: 10025, output: 280, inputCacheRead: 0, inputCacheCreation: 0, time: Date.now(),
+    }, { skipSettings: true });
+    assert.ok(cost.total > 0);
+    assert.equal(cost.priceId, "gemini-4-hydrogen");
+    assert.equal(cost.estimated, false);
+  });
+
+  it("completes the Gemini 3.x price sheet at the official rates", () => {
+    const prices = listPrices({ fxRate: 7.2 });
+    const pro = prices.find((p) => p.id === "gemini-3.1-pro");
+    assert.deepEqual([pro.input, pro.cacheHit, pro.output], [2.0, 0.2, 12.0].map((v) => v * 7.2));
+    assert.equal(matchPrice("gemini-3.1-pro-preview", { fxRate: 7.2 }).id, "gemini-3.1-pro");
+    // Introductory flash rate ($0.75/$3.75 through 2026-12-31, then doubles).
+    for (const id of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+      const row = prices.find((p) => p.id === id);
+      assert.ok(row, id);
+      assert.deepEqual([row.input, row.output], [0.75 * 7.2, 3.75 * 7.2], id);
+    }
+    // 3.5-flash routes to 3.6-flash at its rate.
+    assert.equal(matchPrice("gemini-3.5-flash", { fxRate: 7.2 }).id, "gemini-3.6-flash");
+    const lite35 = prices.find((p) => p.id === "gemini-3.5-flash-lite");
+    assert.deepEqual([lite35.input, lite35.output], [0.3 * 7.2, 2.5 * 7.2]);
+    const lite31 = prices.find((p) => p.id === "gemini-3.1-flash-lite");
+    assert.deepEqual([lite31.input, lite31.output], [0.25 * 7.2, 1.5 * 7.2]);
+    const lite25 = prices.find((p) => p.id === "gemini-2.5-flash-lite");
+    assert.deepEqual([lite25.input, lite25.output], [0.1 * 7.2, 0.4 * 7.2]);
+  });
+
+  it("applies the Gemini 3.1 Pro 200K long-context tier to a whole request", () => {
+    const row = require("../src/pricing").matchRow("gemini-3.1-pro");
+    assert.equal(row.longContextThreshold, 200_000);
+    const shortReq = matchPrice("gemini-3.1-pro", { fxRate: 7.2, inputTokens: 150_000 });
+    assert.equal(shortReq.input, 2.0 * 7.2);
+    assert.equal(shortReq.output, 12.0 * 7.2);
+    const longReq = matchPrice("gemini-3.1-pro", { fxRate: 7.2, inputTokens: 250_000 });
+    assert.equal(longReq.input, 4.0 * 7.2);
+    assert.equal(longReq.output, 18.0 * 7.2);
+  });
+
   it("uses BigModel China's CNY prices without applying fxRate", () => {
     for (const fxRate of [6.5, 7.2, 8]) {
       const flash = matchPrice("GLM-5.3-Flash", { fxRate });
@@ -354,5 +421,20 @@ describe("pricing", () => {
       fxRate: 7.2,
     });
     assert.equal(p.input, 1);
+  });
+
+  it("matches Antigravity display names directly for peer-sync pricing parity", () => {
+    const cases = [
+      ["Claude Opus 5.5 (High)", "claude-opus-5-5"],
+      ["Claude Opus 4.6 (Thinking)", "claude-opus-5"],
+      ["Orchestrator (Argon)", "gemini-4-argon"],
+      ["Orchestrator (Carbon)", "gemini-4-carbon"],
+      ["Gemini 4 Hydrogen (Orchestrator)", "gemini-4-hydrogen"],
+    ];
+    for (const [display, expectedId] of cases) {
+      const p = matchPrice(display, { fxRate: 7.2 });
+      assert.equal(p.id, expectedId, display);
+      assert.equal(p.estimated, false, display);
+    }
   });
 });

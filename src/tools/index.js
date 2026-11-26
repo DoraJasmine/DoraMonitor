@@ -12,6 +12,8 @@ const claudeCode = require("./claude-code");
 const dsh = require("./dsh");
 const gemini = require("./gemini");
 const omp = require("./omp");
+const cursor = require("./cursor");
+const antigravity = require("./antigravity");
 
 /**
  * Tool registry.
@@ -20,7 +22,7 @@ const omp = require("./omp");
  * Adding a tool = adding a module here; aggregation, pricing, and UI consume
  * the registry without knowing tool internals.
  */
-const TOOLS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh, gemini, omp];
+const TOOLS = [kimiCode, zcode, qoderCn, qoderCnCli, codex, claudeCode, dsh, gemini, omp, cursor, antigravity];
 
 /** Resolve each tool's data home and availability. */
 function listTools() {
@@ -37,7 +39,7 @@ function listTools() {
     } catch {
       available = false;
     }
-    return { id: p.id, label: p.label, creditsOnly: !!p.creditsOnly, ...toolMeta(p.id), home, available };
+    return { id: p.id, label: p.label, creditsOnly: !!p.creditsOnly, noteKey: p.noteKey || null, ...toolMeta(p.id), home, available };
   });
 }
 

@@ -148,16 +148,72 @@ const DEEPSEEK_PRICES = [
 
 /**
  * Official Google Gemini API list prices (USD per 1M tokens), used by the
- * Gemini CLI provider. Source: https://ai.google.dev/gemini-api/docs/pricing
- * Gemini context caching bills ~10% of the standard input rate across the
- * family (3.8 Flash's published $0.075 on $0.75 input confirms the ratio);
- * Pro models double above the 200K context tier (input ×2, output ×1.5 —
- * same shape as the OpenAI long-context tier).
+ * Gemini CLI and Antigravity providers. Source:
+ * https://ai.google.dev/gemini-api/docs/pricing (verified 2026-11-26)
+ *
+ * The Antigravity client records serving ids with a thinking-level suffix
+ * ("gemini-4-hydrogen-xhigh", "-high", "-medium", "-low") — the variant
+ * ladder in matchRow strips that suffix, so these rows carry the bare model
+ * patterns and the suffix is priced as the same model.
+ *
+ * Notes on the current sheet:
+ * - Gemini 4 models support implicit caching only (no explicit cache writes);
+ *   cached input is ~5% of the standard rate ($0.10 on $2, $0.15 on $3,
+ *   $0.075 on $1.50). Antigravity transcripts never record cache writes.
+ * - Carbon / Argon are at the introductory $2/$10 rate until 2026-12-01,
+ *   then double to $4/$20. The rows carry the introductory rate (current).
+ * - 3.8 / 3.6 Flash are at the introductory $0.75/$3.75 rate until
+ *   2027-01-01, then double to $1.50/$7.50 (rows carry the current rate).
+ * - Gemini 3.1 Pro doubles input and 1.5× output above a 200K prompt tier
+ *   (longContextThreshold).
  */
 const GOOGLE_PRICES = [
   {
+    // Flagship reasoning (introductory rate ends 2026-12-01 → $4/$20).
+    // Bare "carbon" is the family label Antigravity's Orchestrator records
+    // (resolveModelName); the newest Gemini of that name is this row.
+    id: "gemini-4-carbon",
+    patterns: [/gemini[-_ ]?4[-_ ]?carbon/i, /^carbon$/i, /\(\s*carbon\s*\)$/i],
+    cacheHit: 0.1,
+    input: 2.0,
+    output: 10.0,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    // Efficient frontier reasoning (same introductory window as Carbon).
+    id: "gemini-4-argon",
+    patterns: [/gemini[-_ ]?4[-_ ]?argon/i, /^argon$/i, /\(\s*argon\s*\)$/i],
+    cacheHit: 0.1,
+    input: 2.0,
+    output: 10.0,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    id: "gemini-4-neon",
+    patterns: [/gemini[-_ ]?4[-_ ]?neon/i, /^neon$/i, /\(\s*neon\s*\)$/i],
+    cacheHit: 0.15,
+    input: 3.0,
+    output: 15.0,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    // Default Antigravity model; thinking-level suffixes (-xhigh/-high/...)
+    // are stripped by the variant ladder and land here.
+    id: "gemini-4-hydrogen",
+    patterns: [/gemini[-_ ]?4[-_ ]?hydrogen/i, /^hydrogen$/i, /\(\s*hydrogen\s*\)$/i],
+    cacheHit: 0.075,
+    input: 1.5,
+    output: 7.5,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
     id: "gemini-3.1-pro",
-    patterns: [/^gemini[-_ ]?3\.1[-_ ]?pro/i],
+    // Preview id and a plain 3.1-pro id are the same list-price model.
+    patterns: [/gemini[-_ ]?3\.1[-_ ]?pro(?:[-_ ]?preview)?/i],
     cacheHit: 0.2,
     input: 2.0,
     output: 12.0,
@@ -166,8 +222,9 @@ const GOOGLE_PRICES = [
     currency: "USD",
   },
   {
+    // Introductory $0.75/$3.75 ends 2027-01-01 → $1.50/$7.50.
     id: "gemini-3.8-flash",
-    patterns: [/^gemini[-_ ]?3\.8[-_ ]?flash/i],
+    patterns: [/gemini[-_ ]?3\.8[-_ ]?flash/i],
     cacheHit: 0.075,
     input: 0.75,
     output: 3.75,
@@ -175,8 +232,57 @@ const GOOGLE_PRICES = [
     currency: "USD",
   },
   {
+    // gemini-3.7-flash now routes to 3.8 Flash and bills at its rate.
+    id: "gemini-3.7-flash",
+    patterns: [/gemini[-_ ]?3\.7[-_ ]?flash/i],
+    cacheHit: 0.075,
+    input: 0.75,
+    output: 3.75,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    // Introductory $0.75/$3.75 ends 2027-01-01 → $1.50/$7.50.
+    // gemini-3.5-flash now routes to 3.6 Flash and bills at its rate.
+    id: "gemini-3.6-flash",
+    patterns: [/gemini[-_ ]?3\.6[-_ ]?flash/i, /gemini[-_ ]?3\.5[-_ ]?flash$/i],
+    cacheHit: 0.075,
+    input: 0.75,
+    output: 3.75,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    id: "gemini-3.5-flash-lite",
+    patterns: [/gemini[-_ ]?3\.5[-_ ]?flash[-_ ]?lite/i],
+    cacheHit: 0.03,
+    input: 0.3,
+    output: 2.5,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    patterns: [/gemini[-_ ]?3\.1[-_ ]?flash[-_ ]?lite/i],
+    cacheHit: 0.025,
+    input: 0.25,
+    output: 1.5,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    // 2.5 Flash-Lite is the cheapest text row and has no shutdown date.
+    id: "gemini-2.5-flash-lite",
+    patterns: [/gemini[-_ ]?2\.5[-_ ]?flash[-_ ]?lite/i],
+    cacheHit: 0.01,
+    input: 0.1,
+    output: 0.4,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
     id: "gemini-3-flash",
-    patterns: [/^gemini[-_ ]?3[-_ ]?flash/i, /^gemini[-_ ]?3(?:\.0)?$/i],
+    patterns: [/gemini[-_ ]?3[-_ ]?flash/i, /^gemini[-_ ]?3(?:\.0)?$/i],
     cacheHit: 0.05,
     input: 0.5,
     output: 3.0,
@@ -540,7 +646,7 @@ const CLAUDE_PRICES = [
   {
     id: "claude-fable-5",
     // Mythos 5 shares Fable 5's specs and pricing (invitation-only preview).
-    patterns: [/claude[_-]?(fable|mythos)/i],
+    patterns: [/claude[_ -]?(fable|mythos)/i],
     cacheHit: 0.25,
     cacheWrite: 12.5,
     input: 10.0,
@@ -552,7 +658,7 @@ const CLAUDE_PRICES = [
     id: "claude-opus-5-5",
     // Released 2026-09-22: 20% cheaper per token than Opus 5, cache reads
     // 60% cheaper ($0.20). Must precede the Opus 5 row below.
-    patterns: [/claude[_-]?opus[_-]?5[_-]?5/i],
+    patterns: [/claude[_ -]?opus[_ -]?5[._ -]?5/i],
     cacheHit: 0.2,
     cacheWrite: 5.0,
     input: 4.0,
@@ -563,7 +669,7 @@ const CLAUDE_PRICES = [
   {
     id: "claude-opus-5",
     // Opus 5 and the 4.5–4.8 generation all list at the same $5/$25 rates.
-    patterns: [/claude[_-]?opus[_-]?5/i, /claude[_-]?opus[_-]?4[_-]?[5-9]/i],
+    patterns: [/claude[_ -]?opus[_ -]?5/i, /claude[_ -]?opus[_ -]?4[._ -]?[5-9]/i],
     cacheHit: 0.5,
     cacheWrite: 6.25,
     input: 5.0,
@@ -573,7 +679,7 @@ const CLAUDE_PRICES = [
   },
   {
     id: "claude-sonnet-5",
-    patterns: [/claude[_-]?sonnet[_-]?5/i],
+    patterns: [/claude[_ -]?sonnet[_ -]?5/i],
     cacheHit: 0.2,
     cacheWrite: 2.5,
     input: 2.0,
@@ -583,7 +689,7 @@ const CLAUDE_PRICES = [
   },
   {
     id: "claude-haiku-4-5",
-    patterns: [/claude[_-]?haiku[_-]?4[_-]?5/i],
+    patterns: [/claude[_ -]?haiku[_ -]?4[._ -]?5/i],
     cacheHit: 0.1,
     cacheWrite: 1.25,
     input: 1.0,
@@ -593,7 +699,7 @@ const CLAUDE_PRICES = [
   },
   {
     id: "claude-3-haiku",
-    patterns: [/claude[_-]?3[_-]?haiku/i],
+    patterns: [/claude[_ -]?3[_ -]?haiku/i],
     cacheHit: 0.03,
     cacheWrite: 0.3,
     input: 0.25,
@@ -605,7 +711,7 @@ const CLAUDE_PRICES = [
     id: "claude-sonnet",
     // Sonnet 3.5 / 3.7 / 4 / 4.5 / 4.6 all list at the same rates. 3.x ids
     // put the version before the family ("claude-3-7-sonnet"); 4.x after it.
-    patterns: [/claude[_-]?sonnet/i, /claude[_-]?3[_-]?[57][_-]?sonnet/i],
+    patterns: [/claude[_ -]?sonnet/i, /claude[_ -]?3[._ -]?[57][_ -]?sonnet/i],
     cacheHit: 0.3,
     cacheWrite: 3.75,
     input: 3.0,
@@ -617,7 +723,7 @@ const CLAUDE_PRICES = [
     id: "claude-opus",
     // Legacy Opus 3 / 4 / 4.1 ($15 tier); the $5 4.5+/5 generation is matched
     // above.
-    patterns: [/claude[_-]?opus/i, /claude[_-]?3[_-]?opus/i],
+    patterns: [/claude[_ -]?opus/i, /claude[_ -]?3[_ -]?opus/i],
     cacheHit: 1.5,
     cacheWrite: 18.75,
     input: 15.0,
@@ -627,7 +733,7 @@ const CLAUDE_PRICES = [
   },
   {
     id: "claude-3-5-haiku",
-    patterns: [/claude[_-]?haiku/i, /claude[_-]?3[_-]?5[_-]?haiku/i],
+    patterns: [/claude[_ -]?haiku/i, /claude[_ -]?3[._ -]?5[_ -]?haiku/i],
     cacheHit: 0.08,
     cacheWrite: 1.0,
     input: 0.8,

@@ -101,7 +101,34 @@ K2.7 与 K2.6 不支持独立 Cache Write，详见[官方上下文缓存说明](
 | `glm-5.3-flash` | 0.23 | 0（限时免费） | 0.80 | 2.80 | 1,000,000 |
 | `glm-5.3` | 2.00 | 0（限时免费） | 8.00 | 28.00 | 1,000,000 |
 
-### 3.4 Qwen / 阿里（`QWEN_PRICES`，USD）
+### 3.4 Google Gemini（`GOOGLE_PRICES`，USD，Gemini CLI 与 Antigravity 用）
+
+来源：<https://ai.google.dev/gemini-api/docs/pricing>（2026-11-26 核对）。
+
+Antigravity 记录的服务 id 带思考档位后缀（`gemini-4-hydrogen-xhigh/-high/-medium/-low`），
+variant ladder 会剥掉后缀后命中下表裸 id 行——后缀不影响刊例价。
+
+- Gemini 4 全系只支持隐式缓存（无独立缓存写入计量），缓存命中约为输入价的 5%
+  （$0.10/$0.15/$0.075）；Antigravity transcript 从不记录缓存写入。
+- Carbon / Argon 为首发限时价（2026-12-01 起翻倍为 $4/$20），表内为当前价。
+- 3.8 / 3.6 Flash 为首发限时价（2027-01-01 起翻倍为 $1.50/$7.50），表内为当前价。
+
+| id | 缓存命中 | 输入 | 输出 | 上下文 | 备注 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `gemini-4-carbon` | 0.10 | 2.00 | 10.00 | 1,048,576 | 旗舰推理；2026-12-01 起 $4/$20 |
+| `gemini-4-argon` | 0.10 | 2.00 | 10.00 | 1,048,576 | 高效前沿推理；2026-12-01 起 $4/$20 |
+| `gemini-4-neon` | 0.15 | 3.00 | 15.00 | 1,048,576 | 2026-11-18 发布 |
+| `gemini-4-hydrogen` | 0.075 | 1.50 | 7.50 | 1,048,576 | Antigravity 默认模型；档位后缀（-xhigh 等）同价 |
+| `gemini-3.1-pro` | 0.20 | 2.00 | 12.00 | 1,048,576 | >200K 提示时输入×2、输出×1.5（长上下文阶梯） |
+| `gemini-3.8-flash` | 0.075 | 0.75 | 3.75 | 1,048,576 | 限时价；2027-01-01 起 $1.50/$7.50 |
+| `gemini-3.7-flash` | 0.075 | 0.75 | 3.75 | 1,048,576 | 端点已路由到 3.8 Flash，同价 |
+| `gemini-3.6-flash` | 0.075 | 0.75 | 3.75 | 1,048,576 | 限时价；`gemini-3.5-flash` 亦路由到此 |
+| `gemini-3.5-flash-lite` | 0.03 | 0.30 | 2.50 | 1,048,576 | |
+| `gemini-3.1-flash-lite` | 0.025 | 0.25 | 1.50 | 1,048,576 | |
+| `gemini-2.5-flash-lite` | 0.01 | 0.10 | 0.40 | 1,048,576 | 全表最低价，无下线日期 |
+| `gemini-3-flash` | 0.05 | 0.50 | 3.00 | 1,048,576 | Preview |
+
+### 3.5 Qwen / 阿里（`QWEN_PRICES`，USD）
 
 来源：[阿里云 Model Studio 官方定价](https://www.alibabacloud.com/help/en/model-studio/model-pricing)。
 
@@ -120,7 +147,7 @@ K2.7 与 K2.6 不支持独立 Cache Write，详见[官方上下文缓存说明](
 `qwen3.8-flash` 的价格曾与 dsh 自身的成本表（dsh-cost-meter，2026-10-03）核对，
 保证两个仪表盘对同一模型计价一致。
 
-### 3.5 MiniMax（`MINIMAX_PRICES`，QoderCN `mmodel` 用）
+### 3.6 MiniMax（`MINIMAX_PRICES`，QoderCN `mmodel` 用）
 
 来源：[MiniMax 开放平台官方定价](https://platform.minimaxi.com/document/Price)。
 M3 使用官方中国 CNY 价，M2.7 保留国际 USD 价；未单列缓存写入时按输入价计。
@@ -130,7 +157,7 @@ M3 使用官方中国 CNY 价，M2.7 保留国际 USD 价；未单列缓存写�
 | `minimax-m3` | 0.42 | 继承输入 | 2.10 | 8.40 | 1,000,000 | CNY |
 | `minimax-m2.7` | 0.06 | 0.375 | 0.30 | 1.20 | 1,000,000 | USD |
 
-### 3.6 其他厂商补充（`VENDOR_EXTRA_PRICES`）
+### 3.7 其他厂商补充（`VENDOR_EXTRA_PRICES`）
 
 | id | 缓存命中 | 缓存写入 | 输入 | 输出 | 上下文 | 币种 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -138,7 +165,7 @@ M3 使用官方中国 CNY 价，M2.7 保留国际 USD 价；未单列缓存写�
 | `glm-5` | 2.00 | 0 | 4.00 | 16.00 | 1,000,000 | CNY |
 | `hy3` / `hy3-x` / `hy4-preview` | 0.035 | 0.14 | 0.14 | 0.58 | 192,000 | USD（厂商归属未公开，按 OpenCode Go 目录镜像） |
 
-### 3.7 OpenAI（`OPENAI_PRICES`，USD，Codex provider 用）
+### 3.8 OpenAI（`OPENAI_PRICES`，USD，Codex provider 用）
 
 来源：<https://developers.openai.com/api/docs/pricing>
 所有带 `longContextThreshold: 272_000` 的模型：**单请求输入总量超过 272K** 时，
@@ -164,7 +191,7 @@ M3 使用官方中国 CNY 价，M2.7 保留国际 USD 价；未单列缓存写�
 
 Codex rollout 的 `cache_write_input_tokens` 没有 30m/12h 类型，非零写入按两档简单平均并标记估算。
 
-### 3.8 Anthropic（`CLAUDE_PRICES`，USD，Claude Code provider 用）
+### 3.9 Anthropic（`CLAUDE_PRICES`，USD，Claude Code provider 用）
 
 来源：[Claude 官方模型与定价](https://platform.claude.com/docs/en/docs/about-claude/models/overview)
 缓存读取通常为输入 10%（Opus 5.5 为 5%，Fable/Mythos 5.1 为 2.5%）；5min 写入 = 输入 1.25×，1h 写入 = 输入 2×。
@@ -185,7 +212,7 @@ Codex rollout 的 `cache_write_input_tokens` 没有 30m/12h 类型，非零写�
 Claude 原始 `usage.cache_creation.ephemeral_5m_write_tokens` 与 `ephemeral_1h_write_tokens`
 会分别保留并精确计价；只有旧记录缺少该分类时，才对未分类部分按两档简单平均。
 
-### 3.9 回退价（`FALLBACK_PRICE`）
+### 3.10 回退价（`FALLBACK_PRICE`）
 
 ```js
 { id: "kimi-k2.6", cacheHit: 1.1, input: 6.5, output: 27.0, currency: "CNY", estimated: true }

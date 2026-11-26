@@ -16,7 +16,7 @@ import { modelLabel } from "@/lib/labels";
 /**
  * FR-12 单模型明细弹层:当前范围内该模型的汇总、按日趋势与全历史逐请求分页。
  */
-export function ModelDetailDialog({ model, resolved = null, range = "all", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById, note }) {
+export function ModelDetailDialog({ model, queryModel = null, resolved = null, range = "all", device = "local", tool = "all", workspace = "all", open, onOpenChange, t, locale, moneyCfg, showToolColumn, toolById, note }) {
   const [query, setQuery] = useState(null);
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -24,9 +24,10 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const PAGE = 50;
+  const hasLocalRecords = !device || device === "all" || device === "local";
 
   // 合并行用 model_resolved 查询;原始单模型回退到 model 精确匹配。
-  const modelParams = resolved ? { resolved } : { model };
+  const modelParams = resolved ? { resolved } : { model: queryModel || model };
   const rangeParams = { range: range || "all", ...modelParams };
 
   useEffect(() => {
@@ -37,21 +38,23 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
     setTotal(0);
     setOffset(0);
     setError(null);
-    fetchUsageQuery({ ...rangeParams, tool, workspace })
+    fetchUsageQuery({ ...rangeParams, tool, workspace, device })
       .then((d) => alive && setQuery(d))
       .catch((e) => alive && setError(e.message || String(e)));
-    fetchUsageRecords({ tool, workspace, ...modelParams, limit: PAGE, offset: 0 })
-      .then((d) => {
-        if (!alive) return;
-        setRows(d.rows || []);
-        setTotal(d.total || 0);
-      })
-      .catch((e) => alive && setError(e.message || String(e)));
+    if (hasLocalRecords) {
+      fetchUsageRecords({ tool, workspace, ...modelParams, limit: PAGE, offset: 0 })
+        .then((d) => {
+          if (!alive) return;
+          setRows(d.rows || []);
+          setTotal(d.total || 0);
+        })
+        .catch((e) => alive && setError(e.message || String(e)));
+    }
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, model, resolved, tool, workspace, range]);
+  }, [open, model, queryModel, resolved, tool, workspace, range, device]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -70,7 +73,9 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
   const totals = query?.totals;
   const daily = query?.daily || [];
   const maxDaily = Math.max(0, ...daily.map((d) => d.totalTokens || 0));
-  const row = query?.models?.[0];
+  const modelsList = query?.models || [];
+  const costEstimated = modelsList.some((m) => m.costEstimated);
+  const priceId = modelsList.find((m) => m.priceId)?.priceId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,7 +83,7 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {t("modelDetail")} · <span className="truncate">{model}</span>
-            {row?.costEstimated ? <Badge variant="warn">{t("estimated")}</Badge> : row?.priceId ? <Badge variant="success">{t("official")}</Badge> : null}
+            {costEstimated ? <Badge variant="warn">{t("estimated")}</Badge> : priceId ? <Badge variant="success">{t("official")}</Badge> : null}
           </DialogTitle>
           <DialogDescription>{t("modelDetailHint")}</DialogDescription>
         {note ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-warning">{note}</div> : null}
@@ -91,7 +96,7 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
             {[
               [t("requests"), fmtInt(totals.requests || 0, locale)],
               [t("totalTokens"), fmtTokens(totals.totalTokens || 0)],
-              [t("estCost"), fmtMoney(row?.cost ?? totals.cost ?? 0, moneyCfg)],
+              [t("estCost"), fmtMoney(totals.cost ?? modelsList[0]?.cost ?? 0, moneyCfg)],
               [t("cacheHitRate"), fmtPct(totals.cacheHitRate || 0)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg border border-border/60 bg-secondary/30 px-3 py-2">
@@ -120,6 +125,7 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
           </div>
         ) : null}
 
+        {hasLocalRecords ? (
         <div>
           <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
             {t("dayRecords")}
@@ -171,6 +177,7 @@ export function ModelDetailDialog({ model, resolved = null, range = "all", tool 
             </div>
           ) : null}
         </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

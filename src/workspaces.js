@@ -40,8 +40,15 @@ function baseName(p) {
 }
 
 function fromCwd(project) {
-  const key = String(project || "").trim();
+  let key = String(project || "").trim();
   if (!key) return null;
+  // Canonicalize Windows drive-letter paths ("d:/foo/" -> "D:\foo") so file-URI
+  // adapters (Antigravity) merge with cwd-based tools (Kimi, Codex, dsh, ZCode).
+  if (/^[a-zA-Z]:(?:[\\/]|$)/.test(key)) {
+    key = key[0].toUpperCase() + ":" + key.slice(2).replace(/\//g, "\\");
+    key = key.replace(/\\+$/, "");
+    if (/^[a-zA-Z]:$/.test(key)) key += "\\";
+  }
   const name = baseName(key) || key;
   return { workspaceKey: key, workspaceName: name };
 }

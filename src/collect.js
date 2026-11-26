@@ -129,10 +129,17 @@ function collect({ force = false } = {}) {
     if (!tool.available || !definition) {
       cache.byTool.delete(tool.id);
       cache.stamps.delete(tool.id);
+      if (storeOn && definition && typeof definition.isPeerCovered === "function" && definition.isPeerCovered(tool.home)) {
+        if (store.toolRowCount(tool.id) > 0) {
+          store.ingestTool({ tool: tool.id, home: tool.home, records: [], events: [], force: true });
+        }
+      }
       continue;
     }
     const files = probeStamps(definition, tool.home);
-    if (!force && stampsEqual(cache.stamps.get(tool.id), files)) {
+    // Network/TTL-backed tools (cursor) have no meaningful file stamp: their
+    // freshness is owned by the adapter, so they re-enter scan() every tick.
+    if (!force && !definition.alwaysScan && stampsEqual(cache.stamps.get(tool.id), files)) {
       // Keep cached records; refresh stamp metadata only.
       cache.stamps.set(tool.id, files);
       reused += 1;
@@ -141,7 +148,18 @@ function collect({ force = false } = {}) {
     try {
       const out = scanTool(definition, tool.home, scanSince);
       if (storeOn) {
-        const ingested = store.ingestTool({ tool: tool.id, home: tool.home, records: out.records, events: out.events });
+        const forceClearCovered = Boolean(
+          out.meta?.peerCoveredWsl &&
+          !(out.records || []).length &&
+          store.toolRowCount(tool.id) > 0
+        );
+        const ingested = store.ingestTool({
+          tool: tool.id,
+          home: tool.home,
+          records: out.records,
+          events: out.events,
+          force: forceClearCovered,
+        });
         if (ingested && ingested.ok === false) {
           // 入库失败(典型:双进程写锁)时删除 stamps,强制下一次 collect 重扫重试。
           cache.stamps.delete(tool.id);

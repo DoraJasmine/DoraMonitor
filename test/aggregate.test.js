@@ -2,7 +2,7 @@
 
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
-const { aggregate, dayKey } = require("../src/aggregate");
+const { aggregate, recentFromRecords, dayKey } = require("../src/aggregate");
 
 function rec(partial) {
   return {
@@ -124,5 +124,16 @@ describe("aggregate", () => {
     const s = aggregate([rec({ time: now, requests: 37 })], "all", now);
     assert.equal(s.totals.requests, 37);
     assert.equal(s.models[0].requests, 37);
+  });
+
+  it("recentFromRecords calendar mode aligns 7d cutoff with calendarStartDay", () => {
+    const now = new Date(2026, 10, 27, 0, 15, 0).getTime();
+    // 2026-11-20 12:00 is within rolling 7*24h, but outside the 7 calendar days [11-21..11-27].
+    const dayOut = new Date(2026, 10, 20, 12, 0, 0).getTime();
+    const dayIn = new Date(2026, 10, 21, 12, 0, 0).getTime();
+    const records = [rec({ time: dayIn, model: "in" }), rec({ time: dayOut, model: "out" })];
+    const cal = recentFromRecords(records, "7d", now, "all", 500, { calendar: true });
+    assert.equal(cal.recent.length, 1);
+    assert.equal(cal.recent[0].model, "in");
   });
 });

@@ -151,8 +151,11 @@ export async function fetchUsageRecords(params = {}) {
 }
 
 /** GET /api/usage/peer-workspaces — hashed peer workspace daily totals (FP-06) */
-export async function fetchPeerWorkspaces(device = "all") {
-  return httpJson(`/api/usage/peer-workspaces?device=${encodeURIComponent(device)}`);
+export async function fetchPeerWorkspaces(device = "all", tool = "all", range = "all") {
+  const qs = new URLSearchParams({ device });
+  if (tool && tool !== "all") qs.set("tool", tool);
+  if (range && range !== "all") qs.set("range", range);
+  return httpJson(`/api/usage/peer-workspaces?${qs.toString()}`);
 }
 
 /** GET /api/workspace-aliases */

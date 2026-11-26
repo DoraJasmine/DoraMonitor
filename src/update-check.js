@@ -15,7 +15,8 @@ const RELEASES_API_URL = "https://api.github.com/repos/DoraJasmine/DoraMonitor/r
 const RELEASES_PAGE_URL = "https://github.com/DoraJasmine/DoraMonitor/releases";
 const RELEASES_LATEST_PAGE = "https://github.com/DoraJasmine/DoraMonitor/releases/latest";
 const TTL_MS = 6 * 3600_000;
-const FETCH_TIMEOUT_MS = 5000;
+const API_TIMEOUT_MS = 5000;
+const FETCH_TIMEOUT_MS = 10_000;
 
 let cache = { at: 0, data: null };
 
@@ -44,7 +45,7 @@ async function fetchLatestViaPageRedirect(doFetch) {
     headers: { "User-Agent": "DoraMonitor-update-check" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  const location = res.headers.get("location") || "";
+  const location = (res.headers && typeof res.headers.get === "function" ? res.headers.get("location") : "") || "";
   const m = location.match(/releases\/tag\/(v?[0-9][^/?#]+)/);
   const version = m ? versionFromTag(m[1]) : null;
   if (!version) return null;
@@ -62,7 +63,7 @@ async function fetchLatestRelease(fetchImpl) {
         // GitHub API 要求携带 User-Agent
         "User-Agent": "DoraMonitor-update-check",
       },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
     if (res.ok) {
       const data = await res.json();

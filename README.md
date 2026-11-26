@@ -19,10 +19,12 @@
 | Claude Code | `~/.claude/projects/**/*.jsonl` | Token、费用 |
 | Oh My Pi（omp） | `~/.omp/agent/sessions/**`（兼容旧 `~/.pi/agent`） | Token、费用 |
 | Gemini CLI | Gemini 设置与 OpenTelemetry 导出 | Token、工具事件 |
+| Antigravity | `~/.gemini/{antigravity,antigravity-cli}/conversations/*.db`（含 WSL 各发行版） | Token、费用 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` | Token、费用 |
 | QoderCN IDE | QoderCN `local.db` | Token |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
 | dsh | `~/.dsh/sessions/**` | Token、费用 |
+| Cursor | cursor.com 账号用量接口（本机 Cursor 登录态） | Token（仅账号级每日总量，需 Windows） |
 
 某个工具不存在或数据损坏时，不影响其他工具。SQLite 均以只读方式打开。
 
@@ -108,7 +110,7 @@ doramonitor --help                查看全部参数
 
 ## 隐私
 
-只读取模型、时间、Token 等用量元数据，不读取提示词、回复、代码或 Provider 凭据。服务默认绑定 `127.0.0.1`，不开放 CORS。多设备上传必须显式配置才会启用。详见[隐私与安全](./docs/privacy.md)。
+只读取模型、时间、Token 等用量元数据，不读取提示词、回复、代码或 Provider 凭据。服务默认绑定 `127.0.0.1`，不开放 CORS。多设备上传必须显式配置才会启用。唯一例外是 Cursor：它不写任何本地用量，只能用本机登录会话令牌向 cursor.com 官方接口取数（令牌仅存在于采集进程内存，不落盘、不写日志）。详见[隐私与安全](./docs/privacy.md)。
 
 ## 文档
 

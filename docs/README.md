@@ -1,6 +1,6 @@
 # DoraMonitor 文档中心
 
-本地、隐私安全的 AI 编码工具用量看板，支持 Kimi Code、Codex、Claude Code、Oh My Pi、Gemini CLI、ZCode、QoderCN IDE、QoderCN CLI 和 dsh。
+本地、隐私安全的 AI 编码工具用量看板，支持 Kimi Code、Codex、Claude Code、Oh My Pi、Gemini CLI、Antigravity、ZCode、QoderCN IDE、QoderCN CLI、dsh 和 Cursor。
 
 ## 文档导航
 
@@ -16,7 +16,7 @@
 | [综合改进方案](./comprehensive-improvement-plan.md) | 全项目改进总纲：基线、架构、数据、功能、工程、隐私与路线图 | 项目所有者与维护者 |
 | [功能与计算方式](./features.md) | 各页面、设置、CLI 与实现链路总览 | 想快速了解全部功能的人 |
 | [当前架构总览](./architecture.md) | 采集、聚合、计价、展示、缓存与模块边界 | 想理解项目如何运转的人 |
-| [用量统计与数据源](./tools.md) | 9 个工具采集器的数据目录、Token 口径与去重规则 | 关心数字准确性的用户与开发者 |
+| [用量统计与数据源](./tools.md) | 11 个工具采集器的数据目录、Token 口径与去重规则 | 关心数字准确性的用户与开发者 |
 | [计价体系](./pricing.md) | CNY 账本、官方价目、峰谷价、长上下文与自定义价格 | 关心费用估算的用户 |
 | [额度估算](./quota-capacity-estimation.md) | 跨客户端归属、缓存档、定期测算与校准逻辑 | 使用额度测算的用户与维护者 |
 | [HTTP API](./api.md) | 端点、参数、响应与错误码 | 二次开发者 |

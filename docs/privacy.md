@@ -1,6 +1,7 @@
 # 隐私与安全
 
-DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传，不碰密钥**。
+DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传内容，不碰密钥**
+（唯一例外：Cursor 用量只能凭本机登录会话令牌向官方接口取数，见 §3 第 4 条）。
 本文列出每一条承诺的具体实现位置，便于审计。
 
 ## 1. 读什么、绝不读什么
@@ -16,11 +17,15 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 | Codex `rate_limits` 快照 | rollout 文件 | 额度卡 |
 | Kimi `config.toml` 的模型别名字段 | `default_model`、`[models.*]` 的 provider/model/display_name | 模型名映射 |
 | Kimi Code 会话 `state.json` 的 `{title, workDir, createdAt, updatedAt, isCustomTitle}` | 会话管理列表 | 会话列表展示 |
+| Cursor 账号级「每日 × 模型」Token 总量 | cursor.com dashboard 接口（见 §3） | 用量统计 |
 
 ### 绝不读入、绝不存储、绝不展示
 
 - 提示词、回复、代码、工具参数全文、日志全文
 - API Key、token、secret、password、authorization（任何形式的凭据）
+  —— **唯一例外**是 Cursor 的本地登录会话令牌：Cursor 不写任何本地用量，
+  只能用它向 cursor.com 取数（见 §3 第 4 条）。该令牌只在采集进程内存中
+  存在，不落盘、不写日志、不经任何 API 返回。
 - 文件内容 blob、图片附件
 - Claude/Anthropic 的消息正文、Codex 的指令正文
 
@@ -51,7 +56,7 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
 - **设置响应脱敏**：`GET/POST /api/settings` 不返回 WebDAV 密码，只返回 `hasPassword` 状态。
 - **无鉴权**：这是"仅本机"设计的前提——不要把 `--host 0.0.0.0` 暴露到不可信
   网络。
-- 出站网络请求**只有三类**，都可预期：
+- 出站网络请求**只有四类**，都可预期：
   1. `quota.js` → `https://api.kimi.com/coding/v1/usages` 与
      `https://auth.kimi.ai/api/oauth/token`（Kimi 额度卡；凭据来自本机
      kimi-code 的登录态，或你在设置中显式配置的 Kimi Code Console API Key，
@@ -59,7 +64,11 @@ DoraMonitor 的核心承诺：**只读用量元数据，不读内容，不上传
   2. `codex-quota.js` → `https://chatgpt.com/backend-api/wham/usage` 与 OpenAI
      OAuth 刷新端点（Codex 额度；使用本机 Codex 登录态，60 秒节流）；
   3. `catalog.js` → models.dev 在线目录镜像（模型目录导入功能；失败三级回退
-     到缓存/内置快照）。
+     到缓存/内置快照）；
+  4. `cursor-usage.js` → `https://cursor.com/api/dashboard/v2/query-daily-usage`
+     （Cursor 用量；会话令牌从本机 `state.vscdb` 读出后经 Windows DPAPI +
+     AES-256-GCM 解密，仅作为该请求的 Cookie 发往 cursor.com，15 分钟节流；
+     令牌不落盘、不写日志、不经 API 返回）。
 - 多设备同步是**你显式配置后**才有的出站行为。除日粒度 token 汇总外，额度测算还会
   同步一分钟粒度的时间、工具、模型和 Token 元数据，以及额度百分比样本；不含提示词、
   回复、会话正文或凭证；工作区目录名随 v4 `wsNames` 同步（2026-11-01 所有者修订，

@@ -1,6 +1,6 @@
 # 数据源与采集（Tools）
 
-DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器的数据目录、扫描文件、
+DoraMonitor 支持 11 个 AI 编码工具。本文逐一说明各工具采集器的数据目录、扫描文件、
 解析事件、token 归一化口径、去重规则与特殊行为。模型厂商（provider）与 AI 工具
 （tool）是不同概念：同一厂商模型可以出现在多个客户端中。
 
@@ -58,6 +58,8 @@ DoraMonitor 支持 9 个 AI 编码工具。本文逐一说明各工具采集器�
 | `dsh` | dsh | `#4D6BFE` | `DSH_HOME` → `~/.dsh` | `sessions/` 存在 | JSONL（多帧 zstd） | Token |
 | `gemini` | Gemini CLI | `#4285f4` | `GEMINI_CLI_HOME` → `~/.gemini` | `settings.json` 启用 telemetry 且配置 outfile | OpenTelemetry NDJSON | Token |
 | `omp` | Oh My Pi | `#d946ef` | `PI_CODING_AGENT_DIR` → `~/.omp/agent`（回退 `~/.pi/agent`） | `sessions/` 存在（XDG 迁移时 `$XDG_DATA_HOME/omp/sessions`） | JSONL | Token |
+| `cursor` | Cursor | `#6b7280` | `CURSOR_HOME` → `%APPDATA%\Cursor` | `User/globalStorage/state.vscdb` 与 `Local State` 存在 | 账号接口（每日 × 模型总量） | Token（仅总量） |
+| `antigravity` | Antigravity | `#4285f4` | `ANTIGRAVITY_HOME` / `ANTIGRAVITY_CLI_HOME` → `~/.gemini`（聚合 App、CLI 与全部 WSL 发行版） | 任一数据根的 `conversations/` 存在 | SQLite（每会话一个 .db，protobuf 负载） | Token |
 
 ---
 
@@ -307,7 +309,107 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一经由 `pricin
 
 ---
 
-## 10. QoderCN 路由码 / 通用模型身份（model-identity.js）
+## 10. Cursor（tools/cursor.js）
+
+Cursor **不在本地记录任何 Token**：`~/.cursor/ai-tracking/ai-code-tracking.db` 只有编辑元数据，
+agent transcript 也没有 usage 字段。唯一来源是账号接口：
+
+```
+POST https://cursor.com/api/dashboard/v2/query-daily-usage
+Body: { startTime, endTime, scope: "user", groupBy: ["model"], topN: 20 }
+```
+
+**认证链**（`src/cursor-usage.js`，仅 Windows）：
+
+1. `%APPDATA%\Cursor\User\globalStorage\state.vscdb` 的 `ItemTable` 中
+   `cursorAuth/accessToken` = `cursor-safe-storage:v1:<base64>`。
+   该库在 Cursor 运行时被锁，采集器先连同 `-wal`/`-shm` 复制到临时目录再只读打开。
+2. base64 载荷布局：3 字节头 `v10` | 12 字节 GCM nonce | 密文 | 末 16 字节 GCM tag。
+3. AES-256-GCM 密钥来自 `%APPDATA%\Cursor\Local State` 的 `os_crypt.encrypted_key`
+   （base64 → 去掉 5 字节 `DPAPI` 前缀 → DPAPI CurrentUser 解封；Node 无 DPAPI 绑定，
+   用 PowerShell `ProtectedData::Unprotect`）。
+4. 解出 JWT 后取 `sub` 去掉 `grok|` 前缀作为 userId，请求头
+   `Cookie: WorkosCursorSessionToken=<userId>::<jwt>`。
+
+**口径与限制**：
+
+- 只按**天 × 模型**记总量：`inputOther = tokens`，`output` / 缓存读写恒为 0，
+  因此缓存命中率、逐请求明细、工作区/会话维度都不适用（前端以 `noteKey` 提示）。
+- `contractedCost` 在订阅套餐内恒为 0，费用由价目表按模型估算（未知模型走回退估算）。
+- 接口拒绝超过 31 天的区间，所以只保留最近 31 天；更早历史无法补采。
+- 数据是**账号级**的：同一 Cursor 账号的多台设备采集到相同数据，开启多设备同步会重复计数。
+- `requests` 记为 0：接口不提供请求数，绝不臆造。
+
+**同步/异步桥接**：`collect()` 是同步的，网络请求不能阻塞它。`scan()` 只读
+`~/.doramonitor/cursor-usage.json` 缓存（15 分钟 TTL）并唤醒后台刷新，下一次采集生效；
+服务启动时会预热一次。该工具声明 `alwaysScan: true`——凭据库一直在变，没有可信的文件戳，
+由适配器自己控制新鲜度（失败后 60 秒内不重试）。
+
+---
+
+## 11. Antigravity（tools/antigravity.js，id `antigravity`）
+
+Google Antigravity（App / IDE / CLI 合并为**一个**工具）。
+
+**扫描的数据根**（聚合全部，对齐 BrimDeck 的单 `ProviderId.Antigravity` 设计）：
+
+- `~/.gemini/antigravity/conversations`（Windows App / IDE / hub）
+- `~/.gemini/antigravity-cli/conversations`（Windows CLI，`agy`）
+- `\\wsl.localhost\<发行版>\<home>\.gemini\antigravity(-cli)\conversations`
+  （每一个 WSL 发行版的 root 与 `/home` 下所有用户；发行版列表读注册表，
+  不启动任何发行版）
+
+每个会话一个 SQLite。直接读库覆盖 CLI 会话、客户端关闭时也能工作、不依赖
+运行中 App 已加载哪些会话。字段号来自语言服务器内嵌的 protobuf 描述符
+（该方案最早由 [BrimDeck](https://github.com/MoFeng2223/BrimDeck) 的
+AntigravityUsage 公开）：
+
+- `steps.metadata`（CortexStepMetadata）：field 1 = created_at（Timestamp 子消息）、
+  field 9 = model_usage（ModelUsageStats）。
+- `gen_metadata.data`：外层 field 1 = ChatModelMetadata；其中 field 4 = usage、
+  field 19 = response_model、field 21 = model_display_name（模型菜单显示名）。
+- `ModelUsageStats`：field 1 = model 枚举、2 = input、3 = output（含思考）、
+  4 = cache write、5 = cache read、7 = message id。
+
+**归一化要点**：
+
+- `input`（field 2）**不含** cache read（field 5）——同一条请求里缓存读取可以
+  超过输入本身，Anthropic 口径，`inputOther` 原样。
+- **模型身份**（两层，这是该数据源优于 transcript.jsonl 的关键）：
+  1. `gen_metadata` 按 message id 给出权威模型名：display name 给人看
+     （`Gemini 4 Hydrogen (High)`），response_model 给计价用
+     （`gemini-4-hydrogen`，不含思考档位后缀）——**覆盖所有会话**，包括
+     2026-11 前 transcript 完全不带 model 字段的旧会话。
+  2. 无自己 generation 记录的步骤（压缩检查点）按 usage 携带的 model 枚举，
+     映射到该枚举在同一会话里的 generation 名称。
+- **编排（Orchestrator）会话**：response_model 只是角色
+  （`gemini-pro-orchestrator` / `gemini-flash-worker-agy`），display name 才说
+  实际跑了哪个模型并计价（`Gemini 4 Hydrogen (Orchestrator)` →
+  `gemini-4-hydrogen`；`Orchestrator (Carbon)` / `(Argon)` → 家族名
+  `carbon` / `argon`，价目表对裸家族名有对应行）。
+- **去重**：message id。Antigravity 每次 generation 只写一条 ModelUsageStats，
+  检查点不会重复同一 id——跨扫描、**跨数据根**都稳定（同一会话在 App 与 CLI
+  两侧续跑时，同一 message id 不会双算）；全零 usage 的检查点步在去重前丢弃。
+- **锁定的库**：仍在运行的会话持有写锁，直接 open 报 `database is locked`
+  （WSL 的会话几乎全处于该状态——它们的 agy 一直在跑）。此时像 Cursor 适配器
+  一样，把 db + `-wal` + `-shm` 复制到临时目录后只读打开**副本**，绝不写原文件。
+- 会话/工作区：各数据根下 `conversation_summaries.db`（只读）的
+  `conversation_summaries` 表按 `conversation_id` 取 `workspace_uris` 第一项，
+  file URI 解码（`file:///d%3A/x` → `d:/x`）作为 project；缺库/空表时 project
+  为 null，不影响采集。
+- node:sqlite 读 BLOB 时以 `CAST(x AS BLOB)` 强制返回字节，避免按文本解码后
+  无法还原 protobuf。
+- **WSL 对端自动去重**：若 Windows 已启用同步且某 WSL 发行版自身的 DoraMonitor 对端（`remote-cache/<设备名>.json`）已上报 `antigravity` 用量，Windows 采集器会自动跳过该 WSL 发行版的 `\\wsl.localhost` 扫描，避免「合并」视图双算或把 WSL 用量归到「本机」；设置 `ANTIGRAVITY_INCLUDE_WSL=1` 可强制保留。
+- **增量探测**：`sourceFiles()` 同时探测 `conversations/*.db`、活动中的 `*-wal` 与 `conversation_summaries.db`（含 `-wal`），确保运行中会话的新增量即时失效重扫。
+- **工作区与模型档位**：`workspaces.js` 统一规范化 Windows 盘符路径（`d:/proj` → `D:\proj`），使 Antigravity 解码出的 `file://` URI 与其他工具的 cwd 工作区自动合并；模型明细界面会保留 Antigravity 的思考/编排档位（如 `(XHigh)` / `(High)` / `(Medium)`）分开展示，避免不同档位因共享计价身份被混并为同一标签。
+- **无配额**：套餐额度在账号侧，本地文件不可见。
+
+**两个环境变量**：`ANTIGRAVITY_HOME` / `ANTIGRAVITY_CLI_HOME` 可把采集钉在
+某一（两）个显式目录（测试与排查用）；不设时自动聚合上述全部根。
+
+---
+
+## 12. QoderCN 路由码 / 通用模型身份（model-identity.js）
 
 多个工具记录的是**内部路由码**而非真实模型 id。`model-identity.js` 是唯一映射点：
 
@@ -326,7 +428,7 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一经由 `pricin
 - 解析规则：大小写不敏感；`provider:code`、`vendor/code` 取尾段；
   **未映射码原样透传**（`known: false`），绝不消失或抛错。
 
-## 11. 增量缓存与探测（collect.js / tools/index.js）
+## 13. 增量缓存与探测（collect.js / tools/index.js）
 
 每个工具采集器声明自己的"源文件集"用于 stat 探测：
 
@@ -341,6 +443,9 @@ omp 自记的 `usage.cost` 是美元，不采用——费用统一经由 `pricin
 | dsh | `sessions/` 下 `.jsonl.zstd` + `.jsonl` |
 | gemini | telemetry 配置的实际 `outfile` |
 | omp | `sessionsRoot(home)` 下递归 `*.jsonl` |
+| antigravity | 所有非覆盖跳过的根的 `conversations/*.db`、活动 `*-wal` 与 `conversation_summaries.db`（含 `-wal`） |
+| cursor | 无（`alwaysScan: true`，新鲜度由 `cursor-usage.js` 的缓存 TTL 决定） |
 
 文件戳 = 路径 + mtimeMs + size；数量、路径、存在性任一变化即触发该 provider
-重扫，其余 provider 完全跳过。
+重扫，其余 provider 完全跳过。声明 `alwaysScan` 的工具每个采集 tick 都会进入
+`scan()`（仍受 15 秒采集 TTL 约束），适用于没有可信文件戳的数据源。

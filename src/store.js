@@ -224,7 +224,7 @@ function fingerprintOf(records, events) {
     sumReq += Number.isFinite(n) && n >= 0 ? n : 1;
     // Cheap order-sensitive mix of the derived fields; collisions are
     // harmless (a rare needless re-ingest), misses are not.
-    derived = (derived * 31 + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + (r.costEstimated ? 7 : 0)) | 0;
+    derived = (derived * 31 + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + hash32(String(r.project || "")) + (r.costEstimated ? 7 : 0)) | 0;
   }
   let evCount = 0;
   for (const e of events || []) evCount += 1;
@@ -265,12 +265,16 @@ function recordSig(rec) {
  * fingerprint is unchanged (light tools rescan on every collect tick).
  * `home` is the tool data home (needed for kimi wd_* → workDir mapping).
  */
+function toolRowCount(tool) {
+  if (!open()) return 0;
+  return db.prepare("SELECT COUNT(*) AS n FROM usage_records WHERE tool = ?").get(tool).n;
+}
+
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  // fp7: recostRecords now re-resolves model identity too; force one more
-  // re-ingest (fp6 was consumed by a build without that fix).
-  if (!force && getMeta(`fp7:${tool}`) === fp) return { ok: true, skipped: true };
+  // fp8: workspace key canonicalization (d:/ -> D:\) + project hashed into fingerprint.
+  if (!force && getMeta(`fp8:${tool}`) === fp) return { ok: true, skipped: true };
 
   // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
   // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
@@ -344,7 +348,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp7:${tool}`, fp);
+    setMeta(`fp8:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {
@@ -895,6 +899,7 @@ module.exports = {
   schemaVersion,
   MIGRATIONS,
   ingestTool,
+  toolRowCount,
   bucketView,
   usageQuery,
   recordsPage,

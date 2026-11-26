@@ -96,6 +96,11 @@ DoraMonitor 有三类配置：**自身设置**（`~/.doramonitor/config.json`）
 | `CODEX_HOME` | Codex | `~/.codex` |
 | `CLAUDE_CONFIG_DIR` | Claude Code | `~/.claude` |
 | `DSH_HOME` | dsh | `~/.dsh` |
+| `GEMINI_CLI_HOME` | Gemini CLI | `~/.gemini` |
+| `ANTIGRAVITY_HOME` / `ANTIGRAVITY_CLI_HOME` | Antigravity | 默认分别读取 `~/.gemini/{antigravity,antigravity-cli}` 与 WSL 发行版 |
+| `ANTIGRAVITY_INCLUDE_WSL` | Antigravity | 设为 `1` 时即使 WSL 对端已上报仍强制扫描 `\\wsl.localhost` |
+| `PI_CODING_AGENT_DIR` | Oh My Pi | `~/.omp/agent`（回退 `~/.pi/agent`） |
+| `CURSOR_HOME` | Cursor | Windows `%APPDATA%\Cursor` |
 
 Kimi 数据目录的完整优先级（`paths.js`）：
 

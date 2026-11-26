@@ -16,18 +16,41 @@ function hitRate(row) {
   return denom > 0 ? (row.inputCacheRead || 0) / denom : 0;
 }
 
+const TIERED_MODEL_RE = /\s*\((xhigh|high|medium|low|thinking|orchestrator|argon|carbon|neon|hydrogen)\)\s*$/i;
+
 /**
- * 按模型合并(跨工具同名计价身份 modelResolved),累积全部 token 分项与
- * 缓存命中率;点击行打开单模型明细弹层(resolved 键查询)。
+ * Grouping key for the model breakdown:
+ * - Antigravity / tier-suffixed labels ("Gemini 4 Hydrogen (XHigh)" vs
+ *   "Gemini 4 Hydrogen (High)") stay distinct so thinking tiers never
+ *   silently collapse into one label, while local & peer rows with the same
+ *   display label still merge cleanly.
+ * - Other cross-tool aliases sharing a pricing key ("dfmodel" +
+ *   "deepseek-v4.1-flash-1017" → "deepseek-flash") merge by modelResolved.
+ */
+function insightGroupKey(m) {
+  const disp = String(m?.modelDisplay || m?.model || "unknown").trim();
+  const raw = String(m?.model || "unknown").trim();
+  if (m?.tool === "antigravity" || TIERED_MODEL_RE.test(disp) || TIERED_MODEL_RE.test(raw)) {
+    return `variant:${disp.toLowerCase()}`;
+  }
+  return m?.modelResolved || raw || "unknown";
+}
+
+/**
+ * 按模型合并(跨工具同名计价身份或相同展示档位),累积全部 token 分项与
+ * 缓存命中率;点击行打开单模型明细弹层。
  */
 function mergeByResolved(models) {
   const map = new Map();
   for (const m of models) {
-    const key = m.modelResolved || m.model || "unknown";
+    const key = insightGroupKey(m);
+    const rawModel = m.model || m.modelDisplay || "unknown";
     if (!map.has(key)) {
       map.set(key, {
         key,
         model: key,
+        resolvedKey: m.modelResolved || rawModel,
+        sourceModels: [],
         modelDisplay: m.modelDisplay || m.modelResolved || m.model,
         requests: 0,
         totalTokens: 0,
@@ -44,6 +67,10 @@ function mergeByResolved(models) {
       });
     }
     const row = map.get(key);
+    if (!row.sourceModels.includes(rawModel)) row.sourceModels.push(rawModel);
+    if (m.modelResolved && row.resolvedKey === rawModel && m.modelResolved !== rawModel) {
+      row.resolvedKey = m.modelResolved;
+    }
     row.requests += m.requests || 0;
     row.totalTokens += m.totalTokens || 0;
     row.inputOther += m.inputOther || 0;
@@ -169,7 +196,7 @@ export function ModelInsights({ models, t, locale, moneyCfg, onSelectModel, load
                               style={{ backgroundColor: rowColor(i) }}
                               aria-hidden
                             />
-                            <span className="truncate font-medium" title={m.key}>
+                            <span className="truncate font-medium" title={m.sourceModels?.length === 1 ? m.sourceModels[0] : (m.resolvedKey || m.key)}>
                               {modelLabel(m)}
                             </span>
                             {m.costEstimated ? <Badge variant="warn">{t("estimated")}</Badge> : m.priceId ? <Badge variant="success">{t("official")}</Badge> : null}

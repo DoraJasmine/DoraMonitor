@@ -169,7 +169,7 @@ export default function App() {
   const [settings, setSettings] = useState({
     currency: "CNY",
     currencySymbol: "¥",
-    fxRate: 7.2,
+    fxRate: 6.67,
     dashboard: DEFAULT_DASHBOARD,
   });
   const [loading, setLoading] = useState(false);
@@ -311,6 +311,11 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("aum_device", device);
+    if (device === "local" && wsFilter.startsWith("peer:")) {
+      setWsFilter("all");
+    } else if (device !== "all" && device !== "local" && wsFilter !== "all" && !wsFilter.startsWith("peer:")) {
+      setWsFilter("all");
+    }
     if (!rangeReady.current) return;
     setRecentPage(1);
     loadSummary({ refresh: false, nextDevice: device });
@@ -376,31 +381,37 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [insightsActive, peerSelected, range, tool, wsFilter, modelFilter, data?.scannedAt]);
 
-  // FP-06:对端工作区日汇总(哈希键),驱动工作区面板与对端筛选口径。
-  const [wsAllData, setWsAllData] = useState(null);
+  // FP-06:对端工作区日汇总(全历史随设备/工具拉取,再按 range 切片供面板与 4 卡片共用)。
+  const [wsRangeData, setWsRangeData] = useState(null);
   const [peerWs, setPeerWs] = useState(null);
   useEffect(() => {
-    if (!storeEnabled) {
+    if (!storeEnabled || device === "local") {
       setPeerWs(null);
       return undefined;
     }
     let alive = true;
-    fetchPeerWorkspaces(device)
+    fetchPeerWorkspaces(device, tool, "all")
       .then((d) => alive && setPeerWs(d.rows || []))
       .catch(() => {});
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeEnabled, device, data?.scannedAt]);
+  }, [storeEnabled, device, tool, data?.scannedAt]);
 
   const fmtDay = (ms) => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
+  const rangeStartDay = (rangeKey, nowMs = Date.now()) => {
+    if (!rangeKey || rangeKey === "all") return null;
+    if (rangeKey === "today") return fmtDay(nowMs);
+    const days = rangeKey === "7d" ? 7 : rangeKey === "30d" ? 30 : 0;
+    return days ? fmtDay(nowMs - (days - 1) * 86400000) : null;
+  };
   const toDisplayCost = (cny) => (settings.currency === "USD" ? cny / (Number(settings.fxRate) || 6.67) : cny);
   const sumAcc = () => ({ requests: 0, inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, costCny: 0, cost: 0, credits: 0, totalTokens: 0 });
-  const addCell = (acc, i, o, cr, cc, req, credits, costCny) => {
+  const addCell = (acc, i, o, cr, cc, req, credits, costCny, displayCost) => {
     acc.requests += req || 0;
     acc.inputOther += i || 0;
     acc.output += o || 0;
@@ -408,7 +419,7 @@ export default function App() {
     acc.inputCacheCreation += cc || 0;
     acc.credits += credits || 0;
     acc.costCny += costCny || 0;
-    acc.cost += toDisplayCost(costCny || 0);
+    acc.cost += displayCost != null ? displayCost : toDisplayCost(costCny || 0);
     acc.totalTokens += (i || 0) + (o || 0) + (cr || 0) + (cc || 0);
   };
   const finishAcc = (acc) => {
@@ -431,22 +442,22 @@ export default function App() {
       return finishAcc(acc);
     };
     return {
-      today: sum(fmtDay(nowMs)),
-      "7d": sum(fmtDay(nowMs - 6 * 86400000)),
-      "30d": sum(fmtDay(nowMs - 29 * 86400000)),
+      today: sum(rangeStartDay("today", nowMs)),
+      "7d": sum(rangeStartDay("7d", nowMs)),
+      "30d": sum(rangeStartDay("30d", nowMs)),
       all: sum(null),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peerSelected, peerWs, wsFilter, settings.currency, settings.fxRate]);
 
-  // 合并/对端设备 + 仅模型筛选 → summary 的 rangeModels(按设备聚合)客户端求和
+  // 合并/对端设备 + 仅模型筛选 → summary 的 rangeModels(已按显示币种换算)客户端求和
   const modelMerged = useMemo(() => {
     if (!modelActive) return null;
     const out = {};
     for (const [key, rows] of Object.entries(data?.rangeModels || {})) {
       const acc = sumAcc();
       for (const m of rows.filter((x) => x.model === modelFilter)) {
-        addCell(acc, m.inputOther, m.output, m.inputCacheRead, m.inputCacheCreation, m.requests, m.credits, m.costCny ?? 0);
+        addCell(acc, m.inputOther, m.output, m.inputCacheRead, m.inputCacheCreation, m.requests, m.credits, m.costCny ?? 0, m.cost);
       }
       out[key] = finishAcc(acc);
     }
@@ -454,41 +465,60 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelActive, modelFilter, data?.rangeModels, settings.currency, settings.fxRate]);
 
-  // 对端工作区行(合并视图 = 本机 + 对端;单对端设备 = 仅对端)
-  const peerRows = useMemo(() => (peerWs || []).map((r) => ({
-    workspaceKey: r.key,
-    workspaceName: r.key === "peer:unknown"
-      ? t("peerUnknownWs")
-      : r.workspaceName || r.key.slice(5, 13),
-    devices: r.devices || [],
-    tools: r.tools || [],
-    totalTokens: r.totalTokens,
-    requests: r.requests,
-    scope: "peer",
-  })), [peerWs, t]);
+  // 对端工作区行(按当前 range 过滤 wsDaily,驱动各工作区用量面板)
+  const peerRows = useMemo(() => {
+    const startDay = rangeStartDay(range);
+    const out = [];
+    for (const r of peerWs || []) {
+      let totalTokens = 0;
+      let requests = 0;
+      let credits = 0;
+      for (const [day, c] of Object.entries(r.daily || {})) {
+        if (startDay && day < startDay) continue;
+        totalTokens += (c.i || 0) + (c.o || 0) + (c.cr || 0) + (c.cc || 0);
+        requests += c.req || 0;
+        credits += c.credits || 0;
+      }
+      if (!totalTokens && !requests && !credits) continue;
+      out.push({
+        workspaceKey: r.key,
+        workspaceName: r.key === "peer:unknown"
+          ? t("peerUnknownWs")
+          : r.workspaceName || r.key.slice(5, 13),
+        devices: r.devices || [],
+        tools: r.tools || [],
+        totalTokens,
+        requests,
+        scope: "peer",
+      });
+    }
+    return out.sort((a, b) => b.totalTokens - a.totalTokens);
+  }, [peerWs, range, t]);
   const panelWorkspaces = useMemo(() => {
-    const local = (wsAllData?.workspaces || []).map((w) => ({ ...w, scope: "local" }));
+    const localSrc = wsActive ? wsRangeData?.workspaces : (usageData?.workspaces || wsRangeData?.workspaces);
+    const local = (localSrc || []).map((w) => ({ ...w, scope: "local" }));
     if (device === "local") return local;
     if (device === "all") return [...local, ...peerRows].sort((a, b) => b.totalTokens - a.totalTokens);
     return peerRows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsAllData, peerRows, device]);
+  }, [wsActive, wsRangeData, usageData, peerRows, device]);
 
-  // 工作区面板始终展示全历史口径的所有工作区(与当前时间范围解耦)。
+  // 工作区面板跟随当前时间范围、工具与模型;仅在 workspace 筛选激活时单独拉取
+  // 未限定工作区的列表(未限定时直接复用 usageData.workspaces,避免重复查询)。
   useEffect(() => {
-    if (!storeEnabled) {
-      setWsAllData(null);
+    if (!storeEnabled || (device !== "all" && device !== "local") || !wsActive) {
+      setWsRangeData(null);
       return undefined;
     }
     let alive = true;
-    fetchUsageQuery({ range: "all", tool, workspace: "all", model: "all" })
-      .then((d) => alive && setWsAllData(d))
+    fetchUsageQuery({ range, tool, workspace: "all", model: modelFilter })
+      .then((d) => alive && setWsRangeData(d))
       .catch(() => {});
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeEnabled, tool, data?.scannedAt]);
+  }, [storeEnabled, device, range, tool, modelFilter, wsActive, data?.scannedAt]);
 
   const switchTool = (next) => {
     setTool(next);
@@ -529,7 +559,7 @@ export default function App() {
   const rangeTotals = data?.rangeTotals || {};
   // 筛选激活时的口径优先级:对端工作区 → 本机 usage-query → 合并模型求和 → summary。
   const viewTotals = (() => {
-    if (peerSelected) return peerPer?.all || totals;
+    if (peerSelected) return peerPer?.[range] || totals;
     if (wsActive && insightsActive) return usageData?.totals || totals;
     if (modelActive && modelMerged) return modelMerged[range] || totals;
     return totals;
@@ -548,16 +578,20 @@ export default function App() {
     if (!peerSelected) return null;
     const row = (peerWs || []).find((r) => r.key === wsFilter);
     if (!row) return null;
-    const daily = Object.entries(row.daily || {})
-      .map(([date, c]) => {
-        const acc = sumAcc();
-        addCell(acc, c.i, c.o, c.cr, c.cc, c.req, c.credits, c.c);
-        return { date, ...acc, cacheHitRate: finishAcc(acc).cacheHitRate };
-      })
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const days = dashboard.dailyRange === "7d" ? 7 : 30;
+    const nowMs = Date.now();
+    const byDate = row.daily || {};
+    const daily = [];
+    for (let offset = days - 1; offset >= 0; offset--) {
+      const date = fmtDay(nowMs - offset * 86400000);
+      const c = byDate[date];
+      const acc = sumAcc();
+      if (c) addCell(acc, c.i, c.o, c.cr, c.cc, c.req, c.credits, c.c);
+      daily.push({ date, ...acc, cacheHitRate: finishAcc(acc).cacheHitRate });
+    }
     return { daily, dailyByModel: null };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peerSelected, peerWs, wsFilter, settings.currency, settings.fxRate]);
+  }, [peerSelected, peerWs, wsFilter, dashboard.dailyRange, settings.currency, settings.fxRate]);
   const dailyTrend = peerDailyTrend
     || (wsActive && usageData?.daily
       ? { daily: usageData.daily, dailyByModel: null } // 本机筛选模式无按模型序列,用总量曲线
@@ -566,7 +600,8 @@ export default function App() {
   const allModelCount = data?.allModelCount ?? allModels.length;
   const rangeModelCount = (stats.models || []).length;
   const toolsList = data?.tools || [];
-  const availableTools = toolsList.filter((x) => x.available);
+  const peerToolSet = useMemo(() => new Set(data?.peerTools || []), [data?.peerTools]);
+  const availableTools = toolsList.filter((x) => x.available || peerToolSet.has(x.id));
   const byTool = data?.byTool || [];
   const devices = data?.devices || [];
   const syncInfo = data?.sync || { enabled: false };
@@ -584,7 +619,12 @@ export default function App() {
   }, [toolsList]);
   // Tools that bill in credits only (no token detail in their logs).
   const activeTool = tool === "all" ? null : toolById.get(tool);
-  const creditsOnlyTool = activeTool?.creditsOnly ? activeTool : null;
+  // Per-tool caveat banner (creditsOnly tools, or an explicit noteKey).
+  const toolNote = activeTool?.creditsOnly
+    ? t("toolNoTokenNote")
+    : activeTool?.noteKey
+      ? t(activeTool.noteKey)
+      : null;
   const moneyCfg = useMemo(
     () => ({
       currency: settings.currency,
@@ -635,11 +675,44 @@ export default function App() {
     setRecentPage(1);
   };
 
-  const wsOptions = data?.storeWorkspaces || [];
+  const wsOptions = useMemo(() => {
+    const base = device !== "all" && device !== "local"
+      ? peerRows
+      : (() => {
+          const seen = new Set();
+          const out = [];
+          for (const w of [...panelWorkspaces, ...(data?.storeWorkspaces || []), ...peerRows]) {
+            if (!w?.workspaceKey || seen.has(w.workspaceKey)) continue;
+            seen.add(w.workspaceKey);
+            out.push(w);
+          }
+          return out;
+        })();
+    if (wsFilter !== "all" && !base.some((w) => w.workspaceKey === wsFilter)) {
+      const peerMatch = (peerWs || []).find((r) => r.key === wsFilter);
+      const fallback = peerMatch
+        ? {
+            workspaceKey: peerMatch.key,
+            workspaceName: peerMatch.key === "peer:unknown"
+              ? t("peerUnknownWs")
+              : peerMatch.workspaceName || peerMatch.key.slice(5, 13),
+          }
+        : (data?.storeWorkspaces || []).find((w) => w.workspaceKey === wsFilter)
+          || { workspaceKey: wsFilter, workspaceName: wsFilter };
+      return [fallback, ...base];
+    }
+    return base;
+  }, [device, peerRows, panelWorkspaces, peerWs, data?.storeWorkspaces, wsFilter, t]);
   const wsName = (key) => aliases[key] || wsOptions.find((w) => w.workspaceKey === key)?.workspaceName || key;
 
+  const visibleModels = peerSelected
+    ? []
+    : wsActive
+      ? usageData?.models || []
+      : (stats.models || []).filter((m) => !modelActive || m.model === modelFilter);
+
   const exportModelsCsv = () => {
-    const rows = usageData?.models || [];
+    const rows = visibleModels;
     if (!rows.length) return;
     downloadCsv(
       `doramonitor-models-${range}${wsFilter !== "all" ? "-ws" : ""}.csv`,
@@ -732,7 +805,7 @@ export default function App() {
       });
     }
     return items;
-  }, [viewTotals, t, locale]);
+  }, [viewTotals, toolEvents, t, locale]);
 
   return (
     <div className="mx-auto max-w-[1240px] px-4 py-6 pb-16 sm:px-6">
@@ -932,9 +1005,9 @@ export default function App() {
         </div>
       ) : null}
 
-      {creditsOnlyTool ? (
+      {toolNote ? (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-warning">
-          {t("toolNoTokenNote")}
+          {toolNote}
         </div>
       ) : null}
 
@@ -1058,7 +1131,7 @@ export default function App() {
               variant="secondary"
               size="sm"
               className="text-xs"
-              disabled={!usageData?.models?.length}
+              disabled={!visibleModels.length}
               onClick={exportModelsCsv}
             >
               {t("exportCsv")}
@@ -1149,7 +1222,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Workspace usage (FR-10, store-backed) */}
+      {/* Workspace usage (FR-10, store + peer sync) */}
       {storeEnabled ? (
         <WorkspacePanel
           workspaces={panelWorkspaces}
@@ -1159,6 +1232,7 @@ export default function App() {
           locale={locale}
           aliases={aliases}
           onAliasesChanged={setAliases}
+          note={modelActive && device !== "local" && peerRows.length > 0 ? t("peerWsNoModelFilter") : null}
           toolById={toolById}
           deviceView={device}
         />
@@ -1348,7 +1422,7 @@ export default function App() {
       {/* Model usage detail (FR-12, store-backed) */}
       {storeEnabled ? (
         <ModelInsights
-          models={peerSelected ? [] : wsActive ? usageData?.models || [] : (stats.models || []).filter((m) => !modelActive || m.model === modelFilter)}
+          models={visibleModels}
           t={t}
           locale={locale}
           moneyCfg={moneyCfg}
@@ -1356,7 +1430,14 @@ export default function App() {
           toolById={toolById}
           loading={usageLoading}
           note={peerSelected ? t("peerWsNoModels") : wsActive && hasPeers ? t("wsLocalNote") : null}
-          onSelectModel={(m) => setModelDetail({ model: m.modelDisplay || m.model, resolved: m.key })}
+          onSelectModel={(m) => {
+            const singleRaw = m.sourceModels?.length === 1 ? m.sourceModels[0] : null;
+            setModelDetail({
+              model: m.modelDisplay || m.model,
+              queryModel: singleRaw,
+              resolved: singleRaw ? null : (m.resolvedKey || m.key),
+            });
+          }}
         />
       ) : null}
 
@@ -1648,9 +1729,11 @@ export default function App() {
       />
       <ModelDetailDialog
         model={modelDetail?.model || null}
+        queryModel={modelDetail?.queryModel || null}
         resolved={modelDetail?.resolved || null}
-        note={hasPeers && device === "all" ? t("detailLocalNote") : null}
+        note={hasPeers && device !== "local" ? t("detailLocalNote") : null}
         range={range}
+        device={device}
         tool={tool}
         workspace={wsFilter}
         open={!!modelDetail}

@@ -46,8 +46,30 @@ test("update-check: fetch result cached, newer detected, failures degrade silent
 
 test("update-check: non-ok registry response degrades silently", async () => {
   resetCache();
-  const fetchImpl = async () => ({ ok: false, json: async () => ({}) });
+  const fetchImpl = async () => ({ ok: false, headers: new Headers(), json: async () => ({}) });
   const status = await getUpdateStatus({ fetchImpl, now: 1000 });
   assert.strictEqual(status.updateAvailable, false);
+  resetCache();
+});
+
+test("update-check: 403 rate limit falls back to 302 release redirect page", async () => {
+  resetCache();
+  const seenUrls = [];
+  const fetchImpl = async (url) => {
+    seenUrls.push(url);
+    if (url.includes("api.github.com")) {
+      return { ok: false, status: 403, headers: new Headers(), json: async () => ({ message: "API rate limit exceeded" }) };
+    }
+    return {
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://github.com/DoraJasmine/DoraMonitor/releases/tag/v99.1.0" }),
+    };
+  };
+  const status = await getUpdateStatus({ fetchImpl, now: 5000 });
+  assert.strictEqual(seenUrls.length, 2);
+  assert.strictEqual(status.updateAvailable, true);
+  assert.strictEqual(status.latest, "99.1.0");
+  assert.strictEqual(status.releaseUrl, "https://github.com/DoraJasmine/DoraMonitor/releases/tag/v99.1.0");
   resetCache();
 });

@@ -1,7 +1,7 @@
 "use strict";
 
 const test = require("node:test");
-const assert = require("node:assert");
+const assert = require("node:assert/strict");
 const { buildSummary } = require("../src/sync");
 
 const SALT = "a".repeat(32);
@@ -11,6 +11,7 @@ test("sync v3: wsDaily hashes workspace keys deterministically and reserves __-s
     { tool: "claude-code", time: Date.now(), model: "m", inputOther: 10, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 0, project: "D:\\work\\demo", costCny: 0.5 },
     { tool: "claude-code", time: Date.now(), model: "m", inputOther: 5, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 0, project: "D:\\work\\demo", costCny: 0.25 },
     { tool: "zcode", time: Date.now(), model: "m", inputOther: 7, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 0, project: null },
+    { tool: "qoder-cn-cli", time: Date.now(), model: "m", inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 3, costCny: 1.5, project: "D:\\work\\demo" },
   ];
   const summary = buildSummary("dev", records, null, [], null, SALT);
   assert.strictEqual(summary.version, 4);
@@ -23,7 +24,12 @@ test("sync v3: wsDaily hashes workspace keys deterministically and reserves __-s
   const hashedSlots = Object.keys(slots).filter((k) => k !== "unknown");
   assert.strictEqual(hashedSlots.length, 1, "one hashed slot");
   assert.strictEqual(slots[hashedSlots[0]].i, 15);
+  assert.strictEqual(slots[hashedSlots[0]].c, 0.75);
   assert.strictEqual(summary.wsDaily[day]["zcode"].unknown.i, 7, "reserved key travels as literal slot");
+  assert.strictEqual(summary.wsDaily[day]["zcode"].unknown.c, 0);
+  const qSlots = summary.wsDaily[day]["qoder-cn-cli"];
+  assert.strictEqual(qSlots[hashedSlots[0]].credits, 3);
+  assert.strictEqual(qSlots[hashedSlots[0]].c, 0, "credits-billed rows keep CNY cost 0 in wsDaily");
 
   // Hash is deterministic under the same salt and differs under another salt.
   const summary2 = buildSummary("dev", records, null, [], null, SALT);

@@ -217,3 +217,23 @@ test("store: malformed records are skipped and counted at the ingest boundary", 
   // Restore the canonical set so other tests see consistent state.
   store.ingestTool({ tool: "kimi-code", home: HOME, records: RECORDS, events: EVENTS, force: true });
 });
+
+test("workspaces: Windows drive paths merge across casing and slash variants while preserving POSIX", () => {
+  const { normalizeWorkspace } = require("../src/workspaces");
+  assert.deepStrictEqual(normalizeWorkspace("antigravity", { project: "d:/DoraMonitor" }), {
+    workspaceKey: "D:\\DoraMonitor",
+    workspaceName: "DoraMonitor",
+  });
+  assert.deepStrictEqual(normalizeWorkspace("antigravity", { project: "D:/DoraMonitor/" }), {
+    workspaceKey: "D:\\DoraMonitor",
+    workspaceName: "DoraMonitor",
+  });
+  assert.deepStrictEqual(normalizeWorkspace("kimi-code", { project: "D:\\DoraMonitor" }), {
+    workspaceKey: "D:\\DoraMonitor",
+    workspaceName: "DoraMonitor",
+  });
+  assert.deepStrictEqual(normalizeWorkspace("antigravity", { project: "/home/alice/repos/demo-app" }), {
+    workspaceKey: "/home/alice/repos/demo-app",
+    workspaceName: "demo-app",
+  });
+});

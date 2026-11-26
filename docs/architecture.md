@@ -15,7 +15,9 @@
  │  Claude Code      ~/.claude/projects/**/*.jsonl                       │
  │  Oh My Pi (omp)   ~/.omp/agent/sessions/** (兼容旧 ~/.pi/agent)        │
  │  Gemini CLI       Gemini 设置与 OpenTelemetry 导出                     │
+ │  Antigravity      ~/.gemini/{antigravity,antigravity-cli}/conversations │
  │  dsh              ~/.dsh/sessions/**  (.jsonl.zstd 多帧)               │
+ │  Cursor           cursor.com 账号用量接口（登录态解密，仅 Win）         │
  └──────────────────────────────┬────────────────────────────────────────┘
                                 │ tools/*.scan(home)  只读元数据
                                 ▼
@@ -42,9 +44,9 @@
                     浏览器 / Tauri 桌面壳（同一套前端）
 
  旁路：cli.js status/daemon → 写 ~/.doramonitor/status.cache（tmux 状态栏）
-      外网只读调用共三类：quota.js → Kimi 在线 usages API（额度）、
+      外网只读调用共四类：quota.js → Kimi 在线 usages API（额度）、
       codex-quota.js → Codex 额度快照、catalog.js → models.dev 目录（仅查询/导入，
-      失败回退本地缓存）。均只读且不发送任何用量数据（见 privacy.md §4）。
+      失败回退本地缓存）、cursor-usage.js → cursor.com 账号每日用量接口。均只发送必要鉴权并受对应节流控制（见 privacy.md §3）。
 ```
 
 ## 2. 技术栈与运行形态
@@ -82,6 +84,8 @@
 | `tools/dsh.js` | ~230 | dsh：多帧 zstd、session 头、message.id 去重 |
 | `tools/qoder-cn.js` | ~200 | QoderCN IDE：SQLite `chat_message`、token_info JSON |
 | `tools/qoder-cn-cli.js` | ~180 | QoderCN CLI：credits-only，两层目录遍历 |
+| `tools/cursor.js` / `cursor-usage.js` | ~460 | Cursor：DPAPI 解密登录态、`cursor.com` 每日账号用量接口、异步缓存刷新 |
+| `tools/antigravity.js` / `protobuf-lite.js` | ~630 | Antigravity：SQLite 只读/锁库副本、protobuf 解码、App/CLI/WSL 聚合与对端去重 |
 | `aggregate.js` | ~420 | 范围过滤、模型分组、每日趋势（top6+others）、热力图、工具聚合 |
 | `store.js` | ~880 | SQLite 行存端口（`node:sqlite`）：入库、bucketView 适配、usage 查询、逐请求分页、legacy 导入、版本化迁移 |
 | `workspaces.js` | ~150 | 工作区归一化：cwd / kimi `wd_*` → workDir / 未知时回退，别名展示 |
@@ -146,9 +150,8 @@
   first-wins 与传播窗口保证增量结果与全量一致。回滚开关：
   `DORAMONITOR_DISABLE_BUCKETS=1`。
   原始记录仅保留近 30 天（`RECORD_WINDOW_DAYS`，次级上限 2 万条）供
-  "最近请求"表使用；桶层的 7d/30d 聚合按**日历日窗口**计算（见
-  `calendarStartDay`），与 §4.2 聚合层的**滚动窗口**口径不同，前端范围切换
-  以聚合层为准。
+  "最近请求"表使用；桶层的 7d/30d 聚合与对应的最近请求过滤均按**日历日窗口**计算
+  （见 `calendarStartDay`），`aggregate()` 回退路径的**滚动窗口**语义维持不变。
   估算标记分两层：折算只记**时间性**估算（无时间戳 DeepSeek，桶 v2 起），
   表行级估算（无价格行时的回退）由查询时 `priceForCell` 现算——因此**价格表
   新增行后，新价格与"官方价"标记自动回溯全部历史，无需清桶**。
@@ -242,7 +245,7 @@
 DoraMonitor/
 ├─ src/                    # Node 后端（见上表）
 │  ├─ data/builtin-catalog.json   # models.dev 离线快照
-│  └─ tools/                 # 九个工具的数据采集器
+│  └─ tools/                 # 11 个工具的数据采集器
 ├─ web/                      # 前端源码（Vite root）
 │  ├─ src/App.jsx            # 用量页（SPA 主壳）
 │  ├─ src/pages/             # QuotaDetailsPage / PricesPage / SyncSettingsPage

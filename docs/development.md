@@ -47,9 +47,10 @@ scripts/           Windows 安装、静默启动与自启
 
 ## 4. 新增工具采集器
 
-1. 新建 `src/tools/x.js`，导出 `{ id, label, creditsOnly?, defaultHome, isAvailable, scan }`。
+1. 新建 `src/tools/x.js`，导出 `{ id, label, creditsOnly?, noteKey?, alwaysScan?, defaultHome, isAvailable, scan }`。
 2. `scan` 返回 `{ records, meta }`；全零记录丢弃，时间降序，明确去重规则，坏行不得影响其他工具。
-3. 在 `src/tools/index.js` 的 `TOOLS` 注册，并在 `sourceFiles()` 提供增量探测文件。
+3. 在 `src/tools/index.js` 的 `TOOLS` 注册，并在 `sourceFiles()` 提供增量探测文件；
+   没有可信文件戳的数据源（如 Cursor 的网络接口）声明 `alwaysScan: true`，自行控制新鲜度。
 4. 在 `src/tools/base.js` 的 `TOOL_META` 添加名称和颜色。
 5. 对齐 Token 口径，尤其是输入是否包含缓存；路由模型码必须在 `model-identity.js` 中映射到显示名和计价键。
 6. 添加测试：缺目录、正常解析、全零、去重、坏行、增量扫描等价性。

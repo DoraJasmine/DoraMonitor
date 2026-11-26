@@ -13,8 +13,8 @@ const WS_COLORS = ["#2dd4bf", "#60a5fa", "#a78bfa", "#f472b6", "#fbbf24", "#34d3
 const COLLAPSED_COUNT = 6;
 
 /**
- * FR-10 工作区用量(全历史口径):彩色圆点行 + 占比条,点击行设置全局工作区
- * 筛选,行内可编辑本机别名(仅本地展示,不同步)。工作区多时默认收缩。
+ * FR-10 工作区用量(随当前时间范围、设备与工具联动):彩色圆点行 + 占比条,
+ * 点击行设置全局工作区筛选,行内可编辑本机别名(仅本地展示,不同步)。工作区多时默认收缩。
  */
 export function WorkspacePanel({ workspaces, activeKey, onSelect, t, locale, onAliasesChanged, aliases, note, toolById, deviceView }) {
   const [editing, setEditing] = useState(null); // { key, name, value }

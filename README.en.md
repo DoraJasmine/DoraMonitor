@@ -19,10 +19,12 @@
 | Claude Code | `~/.claude/projects/**/*.jsonl` | Tokens and cost |
 | Oh My Pi (omp) | `~/.omp/agent/sessions/**` (legacy `~/.pi/agent`) | Tokens and cost |
 | Gemini CLI | Gemini settings and OpenTelemetry export | Tokens and tool events |
+| Antigravity | `~/.gemini/{antigravity,antigravity-cli}/conversations/*.db` (incl. WSL distros) | Tokens and cost |
 | ZCode | `~/.zcode/cli/db/db.sqlite` | Tokens, estimated cost |
 | QoderCN IDE | QoderCN `local.db` | Tokens |
 | QoderCN CLI | `~/.qoder-cn/projects/**/*.jsonl` | Credits |
 | dsh | `~/.dsh/sessions/**` | Tokens and cost |
+| Cursor | cursor.com account usage API (local Cursor sign-in) | Tokens (account-level daily totals only; Windows) |
 
 Missing tools are reported as unavailable without preventing other tools from loading. SQLite databases are opened read-only.
 
@@ -108,7 +110,7 @@ Equivalent capacity and API-price costs are estimates, not vendor bills or guara
 
 ## Privacy
 
-DoraMonitor reads usage metadata, not prompts, replies, source code, or provider credentials. The server binds to `127.0.0.1` by default and does not enable CORS. Multi-device upload is off until explicitly configured. See [Privacy & security](./docs/privacy.md).
+DoraMonitor reads usage metadata, not prompts, replies, source code, or provider credentials. The server binds to `127.0.0.1` by default and does not enable CORS. Multi-device upload is off until explicitly configured. The one exception is Cursor: it stores no local usage, so its local session token is decrypted and sent only to cursor.com's official dashboard API (the token lives in collector memory only and is never persisted or logged). See [Privacy & security](./docs/privacy.md).
 
 ## Documentation
 
