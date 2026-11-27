@@ -142,7 +142,8 @@ test("antigravity: parses protobuf usage, prices by display name, dedupes by mes
     const first = out.records.find((r) => r.inputOther === 10025);
     assert.ok(first);
     assert.strictEqual(first.tool, "antigravity");
-    assert.strictEqual(first.model, "Gemini 4 Hydrogen (High)");
+    assert.strictEqual(first.model, "Gemini 4 Hydrogen");
+    assert.strictEqual(first.modelDisplay, "Gemini 4 Hydrogen");
     assert.strictEqual(first.modelResolved, "gemini-4-hydrogen");
     assert.strictEqual(first.priceId, "gemini-4-hydrogen");
     assert.strictEqual(first.costEstimated, false);
@@ -212,7 +213,8 @@ test("antigravity: orchestrated generations price the model in the display name"
   try {
     const out = antigravity.scan();
     assert.strictEqual(out.records.length, 1);
-    assert.strictEqual(out.records[0].model, "Gemini 4 Carbon (Orchestrator)");
+    assert.strictEqual(out.records[0].model, "Gemini 4 Carbon");
+    assert.strictEqual(out.records[0].modelDisplay, "Gemini 4 Carbon");
     assert.strictEqual(out.records[0].modelResolved, "gemini-4-carbon");
     assert.strictEqual(out.records[0].priceId, "gemini-4-carbon");
   } finally {
@@ -334,7 +336,7 @@ test("antigravity: wslHomeCoveredByPeer skips WSL root only when peer sync alrea
   // Peer cache WITH antigravity → skip WSL root to avoid double-counting.
   fs.writeFileSync(
     path.join(cacheDir, "wsl.json"),
-    JSON.stringify({ device: "wsl", days: { "2026-11-26": { antigravity: { "Gemini 4 Hydrogen (High)": { i: 1 } } } } })
+    JSON.stringify({ device: "wsl", days: { "2026-11-26": { antigravity: { "Gemini 4 Hydrogen": { i: 1 } } } } })
   );
   assert.strictEqual(
     antigravity.wslHomeCoveredByPeer(wslHome, { forcePlatformCheck: true, settings: winSettings, remoteCacheDir: cacheDir }),
@@ -346,4 +348,20 @@ test("antigravity: wslHomeCoveredByPeer skips WSL root only when peer sync alrea
     antigravity.wslHomeCoveredByPeer(wslHome, { forcePlatformCheck: true, settings: { sync: { enabled: false } }, remoteCacheDir: cacheDir }),
     false
   );
+});
+
+test("antigravity: strips thinking-level and role suffixes from model names", () => {
+  const cases = [
+    [["gemini-4-neon", "Gemini 4 Neon (XHigh)"], { model: "Gemini 4 Neon", priceKey: "gemini-4-neon" }],
+    [["gemini-4-neon", "Gemini 4 Neon (High)"], { model: "Gemini 4 Neon", priceKey: "gemini-4-neon" }],
+    [["gemini-4-hydrogen-medium", "Gemini 4 Hydrogen (Medium)"], { model: "Gemini 4 Hydrogen", priceKey: "gemini-4-hydrogen" }],
+    [["gemini-4-hydrogen-low", "Gemini 4 Hydrogen (Low)"], { model: "Gemini 4 Hydrogen", priceKey: "gemini-4-hydrogen" }],
+    [["claude-4-6-opus", "Claude Opus 4.6 (Thinking)"], { model: "Claude Opus 4.6", priceKey: "claude-opus-4.6" }],
+    [["gemini-pro-orchestrator", "Gemini 4 Carbon (Orchestrator)"], { model: "Gemini 4 Carbon", priceKey: "gemini-4-carbon" }],
+    [["gemini-pro-orchestrator", "Orchestrator (Carbon)"], { model: "Carbon", priceKey: "carbon" }],
+    [["gemini-4-hydrogen-xhigh", ""], { model: "gemini-4-hydrogen", priceKey: null }],
+  ];
+  for (const [[response, display], expected] of cases) {
+    assert.deepStrictEqual(antigravity.resolveModelName(response, display), expected, `${response} | ${display}`);
+  }
 });

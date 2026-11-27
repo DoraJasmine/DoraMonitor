@@ -377,16 +377,18 @@ AntigravityUsage 公开）：
   超过输入本身，Anthropic 口径，`inputOther` 原样。
 - **模型身份**（两层，这是该数据源优于 transcript.jsonl 的关键）：
   1. `gen_metadata` 按 message id 给出权威模型名：display name 给人看
-     （`Gemini 4 Hydrogen (High)`），response_model 给计价用
-     （`gemini-4-hydrogen`，不含思考档位后缀）——**覆盖所有会话**，包括
-     2026-11 前 transcript 完全不带 model 字段的旧会话。
+     （如 `Gemini 4 Hydrogen (High)` → 采集时自动剥离 `(XHigh)` / `(High)` /
+     `(Medium)` / `(Low)` / `(Thinking)` / `(Orchestrator)` 等思考与角色后缀，
+     统一合并为 `Gemini 4 Hydrogen`），response_model 给计价用（`gemini-4-hydrogen`）——
+     **覆盖所有会话**，包括 2026-11 前 transcript 完全不带 model 字段的旧会话。
   2. 无自己 generation 记录的步骤（压缩检查点）按 usage 携带的 model 枚举，
      映射到该枚举在同一会话里的 generation 名称。
 - **编排（Orchestrator）会话**：response_model 只是角色
   （`gemini-pro-orchestrator` / `gemini-flash-worker-agy`），display name 才说
-  实际跑了哪个模型并计价（`Gemini 4 Hydrogen (Orchestrator)` →
-  `gemini-4-hydrogen`；`Orchestrator (Carbon)` / `(Argon)` → 家族名
-  `carbon` / `argon`，价目表对裸家族名有对应行）。
+  实际跑了哪个模型并计价（`Gemini 4 Hydrogen (Orchestrator)` → 模型名
+  `Gemini 4 Hydrogen`、计价键 `gemini-4-hydrogen`；`Orchestrator (Carbon)` /
+  `(Argon)` → 剥离编排包装后为 `Carbon` / `Argon`，计价键 `carbon` / `argon`，
+  价目表对裸家族名有对应行）。
 - **去重**：message id。Antigravity 每次 generation 只写一条 ModelUsageStats，
   检查点不会重复同一 id——跨扫描、**跨数据根**都稳定（同一会话在 App 与 CLI
   两侧续跑时，同一 message id 不会双算）；全零 usage 的检查点步在去重前丢弃。
@@ -401,7 +403,7 @@ AntigravityUsage 公开）：
   无法还原 protobuf。
 - **WSL 对端自动去重**：若 Windows 已启用同步且某 WSL 发行版自身的 DoraMonitor 对端（`remote-cache/<设备名>.json`）已上报 `antigravity` 用量，Windows 采集器会自动跳过该 WSL 发行版的 `\\wsl.localhost` 扫描，避免「合并」视图双算或把 WSL 用量归到「本机」；设置 `ANTIGRAVITY_INCLUDE_WSL=1` 可强制保留。
 - **增量探测**：`sourceFiles()` 同时探测 `conversations/*.db`、活动中的 `*-wal` 与 `conversation_summaries.db`（含 `-wal`），确保运行中会话的新增量即时失效重扫。
-- **工作区与模型档位**：`workspaces.js` 统一规范化 Windows 盘符路径（`d:/proj` → `D:\proj`），使 Antigravity 解码出的 `file://` URI 与其他工具的 cwd 工作区自动合并；模型明细界面会保留 Antigravity 的思考/编排档位（如 `(XHigh)` / `(High)` / `(Medium)`）分开展示，避免不同档位因共享计价身份被混并为同一标签。
+- **工作区与模型归并**：`workspaces.js` 统一规范化 Windows 盘符路径（`d:/proj` → `D:\proj`），使 Antigravity 解码出的 `file://` URI 与其他工具的 cwd 工作区自动合并；模型统计按基础模型归并，不分思考或编排档位（`(XHigh)` / `(High)` / `(Medium)` / `(Low)` / `(Thinking)` / `(Orchestrator)` 统一并入同一基础模型）。
 - **无配额**：套餐额度在账号侧，本地文件不可见。
 
 **两个环境变量**：`ANTIGRAVITY_HOME` / `ANTIGRAVITY_CLI_HOME` 可把采集钉在

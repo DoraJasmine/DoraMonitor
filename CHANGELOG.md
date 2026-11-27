@@ -2,6 +2,16 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [1.4.1] - 2026-11-27
+
+### 修复
+
+- 统一 Antigravity 模型统计口径（不区分思考强度）：
+  - `antigravity.js` 在采集解析阶段自动剥离思考强度与角色后缀（`(XHigh)` / `(High)` / `(Medium)` / `(Low)` / `(Minimal)` / `(Thinking)` / `(Orchestrator)` 及 `Orchestrator (<模型>)` 包装，含 response id 尾部的 `-xhigh` 等后缀），与其他工具一致统一按基础模型归并，同时保留准确的计价身份（`modelResolved`）；
+  - `store.js` 将 `model` / `modelDisplay` 纳入工具指纹并升级至 `fp9:`，确保已入库的历史记录在升级后首次采集即自动重入库清洗；
+  - `sync.js` 对来自尚未升级对端同步缓存中的历史 Antigravity 带档位模型键同步做去后缀归一化，保证多设备「合并」视图与本机口径完全对齐；
+  - `ModelInsights.jsx`、`i18n.js` 与文档移除 Antigravity 思考档位拆行特判，模型明细表恢复按计价身份统一合并展示。
+
 ## [1.4.0] - 2026-11-27
 
 ### 新增

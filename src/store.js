@@ -222,9 +222,9 @@ function fingerprintOf(records, events) {
     sumTokens += (r.inputOther || 0) + (r.output || 0) + (r.inputCacheRead || 0) + (r.inputCacheCreation || 0);
     const n = Number(r.requests);
     sumReq += Number.isFinite(n) && n >= 0 ? n : 1;
-    // Cheap order-sensitive mix of the derived fields; collisions are
-    // harmless (a rare needless re-ingest), misses are not.
-    derived = (derived * 31 + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + hash32(String(r.project || "")) + (r.costEstimated ? 7 : 0)) | 0;
+    // Cheap order-sensitive mix of the model identity and derived fields;
+    // collisions are harmless (a rare needless re-ingest), misses are not.
+    derived = (derived * 31 + hash32(String(r.model || "")) + hash32(String(r.modelDisplay || "")) + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + hash32(String(r.project || "")) + (r.costEstimated ? 7 : 0)) | 0;
   }
   let evCount = 0;
   for (const e of events || []) evCount += 1;
@@ -273,8 +273,8 @@ function toolRowCount(tool) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  // fp8: workspace key canonicalization (d:/ -> D:\) + project hashed into fingerprint.
-  if (!force && getMeta(`fp8:${tool}`) === fp) return { ok: true, skipped: true };
+  // fp9: model/modelDisplay hashed into fingerprint + Antigravity base-model normalization.
+  if (!force && getMeta(`fp9:${tool}`) === fp) return { ok: true, skipped: true };
 
   // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
   // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
@@ -348,7 +348,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp8:${tool}`, fp);
+    setMeta(`fp9:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {

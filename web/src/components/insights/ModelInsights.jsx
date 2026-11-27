@@ -16,34 +16,14 @@ function hitRate(row) {
   return denom > 0 ? (row.inputCacheRead || 0) / denom : 0;
 }
 
-const TIERED_MODEL_RE = /\s*\((xhigh|high|medium|low|thinking|orchestrator|argon|carbon|neon|hydrogen)\)\s*$/i;
-
 /**
- * Grouping key for the model breakdown:
- * - Antigravity / tier-suffixed labels ("Gemini 4 Hydrogen (XHigh)" vs
- *   "Gemini 4 Hydrogen (High)") stay distinct so thinking tiers never
- *   silently collapse into one label, while local & peer rows with the same
- *   display label still merge cleanly.
- * - Other cross-tool aliases sharing a pricing key ("dfmodel" +
- *   "deepseek-v4.1-flash-1017" → "deepseek-flash") merge by modelResolved.
- */
-function insightGroupKey(m) {
-  const disp = String(m?.modelDisplay || m?.model || "unknown").trim();
-  const raw = String(m?.model || "unknown").trim();
-  if (m?.tool === "antigravity" || TIERED_MODEL_RE.test(disp) || TIERED_MODEL_RE.test(raw)) {
-    return `variant:${disp.toLowerCase()}`;
-  }
-  return m?.modelResolved || raw || "unknown";
-}
-
-/**
- * 按模型合并(跨工具同名计价身份或相同展示档位),累积全部 token 分项与
- * 缓存命中率;点击行打开单模型明细弹层。
+ * 按模型计价身份 (modelResolved) 合并跨工具及同模型的各档位记录，累积全部 token 分项与
+ * 缓存命中率；点击行打开单模型明细弹层。
  */
 function mergeByResolved(models) {
   const map = new Map();
   for (const m of models) {
-    const key = insightGroupKey(m);
+    const key = m.modelResolved || m.model || "unknown";
     const rawModel = m.model || m.modelDisplay || "unknown";
     if (!map.has(key)) {
       map.set(key, {

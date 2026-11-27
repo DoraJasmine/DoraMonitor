@@ -36,14 +36,16 @@ const { protoFields, varintField, dataField, timestampMs } = require("./protobuf
  * - The model name is authoritative here: response_model is the bare id
  *   ("gemini-4-hydrogen") and model_display_name is the menu label
  *   ("Gemini 4 Hydrogen (High)") — unlike the rolling transcript.jsonl,
- *   every conversation is covered, including pre-2026-11 ones. A step
- *   without a generation record of its own (a condensing checkpoint) is
- *   named by the model enum its usage carries, resolved against that
- *   model's generations in the same conversation (same rule as BrimDeck).
+ *   every conversation is covered, including pre-2026-11 ones. Thinking
+ *   effort / role suffixes such as "(XHigh)" / "(High)" / "(Thinking)" /
+ *   "(Orchestrator)" are stripped so all efforts roll up under the same base
+ *   model name. A step without a generation record of its own (a condensing
+ *   checkpoint) is named by the model enum its usage carries, resolved against
+ *   that model's generations in the same conversation (same rule as BrimDeck).
  * - Orchestrated generations name only their role as the response model
  *   ("gemini-pro-orchestrator", "gemini-flash-worker-agy"); the display name
  *   says which model actually ran and prices it ("Gemini 4 Hydrogen
- *   (Orchestrator)" → gemini-4-hydrogen).
+ *   (Orchestrator)" → model "Gemini 4 Hydrogen", priceKey "gemini-4-hydrogen").
  * - Dedup is by message id: Antigravity writes one ModelUsageStats per
  *   generation and checkpoints never repeat an id, so the id is the stable
  *   dedup key across scans AND across data roots (a conversation can appear
@@ -326,24 +328,51 @@ function slug(name) {
 }
 
 /**
- * A record is shown by the name Antigravity's model menu gives it
- * (model_display_name), and by its response model where it has none.
+ * Normalize an Antigravity model to its base display name and pricing key,
+ * stripping thinking-level and role suffixes ("(XHigh)", "(High)", "(Medium)",
+ * "(Low)", "(Thinking)", "(Orchestrator)") so usage rolls up by base model
+ * like every other tool in DoraMonitor.
+ *
  * An orchestrated generation names only its role as the response model
  * ("gemini-pro-orchestrator", "gemini-flash-worker-agy"); its display name
- * says which model ran, and that model prices it:
- *   "Gemini 4 Hydrogen (Orchestrator)" → "gemini-4-hydrogen"
- *   "Orchestrator (Carbon)" → "carbon" (family alone; pricing reads the
- *   newest Gemini of that name)
- * Other records keep their response model as the price key.
+ * identifies which model ran and prices it:
+ *   "Gemini 4 Hydrogen (High)" → { model: "Gemini 4 Hydrogen", priceKey: "gemini-4-hydrogen" }
+ *   "Gemini 4 Carbon (Orchestrator)" → { model: "Gemini 4 Carbon", priceKey: "gemini-4-carbon" }
+ *   "Orchestrator (Carbon)" → { model: "Carbon", priceKey: "carbon" }
  */
 const KNOWN_DISPLAY_MODEL_RE = /^(?:gemini|claude|gpt|o[134]|deepseek|qwen|kimi|glm|minimax|hy[34])\b/i;
+const EFFORT_OR_ROLE_SUFFIX_RE = /\s*\((?:xhigh|high|medium|low|minimal|thinking|orchestrator|worker)\)\s*$/i;
+const ORCHESTRATOR_WRAP_RE = /^(?:orchestrator|worker)\s*\(([^()]+)\)$/i;
+const RESPONSE_TIER_SUFFIX_RE = /[-_](?:xhigh|high|medium|low|minimal|thinking)$/i;
+
+function stripAntigravityDisplayTier(display) {
+  let clean = String(display || "").trim();
+  clean = clean.replace(EFFORT_OR_ROLE_SUFFIX_RE, "").trim();
+  const wrapped = ORCHESTRATOR_WRAP_RE.exec(clean);
+  if (wrapped) clean = wrapped[1].trim();
+  return clean;
+}
+
+function stripResponseTier(response) {
+  return String(response || "")
+    .trim()
+    .replace(EFFORT_OR_ROLE_SUFFIX_RE, "")
+    .replace(RESPONSE_TIER_SUFFIX_RE, "")
+    .trim();
+}
 
 function resolveModelName(response, display) {
-  display = String(display || "").trim();
-  response = String(response || "").trim();
-  if (!display) return response ? { model: response, priceKey: null } : null;
-  let price = response && response !== display ? response : null;
-  const named = /^(?<outer>[^()]+?)\s*\((?<inner>[^()]+)\)$/.exec(display);
+  const rawDisplay = String(display || "").trim();
+  const rawResponse = String(response || "").trim();
+  const cleanResponse = stripResponseTier(rawResponse);
+  if (!rawDisplay) {
+    return cleanResponse ? { model: cleanResponse, priceKey: null } : null;
+  }
+  const cleanDisplay = stripAntigravityDisplayTier(rawDisplay) || cleanResponse || rawDisplay;
+  let price = cleanResponse && cleanResponse !== cleanDisplay && cleanResponse !== rawDisplay
+    ? cleanResponse
+    : null;
+  const named = /^(?<outer>[^()]+?)\s*\((?<inner>[^()]+)\)$/.exec(rawDisplay);
   if (named) {
     const outer = named.groups.outer.trim();
     const inner = named.groups.inner.trim();
@@ -351,7 +380,10 @@ function resolveModelName(response, display) {
     else if (KNOWN_DISPLAY_MODEL_RE.test(inner)) price = slug(inner);
     else if (!/\d/.test(outer) && /^[A-Za-z]+$/.test(inner)) price = inner.toLowerCase();
   }
-  return { model: display, priceKey: price };
+  if (!price && KNOWN_DISPLAY_MODEL_RE.test(cleanDisplay)) {
+    price = slug(cleanDisplay);
+  }
+  return { model: cleanDisplay, priceKey: price };
 }
 
 // --- one conversation database ---
@@ -433,8 +465,8 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
 
       const rec = emptyRecord("antigravity");
       rec.time = time;
-      // The display name is for humans; the response model / price key is
-      // what pricing matches on (bare id without the thinking-level suffix).
+      // Both display name and priceKey strip thinking-level/role suffixes so
+      // usage aggregates under the base model cleanly across all efforts.
       rec.model = name ? name.model : "unknown";
       rec.modelDisplay = name ? name.model : "unknown";
       rec.modelResolved = name && name.priceKey ? name.priceKey : rec.model;
@@ -580,3 +612,4 @@ const tool = {
 
 module.exports = tool;
 module.exports.wslHomeCoveredByPeer = wslHomeCoveredByPeer;
+module.exports.resolveModelName = resolveModelName;

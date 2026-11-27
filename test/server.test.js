@@ -132,8 +132,8 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
           {
             tool: "antigravity",
             time: Date.now(),
-            model: "Gemini 4 Hydrogen (XHigh)",
-            modelDisplay: "Gemini 4 Hydrogen (XHigh)",
+            model: "Gemini 4 Hydrogen",
+            modelDisplay: "Gemini 4 Hydrogen",
             modelResolved: "gemini-4-hydrogen",
             inputOther: 100,
             output: 10,
@@ -157,6 +157,8 @@ test("HTTP server enforces the origin guard before running mutations", async (t)
       ).json();
       assert.equal(mergedHydrogen.totals.requests, 3);
       assert.equal(mergedHydrogen.totals.totalTokens, 510 + 1020);
+      assert.equal(mergedHydrogen.models.length, 1);
+      assert.equal(mergedHydrogen.models[0].model, "Gemini 4 Hydrogen");
     } finally {
       store.close();
     }

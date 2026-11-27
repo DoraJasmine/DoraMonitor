@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const { randomUUID } = require("crypto");
 const { normalizeQuotaRecord } = require("./quota-schema");
 const { normalizeWorkspace } = require("./workspaces");
+const { resolveModelName: resolveAntigravityModelName } = require("./tools/antigravity");
 
 /**
  * Cross-device usage sync.
@@ -259,9 +260,12 @@ function summaryToRecords(summary) {
     const dayEntry = days[day] || {};
     for (const tool of Object.keys(dayEntry)) {
       const models = dayEntry[tool] || {};
-      for (const model of Object.keys(models)) {
-        const b = models[model] || {};
-        const cost = costForUsage(model, {
+      for (const rawModel of Object.keys(models)) {
+        const b = models[rawModel] || {};
+        const agyName = tool === "antigravity" ? resolveAntigravityModelName(null, rawModel) : null;
+        const model = agyName ? agyName.model : rawModel;
+        const modelResolved = agyName && agyName.priceKey ? agyName.priceKey : model;
+        const cost = costForUsage(modelResolved, {
           inputOther: b.i || 0,
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
@@ -274,7 +278,7 @@ function summaryToRecords(summary) {
           time,
           model,
           modelDisplay: model,
-          modelResolved: model,
+          modelResolved,
           inputOther: b.i || 0,
           output: b.o || 0,
           inputCacheRead: b.cr || 0,
