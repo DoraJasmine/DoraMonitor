@@ -273,8 +273,8 @@ function toolRowCount(tool) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  // fp9: model/modelDisplay hashed into fingerprint + Antigravity base-model normalization.
-  if (!force && getMeta(`fp9:${tool}`) === fp) return { ok: true, skipped: true };
+  // fp10: refreshed price tables + Claude Code ephemeral_*_input_tokens TTL parsing.
+  if (!force && getMeta(`fp10:${tool}`) === fp) return { ok: true, skipped: true };
 
   // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
   // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
@@ -348,7 +348,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp9:${tool}`, fp);
+    setMeta(`fp10:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {

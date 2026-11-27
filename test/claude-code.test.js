@@ -244,11 +244,21 @@ test("anthropic price table: known families and USD->CNY conversion", () => {
   assert.equal(matchPriceFx("claude-sonnet-5-20260609").id, "claude-sonnet-5");
   assert.equal(matchPriceFx("claude-sonnet-5-20260609").input, 2.0 * 7.2);
   assert.equal(matchPriceFx("claude-sonnet-5-20260609").cacheWrite, 2.5 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-2").id, "claude-fable-5-2");
+  assert.equal(matchPriceFx("claude-fable-5-2").input, 8.0 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-2").cacheHit, 0.2 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-2").cacheWrite, 10.0 * 7.2);
+  assert.equal(matchPriceFx("claude-fable-5-2").cacheWriteLong, 16.0 * 7.2);
   assert.equal(matchPriceFx("claude-fable-5-20260301").id, "claude-fable-5");
   assert.equal(matchPriceFx("claude-fable-5-20260301").input, 10.0 * 7.2);
   assert.equal(matchPriceFx("claude-fable-5-20260301").cacheHit, 0.25 * 7.2);
   // Mythos 5 shares Fable 5 pricing
   assert.equal(matchPriceFx("claude-mythos-5-20260301").id, "claude-fable-5");
+  assert.equal(matchPriceFx("claude-sonnet-5-5").id, "claude-sonnet-5-5");
+  assert.equal(matchPriceFx("claude-sonnet-5-5").cacheHit, 0.1 * 7.2);
+  assert.equal(matchPriceFx("claude-haiku-5-5").id, "claude-haiku-5-5");
+  assert.equal(matchPriceFx("claude-haiku-5-5").input, 0.1 * 7.2);
+  assert.equal(matchPrice("claude-haiku-5-5", { fxRate: 7.2, inputTokens: 120_000 }).input, 0.5 * 7.2);
   assert.equal(matchPriceFx("claude-opus-4-1-20250805").id, "claude-opus");
   assert.equal(matchPriceFx("claude-opus-4-1-20250805").input, 15.0 * 7.2);
   assert.equal(matchPriceFx("claude-haiku-4-5-20251001").id, "claude-haiku-4-5");
@@ -256,4 +266,32 @@ test("anthropic price table: known families and USD->CNY conversion", () => {
   assert.equal(matchPriceFx("claude-3-5-haiku-20241022").input, 0.8 * 7.2);
   assert.equal(matchPriceFx("claude-3-haiku-20240307").id, "claude-3-haiku");
   assert.equal(matchPriceFx("claude-sonnet-4-5-20250929").estimated, false);
+});
+
+test("claude provider: parses real ephemeral_*_input_tokens TTL keys without estimating", () => {
+  const home = transcriptHome({
+    "projects/D--proj/session-fable.jsonl": [
+      assistantLine({
+        msgId: "msg_f1",
+        requestId: "req_f1",
+        cwd: "D:\\proj",
+        sessionId: "session-fable",
+        model: "claude-fable-5-2",
+        usage: {
+          input_tokens: 7,
+          cache_creation_input_tokens: 9068,
+          cache_read_input_tokens: 13586,
+          cache_creation: { ephemeral_5m_input_tokens: 9068, ephemeral_1h_input_tokens: 0 },
+          output_tokens: 298,
+        },
+      }),
+    ],
+  });
+  const out = claudeCode.scan(home);
+  assert.strictEqual(out.records.length, 1);
+  const r = out.records[0];
+  assert.strictEqual(r.priceId, "claude-fable-5-2");
+  assert.strictEqual(r.inputCacheCreationShort, 9068);
+  assert.strictEqual(r.inputCacheCreationLong, 0);
+  assert.strictEqual(r.costEstimated, false);
 });

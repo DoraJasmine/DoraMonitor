@@ -222,9 +222,9 @@ turn 的 `cwd`。
 **归一化要点**：
 
 - Anthropic 口径 **`input_tokens` 不含缓存**，`inputOther` 原样；`cacheRead =
-  cache_read_input_tokens`；`cacheCreate = cache_creation_input_tokens`，若为 0
-  且存在 `usage.cache_creation` 对象则用 `ephemeral_5m_write_tokens +
-  ephemeral_1h_write_tokens` 之和。
+  cache_read_input_tokens`；`cacheCreate = cache_creation_input_tokens`，并解析
+  `usage.cache_creation` 下的 `ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`
+  （兼容 `ephemeral_*_write_tokens`）分档计费，若总量为 0 则回退两档之和。
 - **去重**：key = `` `${message.id}|${obj.requestId || ""}` `` —— `claude
   --resume/--continue` 会把旧回合复制进新 transcript 文件。无 `message.id` 的行
   不去重直接计数。

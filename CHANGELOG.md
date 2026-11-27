@@ -2,6 +2,24 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [1.4.2] - 2026-11-27
+
+### 新增
+
+- 内置价目表查缺补漏（`src/pricing.js`、`docs/pricing.md`）：
+  - **OpenAI（`OPENAI_PRICES`）**：新增 `gpt-6.2-astra`（`$8/$40/$0.40`）、`gpt-6.2-sol`（`$2/$10/$0.10`）、`gpt-6.1-terra`（`$1/$5/$0.05`，修正此前被误降解至 `gpt-6.1-sol` 且标为估算的问题），补齐 `gpt-5.5`（`$5/$30`）、`gpt-5.4`/`mini`/`nano`、`gpt-5.3-codex`、`gpt-5.2`、`gpt-5-mini`/`nano`、`gpt-4.1`/`mini`、`gpt-4o`/`mini` 与 `o3`；
+  - **Anthropic（`CLAUDE_PRICES`）**：新增 `claude-fable-5-2`（`$8/$40/$0.20`，5m `$10` / 1h `$16`）、`claude-fable-5-1`、`claude-sonnet-5-5`（缓存读 `$0.10`）与 `claude-haiku-5-5`（`$0.10/$0.50`，>100K 阶梯 ×5）；修复日期版本号如 `claude-fable-5-20260301` 的边界匹配；
+  - **智谱 BigModel（`ZHIPU_PRICES`）**：新增 `glm-5.4`（官方按量计费开放前暂按同档 ¥8/¥28/¥2 标记估算）、`glm-5.3-flashx`（¥2/¥7/¥0.57）、`glm-5.1`、`glm-5-turbo`、`glm-4.7-flashx`、`glm-4.7`、`glm-4.6`；
+  - **xAI Grok（`XAI_PRICES`）**：新增 `grok-4.7-fast`（高速档 `$4/$12/$1.00`）、`grok-4.7`（兼容 `-xhigh`/`-high`/`-medium`/`-low` 思考后缀，`$2/$6/$0.50`，≥200K ×2）、`grok-4.6`、`grok-4.3`、`grok-4.20`、`grok-4.1-fast`、`grok-build-0.1`；
+  - **Cursor（`CURSOR_PRICES`）**：新增 `composer-2.5`（`$0.50/$2.50/$0.20`）与 `composer-2.5-fast`（`$3/$15/$0.50`）；
+  - **Kimi / Google / Qwen / MiniMax / 扩展厂商**：补齐 `kimi-k2.8-preview`（覆盖 `K2.8-Preview-256k` / `K2.8 Preview 512k`）、`gemini-2.5-pro`、`gemini-2.5-flash`、`qwen4-max`、`qwen3.7-flash`、`minimax-m3.1-flash`、`minimax-m2.7-highspeed`、`minimax-m2.5`、`step-5-preview`、`mimo-v2.6-pro`/`flash`，并将 `hy4`/`hy4-preview` 拆出 `hy3` 单独按 `$0.834/$2.501` 计价。
+
+### 修复
+
+- 修复 Claude Code 缓存创建 TTL 字段解析（`src/tools/claude-code.js`）：实际 JSONL 使用 `usage.cache_creation.ephemeral_5m_input_tokens` 与 `ephemeral_1h_input_tokens`（此前只读取 `*_write_tokens`），导致全部带缓存写入的 Claude Code 记录被误判为无 TTL 分档并常驻「估算」徽标、且按两档均价多算费用。兼容旧写法并新增真机字段回归测试。
+- 修正 Anthropic 1 小时缓存写入倍率（`src/pricing.js`）：对齐官方文档按 `2× input` 计费（`cacheWriteLong = input * 2`），而非此前按 `5m 写入 × 2`（即 `2.5× input`）。
+- 扩展长上下文阶梯倍率配置并升级存储指纹至 `fp10:`（`src/store.js`），升级后自动刷新已持久化记录的 `price_id`、`cost_estimated` 与 TTL 拆分。
+
 ## [1.4.1] - 2026-11-27
 
 ### 修复

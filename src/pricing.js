@@ -79,6 +79,17 @@ const KIMI_PRICES = [
     currency: "CNY",
   },
   {
+    id: "kimi-k2.8-preview",
+    // K2.8 Preview (1M context; Coding Plan bills it at K2.7 Code rates,
+    // matching gateway pricing). Matches K2.8-Preview-256k / K2.8 Preview 512k.
+    patterns: [/^kimi[-_ ]?k2\.8(?:[-_ ]?preview)?/i, /\bk2\.8(?:[-_ ]?preview)?(?:[-_ ]?\d{3,4}k)?\b/i],
+    cacheHit: 1.3,
+    input: 6.5,
+    output: 27.0,
+    context: 1_048_576,
+    currency: "CNY",
+  },
+  {
     id: "kimi-k2.7-code",
     // kimi-for-coding is the Coding Plan model id. The plan currently serves
     // it as K2.8 Preview (Kimi Code model picker, 2026-10-24), but with no
@@ -289,6 +300,25 @@ const GOOGLE_PRICES = [
     context: 1_048_576,
     currency: "USD",
   },
+  {
+    id: "gemini-2.5-pro",
+    patterns: [/gemini[-_ ]?2\.5[-_ ]?pro/i],
+    cacheHit: 0.125,
+    input: 1.25,
+    output: 10.0,
+    context: 1_048_576,
+    longContextThreshold: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "gemini-2.5-flash",
+    patterns: [/gemini[-_ ]?2\.5[-_ ]?flash$/i, /gemini[-_ ]?2\.5[-_ ]?flash(?!.*lite)/i],
+    cacheHit: 0.03,
+    input: 0.3,
+    output: 2.5,
+    context: 1_048_576,
+    currency: "USD",
+  },
 ];
 
 /**
@@ -298,6 +328,31 @@ const GOOGLE_PRICES = [
  * cache storage as free for a limited time, so cache creation is zero-rated.
  */
 const ZHIPU_PRICES = [
+  {
+    // Released 2026-11-23 (Loop Transformer flagship). Pay-as-you-go Model API
+    // pending public price sheet; billed via Coding Plan (~GLM-5.3 credits) and
+    // Tencent Token Plan (¥8 / ¥28 / ¥2), so flagged estimated until published.
+    id: "glm-5.4",
+    patterns: [/glm[-_. ]?5[.-]4/i],
+    cacheHit: 2.0,
+    cacheWrite: 0,
+    input: 8.0,
+    output: 28.0,
+    context: 1_000_000,
+    estimated: true,
+    currency: "CNY",
+  },
+  {
+    // Must precede glm-5.3-flash and glm-5.3: substring patterns would match.
+    id: "glm-5.3-flashx",
+    patterns: [/glm[-_. ]?5[.-]3[-_. ]?flashx/i],
+    cacheHit: 0.57,
+    cacheWrite: 0,
+    input: 2.0,
+    output: 7.0,
+    context: 1_000_000,
+    currency: "CNY",
+  },
   {
     id: "glm-5.3-flash",
     // Dashes may substitute the dot in recorded ids (sn-glm-5-3-flash);
@@ -312,13 +367,65 @@ const ZHIPU_PRICES = [
   },
   {
     id: "glm-5.3",
-    patterns: [/^glm[-_ ]?5\.3$/i],
+    patterns: [/^glm[-_. ]?5[.-]3$/i],
     cacheHit: 2.0,
     cacheWrite: 0,
     input: 8.0,
     output: 28.0,
     context: 1_000_000,
     currency: "CNY",
+  },
+  {
+    // Official BigModel [0, 32K) standard tier (>=32K uses ¥8 / ¥28 / ¥2).
+    id: "glm-5.1",
+    patterns: [/^glm[-_. ]?5[.-]1$/i],
+    cacheHit: 1.3,
+    cacheWrite: 0,
+    input: 6.0,
+    output: 24.0,
+    context: 202_752,
+    currency: "CNY",
+  },
+  {
+    id: "glm-5-turbo",
+    patterns: [/^glm[-_. ]?5[-_. ]?turbo$/i],
+    cacheHit: 1.2,
+    cacheWrite: 0,
+    input: 5.0,
+    output: 22.0,
+    context: 200_000,
+    currency: "CNY",
+  },
+  {
+    id: "glm-4.7-flashx",
+    patterns: [/^glm[-_. ]?4[.-]7[-_. ]?flashx$/i],
+    cacheHit: 0.1,
+    cacheWrite: 0,
+    input: 0.5,
+    output: 3.0,
+    context: 200_000,
+    currency: "CNY",
+  },
+  {
+    // Official BigModel [0, 32K) standard tier.
+    id: "glm-4.7",
+    patterns: [/^glm[-_. ]?4[.-]7$/i],
+    cacheHit: 0.6,
+    cacheWrite: 0,
+    input: 3.0,
+    output: 14.0,
+    context: 204_800,
+    currency: "CNY",
+  },
+  {
+    id: "glm-4.6",
+    patterns: [/^glm[-_. ]?4[.-]6$/i],
+    cacheHit: 0.11,
+    cacheWrite: 0,
+    input: 0.6,
+    output: 2.2,
+    context: 204_800,
+    currency: "USD",
   },
 ];
 
@@ -332,6 +439,16 @@ const ZHIPU_PRICES = [
  * https://www.alibabacloud.com/help/en/model-studio/model-pricing
  */
 const QWEN_PRICES = [
+  {
+    id: "qwen4-max",
+    patterns: [/^qwen4[-_ ]?max$/i],
+    cacheHit: 0.075,
+    cacheWrite: 1.875,
+    input: 1.5,
+    output: 4.5,
+    context: 1_000_000,
+    currency: "USD",
+  },
   {
     id: "qwen3.8-max-preview",
     patterns: [/^qwen3\.8[-_ ]?max(?:[-_ ]?preview)?$/i],
@@ -362,6 +479,16 @@ const QWEN_PRICES = [
     cacheWrite: 3.125,
     input: 2.5,
     output: 7.5,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "qwen3.7-flash",
+    patterns: [/^qwen3\.7[-_ ]?flash$/i],
+    cacheHit: 0.006,
+    cacheWrite: 0.0375,
+    input: 0.03,
+    output: 0.13,
     context: 1_000_000,
     currency: "USD",
   },
@@ -434,6 +561,15 @@ const QWEN_PRICES = [
  */
 const MINIMAX_PRICES = [
   {
+    id: "minimax-m3.1-flash",
+    patterns: [/^minimax[-_ ]?m3\.1[-_ ]?flash$/i],
+    cacheHit: 0.015,
+    input: 0.15,
+    output: 0.6,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
     id: "minimax-m3",
     patterns: [/^minimax[-_ ]?m3$/i],
     cacheHit: 0.42,
@@ -441,6 +577,16 @@ const MINIMAX_PRICES = [
     output: 8.4,
     context: 1_000_000,
     currency: "CNY",
+  },
+  {
+    id: "minimax-m2.7-highspeed",
+    patterns: [/^minimax[-_ ]?m2\.7[-_ ]?highspeed$/i],
+    cacheHit: 0.06,
+    cacheWrite: 0.375,
+    input: 0.6,
+    output: 2.4,
+    context: 204_800,
+    currency: "USD",
   },
   {
     id: "minimax-m2.7",
@@ -452,12 +598,21 @@ const MINIMAX_PRICES = [
     context: 1_000_000,
     currency: "USD",
   },
+  {
+    id: "minimax-m2.5",
+    patterns: [/^minimax[-_ ]?m2\.5$/i],
+    cacheHit: 0.03,
+    cacheWrite: 0.375,
+    input: 0.3,
+    output: 1.2,
+    context: 204_800,
+    currency: "USD",
+  },
 ];
 
 /**
- * Additional Chinese-vendor ids recorded by dsh plugins but absent from the
- * BigModel/Kimi tables above. Sources note the vendor attribution where it is
- * not officially published.
+ * Additional vendor ids recorded by gateway / dsh plugins absent from the
+ * tables above.
  */
 const VENDOR_EXTRA_PRICES = [
   {
@@ -481,17 +636,171 @@ const VENDOR_EXTRA_PRICES = [
     currency: "CNY",
   },
   {
+    // Hy4 / hy4-preview: OpenCode Go / Tencent TokenHub catalog rate ($0.834/$2.501/$0.042).
+    id: "hy4",
+    patterns: [/^hy4(?:[-_]preview)?$/i],
+    cacheHit: 0.042,
+    input: 0.834,
+    output: 2.501,
+    context: 1_048_576,
+    estimated: true,
+    currency: "USD",
+  },
+  {
     // dsh's buddy plugin records the bare code "hy3". DSH's own cost meter
     // books it under Tencent at the OpenCode Go catalog rate and marks the
     // vendor attribution as unpublished — mirrored here so the number agrees.
     id: "hy3",
-    patterns: [/^hy3(?:-x)?$/i, /^hy4[-_]preview$/i],
+    patterns: [/^hy3(?:-x)?$/i],
     cacheHit: 0.035,
     cacheWrite: 0.14,
     input: 0.14,
     output: 0.58,
     context: 192_000,
     estimated: true,
+    currency: "USD",
+  },
+  {
+    id: "step-5-preview",
+    patterns: [/^step[-_ ]?5(?:[-_ ]?preview)?$/i],
+    cacheHit: 0.1,
+    input: 1.0,
+    output: 2.7,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "mimo-v2.6-pro",
+    patterns: [/^mimo[-_ ]?v2\.6[-_ ]?pro$/i],
+    cacheHit: 0.0036,
+    input: 0.435,
+    output: 0.87,
+    context: 1_048_576,
+    currency: "USD",
+  },
+  {
+    id: "mimo-v2.6-flash",
+    patterns: [/^mimo[-_ ]?v2\.6[-_ ]?flash$/i],
+    cacheHit: 0.0028,
+    input: 0.14,
+    output: 0.28,
+    context: 1_048_576,
+    currency: "USD",
+  },
+];
+
+/**
+ * Official xAI Grok API prices (USD per 1M tokens).
+ * Source: https://docs.x.ai/developers/pricing
+ * Long-context requests (>= 200K input tokens) scale input & cache 2x and output 2x
+ * (1.5x for Fast infrastructure tiers).
+ */
+const XAI_PRICES = [
+  {
+    // Cursor / Grok Build 2x infrastructure tier (must precede bare grok-4.7).
+    id: "grok-4.7-fast",
+    patterns: [/^grok[-_ ]?4\.7.*[-_ ]fast$/i, /grok[-_ ]?4\.7.*fast/i],
+    cacheHit: 1.0,
+    input: 4.0,
+    output: 12.0,
+    context: 500_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 1.5,
+    longContextOutputMultiplier: 1.5,
+    currency: "USD",
+  },
+  {
+    id: "grok-4.7",
+    patterns: [/^grok[-_ ]?4\.7(?:[-_ ]?(?:xhigh|high|medium|low|minimal))?$/i],
+    cacheHit: 0.5,
+    input: 2.0,
+    output: 6.0,
+    context: 500_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 2,
+    currency: "USD",
+  },
+  {
+    id: "grok-4.6",
+    patterns: [/^grok[-_ ]?4\.6(?:[-_ ]?(?:xhigh|high|medium|low|minimal))?$/i],
+    cacheHit: 0.5,
+    input: 2.0,
+    output: 6.0,
+    context: 500_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 2,
+    currency: "USD",
+  },
+  {
+    id: "grok-4.3",
+    patterns: [/^grok[-_ ]?4\.3$/i],
+    cacheHit: 0.2,
+    input: 1.25,
+    output: 2.5,
+    context: 1_000_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 2,
+    currency: "USD",
+  },
+  {
+    id: "grok-4.20",
+    patterns: [/^grok[-_ ]?4\.20(?:[-_ ].*)?$/i],
+    cacheHit: 0.2,
+    input: 1.25,
+    output: 2.5,
+    context: 1_000_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 2,
+    currency: "USD",
+  },
+  {
+    id: "grok-4.1-fast",
+    patterns: [/^grok[-_ ]?4\.1[-_ ]?fast(?:[-_ ].*)?$/i],
+    cacheHit: 0.05,
+    input: 0.2,
+    output: 0.5,
+    context: 128_000,
+    currency: "USD",
+  },
+  {
+    id: "grok-build-0.1",
+    patterns: [/^grok[-_ ]?build[-_ ]?0\.1$/i],
+    cacheHit: 0.2,
+    input: 1.0,
+    output: 2.0,
+    context: 256_000,
+    longContextThreshold: 199_999,
+    longContextInputMultiplier: 2,
+    longContextOutputMultiplier: 2,
+    currency: "USD",
+  },
+];
+
+/**
+ * Official Cursor Composer prices (USD per 1M tokens).
+ * Source: https://cursor.com/docs/models
+ */
+const CURSOR_PRICES = [
+  {
+    id: "composer-2.5-fast",
+    patterns: [/^composer[-_ ]?2\.5[-_ ]?fast$/i],
+    cacheHit: 0.5,
+    input: 3.0,
+    output: 15.0,
+    context: 200_000,
+    currency: "USD",
+  },
+  {
+    id: "composer-2.5",
+    patterns: [/^composer[-_ ]?2\.5(?:[-_ ]?standard)?$/i],
+    cacheHit: 0.2,
+    input: 0.5,
+    output: 2.5,
+    context: 200_000,
     currency: "USD",
   },
 ];
@@ -504,6 +813,8 @@ const ALL_PRICE_TABLES = () => [
   ...QWEN_PRICES,
   ...MINIMAX_PRICES,
   ...VENDOR_EXTRA_PRICES,
+  ...XAI_PRICES,
+  ...CURSOR_PRICES,
   ...OPENAI_PRICES,
   ...CLAUDE_PRICES,
 ];
@@ -527,10 +838,48 @@ const FALLBACK_PRICE = {
  */
 const OPENAI_PRICES = [
   {
+    // Released 2026-11-17: 20% cheaper than GPT-6 Astra; 272K long-context tier, 30m/12h cache writes.
+    id: "gpt-6.2-astra",
+    patterns: [/gpt[_-]?6\.2[_-]?astra(?:[_-]?healthcare)?/i],
+    cacheHit: 0.4,
+    cacheWrite: 10.0,
+    cacheWriteLong: 20.0,
+    input: 8.0,
+    output: 40.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-6.2-sol",
+    patterns: [/gpt[_-]?6\.2[_-]?sol(?:[_-]?healthcare)?/i, /^gpt[_-]?6\.2$/i],
+    cacheHit: 0.1,
+    cacheWrite: 2.5,
+    cacheWriteLong: 5.0,
+    input: 2.0,
+    output: 10.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
+  {
+    // Computer-use / visual reasoning fast tier (must precede gpt-6.1-sol).
+    id: "gpt-6.1-terra",
+    patterns: [/gpt[_-]?6\.1[_-]?terra/i],
+    cacheHit: 0.05,
+    cacheWrite: 1.25,
+    cacheWriteLong: 2.5,
+    input: 1.0,
+    output: 5.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
+  {
     // Long-context tier assumed to match the rest of the GPT-6 generation
     // (272K threshold). Prompt-cache writes are 30m / 12h.
     id: "gpt-6.1-sol",
-    patterns: [/gpt[_-]?6\.1([_-]?sol)?$/i, /gpt[_-]?6\.1[_-]?sol/i, /^gpt[_-]?6\.1$/i],
+    patterns: [/gpt[_-]?6\.1([_-]?sol)?$/i, /gpt[_-]?6\.1[_-]?sol(?:[_-]?healthcare)?/i, /^gpt[_-]?6\.1$/i],
     cacheHit: 0.1,
     cacheWrite: 2.5,
     cacheWriteLong: 5.0,
@@ -613,12 +962,122 @@ const OPENAI_PRICES = [
     currency: "USD",
   },
   {
+    id: "gpt-5.5",
+    patterns: [/^gpt[_-]?5\.5$/i, /gpt[_-]?5\.5[_-]?chat/i],
+    cacheHit: 0.5,
+    input: 5.0,
+    output: 30.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5.4-mini",
+    patterns: [/gpt[_-]?5\.4[_-]?mini/i],
+    cacheHit: 0.075,
+    input: 0.75,
+    output: 4.5,
+    context: 400_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5.4-nano",
+    patterns: [/gpt[_-]?5\.4[_-]?nano/i],
+    cacheHit: 0.02,
+    input: 0.2,
+    output: 1.25,
+    context: 400_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5.4",
+    patterns: [/^gpt[_-]?5\.4$/i],
+    cacheHit: 0.25,
+    input: 2.5,
+    output: 15.0,
+    context: 1_050_000,
+    longContextThreshold: 272_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5.3-codex",
+    patterns: [/gpt[_-]?5\.3[_-]?codex/i, /^gpt[_-]?5\.2(?:[_-]?codex)?$/i],
+    cacheHit: 0.175,
+    input: 1.75,
+    output: 14.0,
+    context: 400_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5-mini",
+    patterns: [/gpt[_-]?5[_-]?mini/i],
+    cacheHit: 0.025,
+    input: 0.25,
+    output: 2.0,
+    context: 400_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-5-nano",
+    patterns: [/gpt[_-]?5[_-]?nano/i],
+    cacheHit: 0.005,
+    input: 0.05,
+    output: 0.4,
+    context: 400_000,
+    currency: "USD",
+  },
+  {
     id: "gpt-5",
     patterns: [/gpt[_-]?5/i, /o[34][-_]?mini/i],
     cacheHit: 0.125,
     input: 1.25,
     output: 10.0,
     context: 400_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-4.1-mini",
+    patterns: [/gpt[_-]?4\.1[_-]?mini/i],
+    cacheHit: 0.1,
+    input: 0.4,
+    output: 1.6,
+    context: 1_047_576,
+    currency: "USD",
+  },
+  {
+    id: "gpt-4.1",
+    patterns: [/^gpt[_-]?4\.1$/i],
+    cacheHit: 0.5,
+    input: 2.0,
+    output: 8.0,
+    context: 1_047_576,
+    currency: "USD",
+  },
+  {
+    id: "gpt-4o-mini",
+    patterns: [/gpt[_-]?4o[_-]?mini/i],
+    cacheHit: 0.075,
+    input: 0.15,
+    output: 0.6,
+    context: 128_000,
+    currency: "USD",
+  },
+  {
+    id: "gpt-4o",
+    patterns: [/^gpt[_-]?4o(?:[-_ ].*)?$/i],
+    cacheHit: 1.25,
+    input: 2.5,
+    output: 10.0,
+    context: 128_000,
+    currency: "USD",
+  },
+  {
+    id: "o3",
+    patterns: [/^o3$/i],
+    cacheHit: 0.5,
+    input: 2.0,
+    output: 8.0,
+    context: 200_000,
     currency: "USD",
   },
   {
@@ -637,12 +1096,34 @@ const OPENAI_PRICES = [
  * Official Anthropic list prices (USD per 1M tokens), used by the Claude Code
  * provider. Sources: https://www.anthropic.com/pricing and
  * https://platform.claude.com/docs/en/docs/about-claude/models/overview
- * (2026-09 lineup: Fable/Mythos 5, Opus 5, Sonnet 5, Haiku 4.5).
- * Cache write defaults to 1.25× input; cache read is 10% on older models,
- * 5% on Opus 5.5, and 2.5% on Fable/Mythos 5.1. Specific versions precede
- * the generic family row — first match wins.
+ * (2026-11 lineup: Fable/Mythos 5.2, Opus 5.5, Sonnet 5.5, Haiku 5.5).
+ * 5min cache write = 1.25× input; 1h cache write = 2× input; cache read = 10%
+ * on older models, 5% on 5.5, and 2.5% on Fable/Mythos 5.1/5.2.
+ * Specific versions precede the generic family row — first match wins.
  */
 const CLAUDE_PRICES = [
+  {
+    // Released 2026-11-09: 20% cheaper than Fable 5.1 ($8/$40, cacheHit $0.20, 5m $10, 1h $16).
+    // Trailing word-date boundary prevents matching "claude-fable-5-20260301".
+    id: "claude-fable-5-2",
+    patterns: [/claude[_ -]?(?:fable|mythos)[_ -]?5[._ -]?2(?:$|[^0-9])/i],
+    cacheHit: 0.2,
+    cacheWrite: 10.0,
+    input: 8.0,
+    output: 40.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-fable-5-1",
+    patterns: [/claude[_ -]?(?:fable|mythos)[_ -]?5[._ -]?1(?:$|[^0-9])/i],
+    cacheHit: 0.25,
+    cacheWrite: 12.5,
+    input: 10.0,
+    output: 50.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
   {
     id: "claude-fable-5",
     // Mythos 5 shares Fable 5's specs and pricing (invitation-only preview).
@@ -678,6 +1159,16 @@ const CLAUDE_PRICES = [
     currency: "USD",
   },
   {
+    id: "claude-sonnet-5-5",
+    patterns: [/claude[_ -]?sonnet[_ -]?5[._ -]?5(?:$|[^0-9])/i],
+    cacheHit: 0.1,
+    cacheWrite: 2.5,
+    input: 2.0,
+    output: 10.0,
+    context: 1_000_000,
+    currency: "USD",
+  },
+  {
     id: "claude-sonnet-5",
     patterns: [/claude[_ -]?sonnet[_ -]?5/i],
     cacheHit: 0.2,
@@ -685,6 +1176,20 @@ const CLAUDE_PRICES = [
     input: 2.0,
     output: 10.0,
     context: 1_000_000,
+    currency: "USD",
+  },
+  {
+    id: "claude-haiku-5-5",
+    // Prompts >100K scale all components 5x ($0.50/$2.50, cacheHit $0.05).
+    patterns: [/claude[_ -]?haiku[_ -]?5[._ -]?5(?:$|[^0-9])/i],
+    cacheHit: 0.01,
+    cacheWrite: 0.125,
+    input: 0.1,
+    output: 0.5,
+    context: 1_000_000,
+    longContextThreshold: 100_000,
+    longContextInputMultiplier: 5,
+    longContextOutputMultiplier: 5,
     currency: "USD",
   },
   {
@@ -741,7 +1246,7 @@ const CLAUDE_PRICES = [
     context: 200_000,
     currency: "USD",
   },
-].map((row) => ({ ...row, cacheWriteLong: row.cacheWrite * 2 }));
+].map((row) => ({ ...row, cacheWriteLong: row.cacheWriteLong ?? row.input * 2 }));
 
 /** Find the first matching price row for a model id (first match wins). */
 function rowFor(name) {
@@ -865,8 +1370,8 @@ function priceForCell(modelName, rateKey, options = {}) {
     inputMult = off;
     outputMult = off;
   } else if (rateKey === "long") {
-    inputMult = 2;
-    outputMult = 1.5;
+    inputMult = row.longContextInputMultiplier || 2;
+    outputMult = row.longContextOutputMultiplier || 1.5;
   }
   const official = {
     id: row.id,
@@ -918,7 +1423,11 @@ function longContextPricing(row, inputTokens) {
   if (!row.longContextThreshold || !Number.isFinite(tokens) || tokens <= row.longContextThreshold) {
     return { inputMultiplier: 1, outputMultiplier: 1, tier: "standard" };
   }
-  return { inputMultiplier: 2, outputMultiplier: 1.5, tier: "long-context" };
+  return {
+    inputMultiplier: row.longContextInputMultiplier || 2,
+    outputMultiplier: row.longContextOutputMultiplier || 1.5,
+    tier: "long-context",
+  };
 }
 
 function normalizedFallbackPrice(fxRate, match) {
@@ -1143,13 +1652,17 @@ function priceSourceUrl(p) {
       ? "https://developers.openai.com/api/docs/pricing"
       : `https://developers.openai.com/api/docs/models/${p.id}`;
   }
+  if (XAI_PRICES.includes(p)) return "https://docs.x.ai/developers/pricing";
+  if (CURSOR_PRICES.includes(p)) return "https://cursor.com/docs/models";
   if (p.offPeakMultiplier) return "https://api-docs.deepseek.com/quick_start/pricing/";
   if (CLAUDE_PRICES.includes(p)) return "https://platform.claude.com/docs/en/docs/about-claude/models/overview";
   if (ZHIPU_PRICES.includes(p)) return "https://docs.bigmodel.cn/cn/guide/models";
   if (GOOGLE_PRICES.includes(p)) return "https://ai.google.dev/gemini-api/docs/pricing";
   if (QWEN_PRICES.includes(p)) return "https://www.alibabacloud.com/help/en/model-studio/model-pricing";
   if (MINIMAX_PRICES.includes(p)) return "https://platform.minimaxi.com/document/Price";
-  if (p.id === "hy3") return "https://models.dev/models/tencent/hy3";
+  if (p.id === "hy3" || p.id === "hy4") return `https://models.dev/models/tencent/${p.id}`;
+  if (p.id.startsWith("step-")) return "https://platform.stepfun.com/";
+  if (p.id.startsWith("mimo-")) return "https://opencode.ai/docs/go";
   if (VENDOR_EXTRA_PRICES.includes(p)) return "https://docs.bigmodel.cn/cn/guide/models";
   return "https://platform.kimi.com/docs/pricing/chat";
 }
@@ -1192,6 +1705,8 @@ module.exports = {
   QWEN_PRICES,
   MINIMAX_PRICES,
   VENDOR_EXTRA_PRICES,
+  XAI_PRICES,
+  CURSOR_PRICES,
   OPENAI_PRICES,
   CLAUDE_PRICES,
   FALLBACK_PRICE,

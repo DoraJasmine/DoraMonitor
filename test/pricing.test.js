@@ -437,4 +437,51 @@ describe("pricing", () => {
       assert.equal(p.estimated, false, display);
     }
   });
+
+  it("covers the latest GPT-6.2/6.1-terra, GLM-5.x, Grok-4.x, Composer-2.5, Kimi K2.8 and Hy4 rows", () => {
+    const astra62 = matchPrice("gpt-6.2-astra", { fxRate: 7.2 });
+    assert.deepEqual([astra62.id, astra62.input, astra62.cacheHit, astra62.output, astra62.estimated],
+      ["gpt-6.2-astra", 8 * 7.2, 0.4 * 7.2, 40 * 7.2, false]);
+    const sol62 = matchPrice("gpt-6.2-sol", { fxRate: 7.2 });
+    assert.deepEqual([sol62.id, sol62.input, sol62.cacheHit, sol62.output, sol62.estimated],
+      ["gpt-6.2-sol", 2 * 7.2, 0.1 * 7.2, 10 * 7.2, false]);
+    const terra61 = matchPrice("gpt-6.1-terra", { fxRate: 7.2 });
+    assert.deepEqual([terra61.id, terra61.input, terra61.cacheHit, terra61.output, terra61.estimated],
+      ["gpt-6.1-terra", 1 * 7.2, 0.05 * 7.2, 5 * 7.2, false]);
+    const gpt55 = matchPrice("gpt-5.5", { fxRate: 7.2 });
+    assert.deepEqual([gpt55.id, gpt55.input, gpt55.output, gpt55.estimated],
+      ["gpt-5.5", 5 * 7.2, 30 * 7.2, false]);
+
+    for (const k28 of ["K2.8-Preview-256k", "K2.8 Preview 512k", "kimi-k2.8-preview"]) {
+      const p = matchPrice(k28, { fxRate: 7.2 });
+      assert.equal(p.id, "kimi-k2.8-preview", k28);
+      assert.equal(p.input, 6.5, k28);
+      assert.equal(p.output, 27.0, k28);
+      assert.equal(p.estimated, false, k28);
+    }
+
+    const grok = matchPrice("grok-4.7-xhigh", { fxRate: 7.2 });
+    assert.deepEqual([grok.id, grok.input, grok.cacheHit, grok.output, grok.estimated],
+      ["grok-4.7", 2 * 7.2, 0.5 * 7.2, 6 * 7.2, false]);
+    const grokLong = matchPrice("grok-4.7", { fxRate: 7.2, inputTokens: 210_000 });
+    assert.equal(grokLong.output, 12 * 7.2);
+    const grokFast = matchPrice("grok-4.7-xhigh-fast", { fxRate: 7.2 });
+    assert.deepEqual([grokFast.id, grokFast.input, grokFast.cacheHit, grokFast.output, grokFast.estimated],
+      ["grok-4.7-fast", 4 * 7.2, 1 * 7.2, 12 * 7.2, false]);
+
+    const compStd = matchPrice("composer-2.5", { fxRate: 7.2 });
+    assert.deepEqual([compStd.id, compStd.input, compStd.cacheHit, compStd.output, compStd.estimated],
+      ["composer-2.5", 0.5 * 7.2, 0.2 * 7.2, 2.5 * 7.2, false]);
+    const compFast = matchPrice("composer-2.5-fast", { fxRate: 7.2 });
+    assert.deepEqual([compFast.id, compFast.input, compFast.output, compFast.estimated],
+      ["composer-2.5-fast", 3 * 7.2, 15 * 7.2, false]);
+
+    const glm54 = matchPrice("glm-5.4", { fxRate: 7.2 });
+    assert.deepEqual([glm54.id, glm54.input, glm54.output, glm54.estimated], ["glm-5.4", 8, 28, true]);
+    const glm53x = matchPrice("glm-5.3-flashx", { fxRate: 7.2 });
+    assert.deepEqual([glm53x.id, glm53x.input, glm53x.output, glm53x.estimated], ["glm-5.3-flashx", 2, 7, false]);
+    const glm47 = matchPrice("glm-4.7", { fxRate: 7.2 });
+    assert.deepEqual([glm47.id, glm47.input, glm47.output, glm47.estimated], ["glm-4.7", 3, 14, false]);
+    assert.equal(matchPrice("hy4-preview", { fxRate: 7.2 }).id, "hy4");
+  });
 });
