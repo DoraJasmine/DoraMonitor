@@ -145,7 +145,7 @@ function CcSwitchCard({ t, locale }) {
             <p className="mt-1 text-xs">{t("ccSwitchConflictResume")}</p>
           </div>
         )}
-        {!paused && Object.keys(status.watermarks || {}).length > 0 && (
+        {!paused && status && Object.keys(status.watermarks || {}).length > 0 && (
           <div role="status" className="mb-4 rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
             <strong className="text-foreground">{t("ccSwitchCoexistTitle")}</strong>
             <p className="mt-1 text-xs">{fill(t("ccSwitchCoexistDetail"), {
