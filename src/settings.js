@@ -63,6 +63,10 @@ const DEFAULTS = {
     enabled: false, // bridge multi-device usage into CC Switch's cc-switch.db
     dbPath: "", // defaults to ~/.cc-switch/cc-switch.db
     includeLocal: false, // also write THIS machine's usage (duplicates CC Switch's own collector — off by default)
+    interval: 60, // standalone bridge write cadence (seconds); each sync round also writes immediately
+  },
+  scan: {
+    interval: 30, // local usage scan cadence (seconds) — daemon tick; collect is incremental & cached
   },
 };
 
@@ -176,6 +180,12 @@ function sanitizeSettings(raw) {
       enabled: c.enabled === true,
       dbPath: String(c.dbPath || "").trim().slice(0, 500),
       includeLocal: c.includeLocal === true,
+      interval: clampInt(c.interval, 30, 3600, DEFAULTS.ccSwitch.interval),
+    };
+  }
+  if (raw.scan && typeof raw.scan === "object") {
+    out.scan = {
+      interval: clampInt(raw.scan.interval, 10, 600, DEFAULTS.scan.interval),
     };
   }
   if (Array.isArray(raw.customPrices)) {

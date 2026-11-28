@@ -8,12 +8,13 @@ import { ccSwitchSyncNow, fetchCcSwitchStatus, fetchSettings, fetchSyncStatus, s
 import { fill } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-function toForm(sync = {}) {
+function toForm(sync = {}, scan = {}) {
   return {
     enabled: sync.enabled === true,
     backend: sync.backend || "ssh",
     deviceName: sync.deviceName || "",
     syncInterval: String(sync.syncInterval || 300),
+    scanInterval: String(scan.interval || 30),
     local: { path: sync.local?.path || "" },
     ssh: {
       host: sync.ssh?.host || "",
@@ -70,7 +71,7 @@ function SyncStatus({ connection, t, locale }) {
 
 /** CC Switch bridge section: toggle + status + ccs-ssh-sync conflict notice. */
 function CcSwitchCard({ t, locale }) {
-  const [form, setForm] = useState({ enabled: false, dbPath: "", includeLocal: false });
+  const [form, setForm] = useState({ enabled: false, dbPath: "", includeLocal: false, interval: "60" });
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -83,6 +84,7 @@ function CcSwitchCard({ t, locale }) {
         enabled: settings.ccSwitch?.enabled === true,
         dbPath: settings.ccSwitch?.dbPath || "",
         includeLocal: settings.ccSwitch?.includeLocal === true,
+        interval: String(settings.ccSwitch?.interval || 60),
       });
       if (st) setStatus(st);
     } catch (e) {
@@ -99,11 +101,12 @@ function CcSwitchCard({ t, locale }) {
     setNote(null);
     setBusy(withRun ? "run" : "save");
     try {
-      const saved = await saveSettings({ ccSwitch: { ...form } });
+      const saved = await saveSettings({ ccSwitch: { ...form, interval: Number(form.interval) } });
       setForm({
         enabled: saved.ccSwitch?.enabled === true,
         dbPath: saved.ccSwitch?.dbPath || "",
         includeLocal: saved.ccSwitch?.includeLocal === true,
+        interval: String(saved.ccSwitch?.interval || 60),
       });
       if (!withRun) {
         setNote(t("saved"));
@@ -182,7 +185,19 @@ function CcSwitchCard({ t, locale }) {
                 onChange={(event) => setForm((c) => ({ ...c, dbPath: event.target.value }))}
               />
             </label>
-            <label className="flex items-end gap-2 pb-1 text-sm">
+            <label className="block space-y-1.5 text-sm">
+              <span className="font-medium">{t("ccSwitchInterval")}</span>
+              <Input
+                type="number"
+                min="30"
+                step="1"
+                value={form.interval}
+                disabled={Boolean(busy)}
+                onChange={(event) => setForm((c) => ({ ...c, interval: event.target.value }))}
+              />
+              <span className="block text-xs font-normal text-muted-foreground">{t("ccSwitchIntervalHint")}</span>
+            </label>
+            <label className="flex items-end gap-2 pb-1 text-sm sm:col-span-2">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
@@ -267,7 +282,7 @@ export default function SyncSettingsPage({ t, locale, onSaved, onSynced }) {
     setError(null);
     try {
       const [settings, current] = await Promise.all([fetchSettings(), fetchSyncStatus().catch(() => null)]);
-      setForm(toForm(settings.sync));
+      setForm(toForm(settings.sync, settings.scan));
       setHasPassword(settings.sync?.webdav?.hasPassword === true);
       setConnection(current);
     } catch (e) {
@@ -299,16 +314,17 @@ export default function SyncSettingsPage({ t, locale, onSaved, onSynced }) {
       setError(t("syncRequiredFields"));
       return;
     }
+    const { scanInterval, ...syncForm } = form;
     const sync = {
-      ...form,
+      ...syncForm,
       syncInterval: Number(form.syncInterval),
       ssh: { ...form.ssh, port: Number(form.ssh.port) },
     };
     if (!sync.webdav.password && hasPassword) delete sync.webdav.password;
     setBusy(withSync ? "sync" : "save");
     try {
-      const saved = await saveSettings({ sync });
-      setForm(toForm(saved.sync));
+      const saved = await saveSettings({ sync, scan: { interval: Number(scanInterval) } });
+      setForm(toForm(saved.sync, saved.scan));
       setHasPassword(saved.sync?.webdav?.hasPassword === true);
       const savedStatus = await fetchSyncStatus().catch(() => null);
       if (savedStatus) setConnection(savedStatus);
@@ -377,6 +393,9 @@ export default function SyncSettingsPage({ t, locale, onSaved, onSynced }) {
                 </Field>
                 <Field label={t("syncInterval")} hint={t("syncIntervalHint")}>
                   <Input type="number" min="30" step="1" value={form.syncInterval} disabled={Boolean(busy)} onChange={(event) => update("syncInterval", event.target.value)} />
+                </Field>
+                <Field label={t("scanInterval")} hint={t("scanIntervalHint")}>
+                  <Input type="number" min="10" step="1" value={form.scanInterval} disabled={Boolean(busy)} onChange={(event) => update("scanInterval", event.target.value)} />
                 </Field>
               </div>
 

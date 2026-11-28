@@ -265,6 +265,7 @@ function runDaemon(opts) {
   // Periodic cross-device sync (non-blocking; failures never break status).
   const { loadSettings } = require("./settings");
   let lastSync = 0;
+  let lastBridgeRun = 0;
   const maybeSync = () => {
     const syncCfg = loadSettings().sync || {};
     const syncEvery = Math.max(60, Number(syncCfg.syncInterval) || 300) * 1000;
@@ -296,6 +297,7 @@ function runDaemon(opts) {
         try {
           const ccCfg = loadSettings().ccSwitch || {};
           if (ccCfg.enabled) {
+            lastBridgeRun = Date.now(); // the post-sync write resets the timer
             const { runBridge } = require("./ccswitch-bridge");
             runBridge();
           }
@@ -312,7 +314,42 @@ function runDaemon(opts) {
   maybeSync();
   setInterval(maybeSync, 60_000);
 
-  setInterval(tick, opts.interval * 1000);
+  // CC Switch bridge: its own cadence (ccSwitch.interval, default 60s) so a
+  // write never has to wait for the next multi-device sync round. The
+  // post-sync hook above refreshes lastBridgeRun, so a sync-round write and
+  // the timer never double-write (runBridge is idempotent anyway).
+  const maybeBridge = () => {
+    try {
+      const ccCfg = loadSettings().ccSwitch || {};
+      if (!ccCfg.enabled) return;
+      const every = Math.max(30, Number(ccCfg.interval) || 60) * 1000;
+      if (Date.now() - lastBridgeRun < every) return;
+      lastBridgeRun = Date.now();
+      const { runBridge } = require("./ccswitch-bridge");
+      runBridge();
+    } catch (e) {
+      console.error(`ccswitch 桥接失败: ${e && e.message ? e.message : e}`);
+    }
+  };
+  setInterval(maybeBridge, 30_000);
+
+  // Local usage scan cadence (scan.interval, default 30s): a 5s scheduler
+  // re-reads the setting each beat, so changes on the settings page apply
+  // without a daemon restart. The collect call itself is incremental
+  // (stamp probe + 15s TTL cache), so short intervals stay cheap.
+  let lastTickAt = Date.now();
+  setInterval(() => {
+    let scanEvery = 30;
+    try {
+      scanEvery = Math.max(10, Number(loadSettings().scan && loadSettings().scan.interval) || 30);
+    } catch {
+      /* keep default cadence when settings are unreadable */
+    }
+    if (Date.now() - lastTickAt >= scanEvery * 1000) {
+      lastTickAt = Date.now();
+      tick();
+    }
+  }, 5000);
   console.log(`DoraMonitor daemon: pid ${process.pid}，每 ${opts.interval}s 写入 ${target}；每 60s 采样额度并检查同步设置`);
 }
 

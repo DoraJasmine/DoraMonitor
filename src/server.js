@@ -803,6 +803,9 @@ async function handleApi(req, res, url, cliHome, bindHost = DEFAULT_HOST) {
         ccSwitch: body.ccSwitch
           ? { ...current.ccSwitch, ...body.ccSwitch }
           : current.ccSwitch,
+        scan: body.scan
+          ? { ...current.scan, ...body.scan }
+          : current.scan,
       };
       const saved = saveSettings(merged);
       // Costs are computed during scans — force a full rescan so every saved

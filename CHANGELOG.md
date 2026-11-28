@@ -12,6 +12,7 @@
   - 费用实时读取 CC Switch 自带 `model_pricing` 表按 BigInt 定点计算 USD 分项（`src/ccswitch-pricing.js`，与 CC Switch 原生行口径完全一致）；Codex/Gemini 按 `TOTAL` 输入语义回填总输入；
   - **ccs-ssh-sync 冲突自动暂停**：检测到 ccs-ssh-sync 守护进程运行或库中已有 `remote_sync` 数据时，桥接即使启用也自动暂停并在设置页显示琥珀色横幅（「立即写入」置灰），冲突消失后下一同步周期自动恢复；
   - 本机用量默认不写入（`includeLocal` 可选，避免与 CC Switch 原生采集重复计费）；daemon 每轮多设备同步成功后自动执行，UI/CLI 可手动触发。
+- **节奏设置**（/sync 页）：新增「本机扫描间隔」（`scan.interval`，10–600s，默认 30——daemon 采集节拍，增量式短间隔低开销）与「CC Switch 写入间隔」（`ccSwitch.interval`，30–3600s，默认 60——桥接独立定时写入，每轮同步成功后仍立即写入）；对端主机在其自身设置页配置自己的节奏。daemon 周期同步去掉强制全量重扫，60s 短周期下开销依然很低。
   - **与 ccs-ssh-sync 共存（时间水位线增量续写）**：以对方行（`remote_sync`）的每工具 `MAX(created_at)` 为续写起点——水位线之前的请求视为已写入，只写其后；水位线单调持久（30 天归档剪枝不回退）；边界请求（+120s 内）按指纹（app + 归一化模型 + tokens + ±10s 时间容差）核对去重，吸收两个项目时间戳来源差异。数据级冲突**不再暂停**（随时切换、无需 reset），仅 ccs-ssh-sync 守护进程运行时暂停；`doramonitor ccswitch watermark-reset` 可在对方数据被手工清理后重置水位线。
 - **请求耗时/速度/首字全链路**：记录契约新增 `latencyMs`/`firstTokenMs`/`durationMs`（`src/record-schema.js`），本地采集器补齐 timing 计算（移植 CC Switch 算法）：
   - Claude Code：`parentUuid` 父链 + `api-request` 起点回溯 + `thinkingDurationMs` 估算 TTFT；

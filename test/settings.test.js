@@ -37,3 +37,12 @@ test("kimi api keys are trimmed, length-capped and stored per account", () => {
   assert.equal(settings.quotaAccounts[0].apiKey, "sk-a");
   assert.equal(settings.quotaAccounts[1].apiKey, ""); // non-string becomes empty
 });
+
+test('scan and ccSwitch intervals are clamped to sane ranges', () => {
+  const s = sanitizeSettings({ scan: { interval: 5 }, ccSwitch: { interval: 9999 } });
+  assert.equal(s.scan.interval, 10, 'scan clamps low at 10s');
+  assert.equal(s.ccSwitch.interval, 3600, 'ccSwitch clamps high at 3600s');
+  assert.equal(sanitizeSettings({ scan: { interval: 999 } }).scan.interval, 600);
+  assert.equal(sanitizeSettings({ scan: {} }).scan.interval, 30, 'scan default 30s');
+  assert.equal(sanitizeSettings({}).ccSwitch.interval, 60, 'ccSwitch default 60s');
+});
