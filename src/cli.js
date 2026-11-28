@@ -276,8 +276,11 @@ function runDaemon(opts) {
       .then(() => {
         const { collect } = require("./collect");
         const { runSync: run } = require("./sync");
+        // No force: with short sync intervals the stamp probe keeps unchanged
+        // tools on their caches, so a 60s cadence stays cheap while the
+        // summary is still built from the full cached records.
         return Promise.all([
-          Promise.resolve(collect({ force: true })),
+          Promise.resolve(collect()),
           Promise.resolve(loadSettings()),
           Promise.resolve(run),
         ]);
