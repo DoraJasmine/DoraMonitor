@@ -58,6 +58,23 @@ export function fmtCredits(n) {
   return v.toFixed(2);
 }
 
+/** Generation speed in tok/s; null/undefined → "—" (no timing data). */
+export function fmtSpeed(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  if (v >= 100) return String(Math.round(v));
+  return v.toFixed(1);
+}
+
+/** First-token latency: ms under 1s, seconds above; null → "—". */
+export function fmtTtft(ms) {
+  const v = Number(ms);
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  if (v < 1000) return `${Math.round(v)}ms`;
+  if (v < 60000) return `${(v / 1000).toFixed(1)}s`;
+  return `${Math.round(v / 60000)}m`;
+}
+
 /** Format a value already converted by the API into the display currency. */
 export function fmtMoney(value, { currency = "USD", symbol = "$" } = {}) {
   const v = Number(value) || 0;

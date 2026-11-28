@@ -196,3 +196,37 @@ WSL 端指向同一个实际目录：
 ```
 
 两端都会读写 `D:\DoraSync\ai-usage-monitor`，其他工具、账号和额度页面的结构不变。
+
+---
+
+## CC Switch 桥接（多设备用量写入 cc-switch.db）
+
+`/sync` 设置页的「CC Switch 同步」区块可以把通过 SSH/WebDAV/本地目录同步拉取的**其他主机用量**写入 Windows 版 [CC Switch](https://github.com/farion1231/cc-switch) 的使用统计（`cc-switch.db` 的 `proxy_request_logs` 表），让 CC Switch 里也能看到远端主机的用量、费用、生成速度与首字延迟，按 `设备名 · 工具` 独立归因。
+
+### 工作方式
+
+- **触发**：daemon 每轮多设备同步成功后自动写入；`doramonitor ccswitch sync` 手动；设置页「立即写入」按钮；全部可随时关闭（默认关闭）。
+- **行粒度**：同步摘要本来就是 天 × 工具 × 模型 的聚合（隐私设计），桥接后一行 = 某设备某天某工具某模型的聚合用量；`request_id` 确定性编码（`dora_bridge:<设备>:<工具>:<模型>:<日期>`），天然幂等。
+- **数据源**：`data_source = 'dora_bridge'` 独立命名空间，与 ccs-ssh-sync 的 `remote_sync` 互不干扰——ccs-ssh-sync 的 `reset` 不会误删桥接数据，反之亦然。
+- **费用**：写入时实时读取 CC Switch 自己的 `model_pricing` 表按 BigInt 定点计算 USD 分项成本，与 CC Switch 原生行口径完全一致（DoraMonitor 的自定义价格不影响 CC Switch 侧）。
+- **速度/首字**：摘要 v5 携带 天×工具×模型 的耗时聚合（`lat/ft/dur`），桥接行写入 `duration_ms`（总生成时长）、`latency_ms`/`first_token_ms`（按请求数加权平均）——CC Switch 由 `输出 ÷ duration_ms` 推导出的 tok/s 即当日真实加权平均速度。**这是聚合粒度**，不是单请求明细；v4 旧摘要或未升级的对端设备该列为空。
+- **防重复/防复活**：侧车账本 `~/.doramonitor/cc-switch-bridge-state.db` 记录每行内容哈希——内容未变化的行绝不重复写库；CC Switch 30 天 `rollup_and_prune` 归档剪走的行不会被重新插入（避免与 `usage_daily_rollups` 双份统计）；检测到 `cc-switch.db` 被整体重置时自动清账本全量回填。
+- **本机数据**：`includeLocal` 默认关闭——本机用量 CC Switch 原生采集器已在统计，重复写入会双份计费。
+
+### 与 ccs-ssh-sync 共存（时间水位线增量续写）
+
+DoraMonitor 桥接与 [ccs-ssh-sync](https://github.com/DoraJasmine/ccs-ssh-sync) 可以**随时切换、无需清理任何数据**。两个写者都以「按工具的时间水位线」续写 `cc-switch.db`：
+
+- **水位线**：对方的 `proxy_request_logs` 行（`data_source='remote_sync'` / `'dora_bridge'`）中每个 `app_type` 的 `MAX(created_at)` 定义续写起点——**位于水位线之前（含）的请求已被对方写入，桥接跳过；只写其后**的请求。
+- **单调持久**：水位线保存在侧车库（`~/.doramonitor/cc-switch-bridge-state.db` 的 meta 表）并只增不减——CC Switch 30 天 `rollup_and_prune` 把对方明细行归档剪走后，水位线也不会回退，避免重复补写。
+- **边界指纹**：水位线附近（+120 秒内）的请求行额外做一次指纹核对（app + 归一化模型 + token 四元组，±10 秒时间容差）——两个项目对同一底层请求的时间戳来源不同（如 Antigravity 的 brain JSONL vs steps protobuf），指纹吸收这几秒的偏差。
+- **进程级暂停保留**：只有当 ccs-ssh-sync 守护进程**正在运行**时桥接才暂停（避免并发写竞争）；它停止后，桥接在下一个同步周期从其最后写入时刻自动接管。反之，ccs-ssh-sync 侧也打了镜像补丁（按 `'dora_bridge'` 行的水位线续写）。
+- **切换流程**：想用桥接 → 停掉 ccs-ssh-sync 守护进程（它开机自启的话先移除自启）→ 桥接自动从其最后写入时刻续写；想切回去 → 关闭桥接开关 → 启动 ccs-ssh-sync → 它同样从桥接的最后写入时刻续写。全程无需 reset。
+
+相关命令：`doramonitor ccswitch status`（显示各工具水位线）、`doramonitor ccswitch watermark-reset`（仅当你手工清空了对方写入的数据后使用，让桥接重新回填历史）。
+
+### 状态与排查
+
+- CLI：`doramonitor ccswitch status` 查看最近写入、行数与冲突状态；
+- 状态文件：`~/.doramonitor/cc-switch-bridge.json`（最近写入结果、错误）；
+- CC Switch 未安装 / 库路径不对 / schema 校验失败会记录在状态里，不影响 daemon 运行。

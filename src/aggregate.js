@@ -58,10 +58,10 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
 
   const daily = [...byDay.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRate(t) }));
+    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRate(t), ...timingAverages(t) }));
 
   const models = [...byModel.values()]
-    .map((m) => ({ ...m, cacheHitRate: hitRate(m) }))
+    .map((m) => ({ ...m, cacheHitRate: hitRate(m), ...timingAverages(m) }))
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   const dailyByModel = buildDailyByModel(daily, models, byDayModel);
@@ -84,6 +84,9 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
     credits: r.credits,
     costEstimated: r.costEstimated,
     priceId: r.priceId,
+    latencyMs: r.latencyMs,
+    firstTokenMs: r.firstTokenMs,
+    durationMs: r.durationMs,
     project: r.project,
     session: r.session,
     sessionHint: r.sessionHint,
@@ -97,6 +100,7 @@ function aggregate(records, range = "30d", nowMs = Date.now(), tool = "all") {
       ...totals,
       cacheHitRate,
       totalTokens: totals.inputOther + totals.output + totals.inputCacheRead + totals.inputCacheCreation,
+      ...timingAverages(totals),
     },
     daily,
     dailyByModel,
@@ -133,6 +137,11 @@ function emptyTotals() {
     costCny: 0,
     credits: 0,
     totalTokens: 0,
+    // Request-timing sums (ms). Zero = no timing data (old records/tools
+    // without timing) — averages render as "—" instead of a fake zero.
+    durMs: 0,
+    ftMs: 0,
+    latMs: 0,
   };
 }
 
@@ -144,8 +153,37 @@ function addTo(t, r) {
   t.inputCacheCreation += r.inputCacheCreation;
   t.costCny += r.costCny || 0;
   t.credits += r.credits || 0;
+  // Local records carry per-request timing; peer day-summary records carry
+  // SUMS — both fold additively. `dur` prefers the tool-reported streaming
+  // duration, else latency − TTFT (the tok/s denominator).
+  const lat = timingMs(r.latencyMs);
+  const ft = timingMs(r.firstTokenMs);
+  const dur = timingMs(r.durationMs) ?? (lat != null && ft != null ? Math.max(0, lat - ft) : null);
+  if (dur != null) t.durMs += dur;
+  if (ft != null) t.ftMs += ft;
+  if (lat != null) t.latMs += lat;
   t.totalTokens =
     t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
+}
+
+function timingMs(value) {
+  if (value == null) return null;
+  const x = Number(value);
+  return Number.isFinite(x) && x >= 0 ? Math.round(x) : null;
+}
+
+/**
+ * Weighted averages from timing sums. tok/s = Σoutput ÷ Σgeneration-time
+ * (the true weighted mean); TTFT = Σttft ÷ Σrequests. null = no data.
+ */
+function timingAverages(t) {
+  const genMs = t.durMs || 0;
+  const reqs = t.requests || 0;
+  return {
+    avgSpeed: genMs > 0 ? t.output / (genMs / 1000) : null,
+    avgTtft: t.ftMs > 0 && reqs > 0 ? t.ftMs / reqs : null,
+    avgLatency: t.latMs > 0 && reqs > 0 ? t.latMs / reqs : null,
+  };
 }
 
 /** A synced daily record represents many original requests; local records one. */
@@ -301,6 +339,12 @@ function aggregateByTool(records, range, toolMeta, nowMs = Date.now()) {
     t.inputCacheCreation += r.inputCacheCreation;
     t.costCny += r.costCny || 0;
     t.credits += r.credits || 0;
+    const lat = timingMs(r.latencyMs);
+    const ft = timingMs(r.firstTokenMs);
+    const dur = timingMs(r.durationMs) ?? (lat != null && ft != null ? Math.max(0, lat - ft) : null);
+    if (dur != null) t.durMs += dur;
+    if (ft != null) t.ftMs += ft;
+    if (lat != null) t.latMs += lat;
     t.totalTokens =
       t.inputOther + t.output + t.inputCacheRead + t.inputCacheCreation;
   }
@@ -535,6 +579,9 @@ function aggregateFromBuckets(buckets, options = {}) {
             totals.inputCacheCreation += cell.cc || 0;
             totals.costCny += cost;
             totals.credits += cell.credits || 0;
+            if (cell.lat != null) totals.latMs += cell.lat;
+            if (cell.ft != null) totals.ftMs += cell.ft;
+            if (cell.dur != null) totals.durMs += cell.dur;
 
             const dayRow = byDay.get(day);
             dayRow.requests += cell.req || 0;
@@ -544,6 +591,9 @@ function aggregateFromBuckets(buckets, options = {}) {
             dayRow.inputCacheCreation += cell.cc || 0;
             dayRow.costCny += cost;
             dayRow.credits += cell.credits || 0;
+            if (cell.lat != null) dayRow.latMs += cell.lat;
+            if (cell.ft != null) dayRow.ftMs += cell.ft;
+            if (cell.dur != null) dayRow.durMs += cell.dur;
 
             m.requests += cell.req || 0;
             m.inputOther += cell.i || 0;
@@ -552,6 +602,9 @@ function aggregateFromBuckets(buckets, options = {}) {
             m.inputCacheCreation += cell.cc || 0;
             m.costCny += cost;
             m.credits += cell.credits || 0;
+            if (cell.lat != null) m.latMs += cell.lat;
+            if (cell.ft != null) m.ftMs += cell.ft;
+            if (cell.dur != null) m.durMs += cell.dur;
             modelEstReq += cell.estReq || 0;
             if (!m.priceId && price.id) m.priceId = price.id;
 
@@ -576,10 +629,10 @@ function aggregateFromBuckets(buckets, options = {}) {
 
   const daily = [...byDay.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRate(t) }));
+    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRate(t), ...timingAverages(t) }));
 
   const models = [...byModel.values()]
-    .map((m) => ({ ...m, cacheHitRate: hitRate(m) }))
+    .map((m) => ({ ...m, cacheHitRate: hitRate(m), ...timingAverages(m) }))
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   const dailyByModel = buildDailyByModel(daily, models, byDayModel);
@@ -592,6 +645,7 @@ function aggregateFromBuckets(buckets, options = {}) {
       cacheHitRate: hitRate(totals),
       totalTokens:
         totals.inputOther + totals.output + totals.inputCacheRead + totals.inputCacheCreation,
+      ...timingAverages(totals),
     },
     daily,
     dailyByModel,
@@ -722,6 +776,9 @@ function byToolFromBuckets(buckets, range, toolMeta, nowMs = Date.now(), options
             row.inputCacheCreation += cell.cc || 0;
             row.costCny += cellCost(cell, price);
             row.credits += cell.credits || 0;
+            if (cell.lat != null) row.latMs += cell.lat;
+            if (cell.ft != null) row.ftMs += cell.ft;
+            if (cell.dur != null) row.durMs += cell.dur;
           }
         }
       }
@@ -766,6 +823,9 @@ function recentFromRecords(records, range, nowMs = Date.now(), tool = "all", lim
       credits: r.credits,
       costEstimated: r.costEstimated,
       priceId: r.priceId,
+      latencyMs: r.latencyMs,
+      firstTokenMs: r.firstTokenMs,
+      durationMs: r.durationMs,
       project: r.project,
       session: r.session,
       sessionHint: r.sessionHint,
@@ -791,6 +851,7 @@ module.exports = {
   aggregateToolEvents,
   buildHeatmap,
   sliceHeatmap,
+  timingAverages,
   dayKey,
   rangeStart,
 };

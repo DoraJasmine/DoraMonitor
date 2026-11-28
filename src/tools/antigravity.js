@@ -6,7 +6,7 @@ const path = require("path");
 const { n, emptyRecord, expandHome, openReadOnly } = require("./base");
 const { costForUsage } = require("../pricing");
 const { loadSettings } = require("../settings");
-const { protoFields, varintField, dataField, timestampMs } = require("./protobuf-lite");
+const { protoFields, varintField, dataField, timestampMs, durationMs } = require("./protobuf-lite");
 
 /**
  * Google Antigravity tool adapter — ONE tool that aggregates every local
@@ -401,14 +401,19 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
     // is priced by its enum against this conversation's generations.
     const models = new Map(); // message id → { model, priceKey }
     const byEnum = new Map(); // model enum → { model, priceKey }
+    const genTiming = new Map(); // gen idx → { firstTokenMs, streamingMs }
     let genRows;
     try {
       // CAST forces node:sqlite to return BLOB columns as bytes (Buffer)
       // instead of a lossy text decode that can never be turned back into
       // the original protobuf bytes.
-      genRows = db.prepare("SELECT CAST(data AS BLOB) AS data FROM gen_metadata WHERE data IS NOT NULL").all();
+      genRows = db.prepare("SELECT idx, CAST(data AS BLOB) AS data FROM gen_metadata WHERE data IS NOT NULL").all();
     } catch {
-      genRows = [];
+      try {
+        genRows = db.prepare("SELECT CAST(data AS BLOB) AS data FROM gen_metadata WHERE data IS NOT NULL").all();
+      } catch {
+        genRows = [];
+      }
     }
     for (const row of genRows) {
       const chat = dataField(row.data, 1);
@@ -424,14 +429,28 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
         const enumVal = varintField(usage, 1);
         if (enumVal != null && !byEnum.has(Number(enumVal))) byEnum.set(Number(enumVal), name);
       }
+      // Timing fields (ported from CC Switch's native_models.rs via
+      // ccs-ssh-sync): field 11 = first-token Duration, 12 = streaming
+      // Duration — wired to steps of type 15 through the generation index.
+      if (row.idx != null) {
+        const firstToken = firstTiming(chat, 11);
+        const streaming = firstTiming(chat, 12);
+        if (firstToken != null || streaming != null) {
+          genTiming.set(Number(row.idx), { firstToken, streaming });
+        }
+      }
     }
 
     // Pass 2: per-step usage.
     let stepRows;
     try {
-      stepRows = db.prepare("SELECT CAST(metadata AS BLOB) AS metadata FROM steps WHERE metadata IS NOT NULL").all();
+      stepRows = db.prepare("SELECT idx, step_type, CAST(metadata AS BLOB) AS metadata FROM steps WHERE metadata IS NOT NULL").all();
     } catch {
-      stepRows = [];
+      try {
+        stepRows = db.prepare("SELECT CAST(metadata AS BLOB) AS metadata FROM steps WHERE metadata IS NOT NULL").all();
+      } catch {
+        stepRows = [];
+      }
     }
     for (const row of stepRows) {
       counters.lines += 1;
@@ -463,6 +482,19 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
       if (seen.has(dedupKey)) continue;
       seen.add(dedupKey);
 
+      // Timing: generation steps (step_type 15) reference their gen_metadata
+      // row through metadata field 20 → field 3 (gen idx, omitted when 0).
+      let timing = null;
+      if (row.step_type === 15 && row.idx != null) {
+        const genRef = dataField(metadata, 20);
+        if (genRef) {
+          const genIdx = varintField(genRef, 3);
+          if (genIdx != null && genTiming.has(Number(genIdx))) {
+            timing = genTiming.get(Number(genIdx));
+          }
+        }
+      }
+
       const rec = emptyRecord("antigravity");
       rec.time = time;
       // Both display name and priceKey strip thinking-level/role suffixes so
@@ -474,6 +506,15 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
       rec.output = output;
       rec.inputCacheRead = cacheRead;
       rec.inputCacheCreation = cacheWrite;
+      if (timing) {
+        rec.firstTokenMs = timing.firstToken;
+        rec.durationMs = timing.streaming;
+        rec.latencyMs =
+          timing.firstToken != null && timing.streaming != null
+            ? timing.firstToken + timing.streaming
+            : null;
+      }
+      rec.nativeId = messageId;
       const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
       rec.costCny = cost.total;
       rec.costEstimated = cost.estimated;
@@ -491,6 +532,12 @@ function parseConversationDb({ file, conversationId, summary, settings, seen, co
     } catch {}
   }
   return records;
+}
+
+/** First Duration-typed submessage at `number` → ms (null when absent). */
+function firstTiming(chat, number) {
+  const buf = dataField(chat, number);
+  return buf ? durationMs(buf) : null;
 }
 
 function textOf(buf) {

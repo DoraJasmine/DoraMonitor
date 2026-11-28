@@ -287,6 +287,20 @@ function runDaemon(opts) {
         settings,
         collected.byTool.get("codex")?.quota
       ))
+      .then((syncResult) => {
+        // Bridge the freshly pulled multi-device usage into CC Switch when
+        // enabled. Auto-pauses on ccs-ssh-sync conflicts (visible in status).
+        try {
+          const ccCfg = loadSettings().ccSwitch || {};
+          if (ccCfg.enabled) {
+            const { runBridge } = require("./ccswitch-bridge");
+            runBridge();
+          }
+        } catch (e) {
+          console.error(`ccswitch 桥接失败: ${e && e.message ? e.message : e}`);
+        }
+        return syncResult;
+      })
       .catch((e) => {
         // sync must never break status rendering; log for journalctl
         console.error(`sync 失败: ${e && e.message ? e.message : e}`);

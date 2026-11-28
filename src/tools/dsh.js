@@ -157,16 +157,20 @@ function parseTranscriptFile(file, Decompress, settings) {
   let sessionId = path.basename(path.dirname(file));
   let cwd = path.basename(path.dirname(path.dirname(file)));
 
+  // step/start timestamps feed the request-timing estimate (same turn:step
+  // pairing CC Switch uses; a key is consumed by the message that closes it).
+  const stepStarts = new Map();
+
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
     if (!line) continue;
     parsed.lines += 1;
     // Fast reject before full parse — only assistant/message lines
-    // carry usage, and the session header is picked up via "type".
-    // Match the quoted type token, not `"type":"session"`: a writer
-    // that pretty-prints (space after the colon) would otherwise lose
-    // the session id and cwd silently.
-    if (!line.includes('"usage"') && !line.includes('"session"')) continue;
+    // carry usage, step/start feeds timing, and the session header is
+    // picked up via "type". Match the quoted type token, not
+    // `"type":"session"`: a writer that pretty-prints (space after the
+    // colon) would otherwise lose the session id and cwd silently.
+    if (!line.includes('"usage"') && !line.includes('"session"') && !line.includes('"step/start"')) continue;
     let obj;
     try {
       obj = JSON.parse(line);
@@ -176,6 +180,12 @@ function parseTranscriptFile(file, Decompress, settings) {
     if (obj.type === "session") {
       if (obj.id) sessionId = String(obj.id);
       if (typeof obj.cwd === "string" && obj.cwd) cwd = obj.cwd;
+      continue;
+    }
+    if (obj.type === "step/start") {
+      const d = obj.data && typeof obj.data === "object" ? obj.data : {};
+      const t = Date.parse(obj.time) || n(obj.time);
+      if (t > 0) stepStarts.set(`${d.turn ?? "max"}:${d.step ?? "max"}`, t);
       continue;
     }
     if (obj.type !== "assistant/message") continue;
@@ -197,8 +207,30 @@ function parseTranscriptFile(file, Decompress, settings) {
 
     const messageId = String(message.id || "");
 
+    // Request timing: step/start → message time; TTFT from the earliest
+    // stream entry timestamp (both ported from CC Switch's dsh parser).
+    const endMs = dshTimeMs(obj.time);
+    const stepKey = `${data.turn ?? "max"}:${data.step ?? "max"}`;
+    const stepStartMs = stepStarts.get(stepKey);
+    stepStarts.delete(stepKey);
+    let latencyMs = null;
+    if (stepStartMs != null && endMs != null && endMs > stepStartMs) {
+      const diff = Math.round(endMs - stepStartMs);
+      if (diff >= 100 && diff <= 3_600_000) latencyMs = diff;
+    }
+    const firstOutMs = streamFirstTokenMs(data.stream);
+    const firstTokenMs =
+      latencyMs != null &&
+      stepStartMs != null &&
+      firstOutMs != null &&
+      firstOutMs >= stepStartMs &&
+      firstOutMs - stepStartMs <= latencyMs
+        ? Math.round(firstOutMs - stepStartMs)
+        : null;
+
     const rec = emptyRecord("dsh");
     rec.time = n(obj.time);
+    rec.nativeId = messageId || null;
     const source = message.source && typeof message.source === "object" ? message.source : {};
     const rawModel = String(source.model || "unknown");
     // dsh names the plugin that actually served the request; the model
@@ -221,6 +253,9 @@ function parseTranscriptFile(file, Decompress, settings) {
     rec.project = cwd;
     rec.session = sessionId;
     rec.sessionHint = { session: rec.session, project: rec.project };
+    rec.latencyMs = latencyMs;
+    rec.firstTokenMs = firstTokenMs;
+    rec.durationMs = latencyMs != null ? latencyMs : null;
     rec._dedupKey = messageId;
     parsed.records.push(rec);
   }
@@ -235,6 +270,28 @@ function decompressMultiFrame(Decompress, buf) {
   return Buffer.concat(
     chunks.map((c) => Buffer.from(c.buffer, c.byteOffset, c.byteLength))
   ).toString("utf8");
+}
+
+/** Epoch-ms or ISO timestamp → ms, null when unusable. */
+function dshTimeMs(val) {
+  const x = Number(val);
+  if (Number.isFinite(x) && x > 0) return Math.floor(x < 1e12 ? x * 1000 : x);
+  const p = Date.parse(val);
+  return Number.isFinite(p) && p > 0 ? p : null;
+}
+
+/** Earliest stream entry timestamp — the first output token proxy. */
+function streamFirstTokenMs(stream) {
+  if (!Array.isArray(stream)) return null;
+  let best = null;
+  for (const item of stream) {
+    if (!item || typeof item !== "object") continue;
+    for (const key of ["time", "time0"]) {
+      const t = dshTimeMs(item[key]);
+      if (t != null && (best == null || t < best)) best = t;
+    }
+  }
+  return best;
 }
 
 function listTranscriptFiles(root) {

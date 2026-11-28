@@ -193,6 +193,9 @@ function parseRolloutFile(file, settings, accountKey = "openai:default") {
   const turnInfo = new Map();
   let lastModel = null;
   let lastCwd = null;
+  // Request-timing anchor (CC Switch codex parser): the newest user
+  // message / task_started event starts the latency window.
+  let requestStartMs = null;
 
   for (const line of lines) {
     if (!line) continue;
@@ -201,7 +204,10 @@ function parseRolloutFile(file, settings, accountKey = "openai:default") {
     if (
       !line.includes('"token_usage_record"') &&
       !line.includes('"turn_context"') &&
-      !line.includes('"rate_limits"')
+      !line.includes('"rate_limits"') &&
+      !line.includes('"response_item"') &&
+      !line.includes('"task_started"') &&
+      !line.includes('"user_message"')
     ) {
       continue;
     }
@@ -220,6 +226,23 @@ function parseRolloutFile(file, settings, accountKey = "openai:default") {
         turnInfo.set(String(p.turn_id), { model: lastModel, cwd: lastCwd });
       }
       continue;
+    }
+
+    if (obj.type === "response_item") {
+      const p = obj.payload || {};
+      if (p.type === "message" && p.role === "user") {
+        const ts = Date.parse(obj.timestamp) || 0;
+        if (ts > 0) requestStartMs = ts;
+      }
+      continue;
+    }
+
+    if (obj.type === "event_msg") {
+      const kind = obj.payload && obj.payload.type;
+      if (kind === "task_started" || kind === "user_message") {
+        const ts = Date.parse(obj.timestamp) || 0;
+        if (ts > 0) requestStartMs = ts;
+      }
     }
 
     if (obj.type === "event_msg" && obj.payload && obj.payload.rate_limits) {
@@ -268,6 +291,7 @@ function parseRolloutFile(file, settings, accountKey = "openai:default") {
 
     const rec = emptyRecord("codex");
     rec.time = Date.parse(obj.timestamp) || 0;
+    rec.nativeId = responseId || null;
     rec.model = model;
     rec.modelDisplay = model;
     rec.modelResolved = model;
@@ -275,6 +299,18 @@ function parseRolloutFile(file, settings, accountKey = "openai:default") {
     rec.output = output;
     rec.inputCacheRead = cached;
     rec.inputCacheCreation = cacheCreate;
+    // Best-effort request timing: response completion − newest user-message
+    // start. A turn chains many API responses, so the anchor resets after
+    // each record (same chain semantics CC Switch uses) — without it the
+    // Nth response of a long turn would show a multi-minute "latency".
+    if (requestStartMs != null && rec.time >= requestStartMs) {
+      const diff = Math.round(rec.time - requestStartMs);
+      if (diff >= 100 && diff <= 3_600_000) {
+        rec.latencyMs = diff;
+        rec.durationMs = diff;
+      }
+      requestStartMs = rec.time;
+    }
     const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
     rec.costCny = cost.total;
     rec.costEstimated = cost.estimated;

@@ -59,6 +59,11 @@ const DEFAULTS = {
       password: "",
     },
   },
+  ccSwitch: {
+    enabled: false, // bridge multi-device usage into CC Switch's cc-switch.db
+    dbPath: "", // defaults to ~/.cc-switch/cc-switch.db
+    includeLocal: false, // also write THIS machine's usage (duplicates CC Switch's own collector — off by default)
+  },
 };
 
 const CURRENCY_SYMBOLS = { USD: "$", CNY: "¥" };
@@ -164,6 +169,14 @@ function sanitizeSettings(raw) {
       };
     }
     out.sync = outSync;
+  }
+  if (raw.ccSwitch && typeof raw.ccSwitch === "object") {
+    const c = raw.ccSwitch;
+    out.ccSwitch = {
+      enabled: c.enabled === true,
+      dbPath: String(c.dbPath || "").trim().slice(0, 500),
+      includeLocal: c.includeLocal === true,
+    };
   }
   if (Array.isArray(raw.customPrices)) {
     for (const p of raw.customPrices) {

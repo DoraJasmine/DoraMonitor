@@ -2,6 +2,34 @@
 
 本文件的格式参考 Keep a Changelog；版本号遵循语义化版本。
 
+## [Unreleased]
+
+### 新增
+
+- **CC Switch 桥接**（`src/ccswitch-bridge.js` + `/sync` 设置页新区块 + `doramonitor ccswitch sync|status`）：把通过 SSH/WebDAV/本地目录同步拉取的**多设备用量**写入 Windows 版 CC Switch 的使用统计（`cc-switch.db` 的 `proxy_request_logs`），按 `设备名 · 工具` 独立归因：
+  - 写入 `data_source = 'dora_bridge'` 独立命名空间，与 ccs-ssh-sync 的 `remote_sync` 互不干扰；动态 `PRAGMA table_info` 列投影对 CC Switch 升级免疫；
+  - 确定性 `request_id` + 内容哈希侧车账本（`~/.doramonitor/cc-switch-bridge-state.db`）：幂等增量写入、内容变化走条件 UPDATE、CC Switch 30 天 `rollup_and_prune` 归档过的行绝不复活、检测到主库被重置时自动清账本全量回填；
+  - 费用实时读取 CC Switch 自带 `model_pricing` 表按 BigInt 定点计算 USD 分项（`src/ccswitch-pricing.js`，与 CC Switch 原生行口径完全一致）；Codex/Gemini 按 `TOTAL` 输入语义回填总输入；
+  - **ccs-ssh-sync 冲突自动暂停**：检测到 ccs-ssh-sync 守护进程运行或库中已有 `remote_sync` 数据时，桥接即使启用也自动暂停并在设置页显示琥珀色横幅（「立即写入」置灰），冲突消失后下一同步周期自动恢复；
+  - 本机用量默认不写入（`includeLocal` 可选，避免与 CC Switch 原生采集重复计费）；daemon 每轮多设备同步成功后自动执行，UI/CLI 可手动触发。
+  - **与 ccs-ssh-sync 共存（时间水位线增量续写）**：以对方行（`remote_sync`）的每工具 `MAX(created_at)` 为续写起点——水位线之前的请求视为已写入，只写其后；水位线单调持久（30 天归档剪枝不回退）；边界请求（+120s 内）按指纹（app + 归一化模型 + tokens + ±10s 时间容差）核对去重，吸收两个项目时间戳来源差异。数据级冲突**不再暂停**（随时切换、无需 reset），仅 ccs-ssh-sync 守护进程运行时暂停；`doramonitor ccswitch watermark-reset` 可在对方数据被手工清理后重置水位线。
+- **请求耗时/速度/首字全链路**：记录契约新增 `latencyMs`/`firstTokenMs`/`durationMs`（`src/record-schema.js`），本地采集器补齐 timing 计算（移植 CC Switch 算法）：
+  - Claude Code：`parentUuid` 父链 + `api-request` 起点回溯 + `thinkingDurationMs` 估算 TTFT；
+  - Kimi Code：`RequestIndex` 状态机（`step.begin`/`llm.request`/`step.end` 归同 Turn，剔除工具停顿），优先原生 `llmFirstTokenLatencyMs`/`llmStreamDurationMs`；
+  - dsh：`step/start` 配对 + `data.stream` 最早时间戳估首字；Codex：user 消息/task_started 锚点 + 逐响应链式重置；Oh My Pi：消息自带 `duration` 直读；
+  - `usage_records` 迁移 v2 追加三列并升级指纹至 `fp11:`（升级后首次采集自动回填历史 timing）；日桶升级 v4 携带 `lat/ft/dur` 聚合；
+  - 多设备同步摘要升级 **v5**：天×工具×模型 格子增加可选 `lat/ft/dur` 耗时聚合（双向兼容，旧版对端留空）；
+  - 看板新增「平均速度（tok/s）」「平均首字（TTFT）」列：模型统计表、`/api/usage/query` 明细与最近请求表均支持，加权平均口径（Σ输出 ÷ Σ生成时长），无数据显示 `—`。
+- **请求级明细同步与桥接（摘要 v6）**：多设备摘要升级——最近 7 天（含当天）携带 `requests[]` 请求级行（紧凑 JSON，约 200B/行），每行带稳定身份（`nativeId`：Claude message id、Codex response_id、dsh message id、omp 条目 id、Kimi step.end messageId、ZCode rowid、Antigravity message id；无原生 ID 的工具回退内容哈希）与 per-request timing；更早的天保持日聚合：
+  - 全部供应商适配器补齐 `nativeId`；`usage_records` 迁移 v3 持久化 `native_id`（指纹升级 `fp12:` 自动回填）；
+  - **Antigravity 对齐 ccs-ssh-sync 保真度**：新增 gen_metadata 字段 11/12 的 Duration（秒+纳秒）解码 → 每请求 TTFT/流式时长/总耗时（经 steps 类型 15 → metadata 字段 20 → gen 索引关联）；
+  - 看板多设备视图：被请求窗口覆盖的天改用请求级合成记录（`summaryToRecords`），远端「最近请求」同样显示单请求明细与速度/首字；
+  - 桥接写入路由：请求窗口内的天按请求级写入（`dora_bridge:r:<设备>:<身份>`），窗口外的天写日聚合行（`dora_bridge:<设备>:<工具>:<模型>:<日>`），侧车库新增 `covered_days` 账本——天滑入窗口时自动删除对应聚合行，**同一设备同一天绝不双写**；
+  - 修复桥接行 `created_at` 单位（毫秒 → 秒，对齐 CC Switch 全库约定）；
+  - 修复日桶持久载荷陈旧问题：`BUCKET_VERSION` 升至 5（records 载荷含 nativeId 后强制重折叠）。
+
+## [1.4.2] - 2026-11-27
+
 ## [1.4.2] - 2026-11-27
 
 ### 新增

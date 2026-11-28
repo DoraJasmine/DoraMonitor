@@ -209,6 +209,8 @@ function parseSessionFile(file, settings) {
 
     const rec = emptyRecord("omp");
     rec.time = Number.isFinite(time) ? time : 0;
+    // Entry id + timestamp = the same pair the fork-copy dedup keys on.
+    rec.nativeId = obj.id ? `${obj.id}|${obj.timestamp || ""}` : null;
     const identity = resolveModelIdentity(rawModel, { provider: modelProvider });
     rec.model = rawModel;
     rec.modelDisplay = identity.modelDisplay;
@@ -218,6 +220,14 @@ function parseSessionFile(file, settings) {
     rec.output = output;
     rec.inputCacheRead = cacheRead;
     rec.inputCacheCreation = cacheCreate;
+    // Best-effort timing: omp records the request duration on the assistant
+    // message itself (CC Switch reads the same field); no TTFT signal.
+    const carrier = obj.type === "message" ? obj.message : obj;
+    const durRaw = Number(carrier && carrier.duration);
+    if (Number.isFinite(durRaw) && durRaw > 0 && durRaw <= 3_600_000) {
+      rec.latencyMs = Math.round(durRaw);
+      rec.durationMs = rec.latencyMs;
+    }
     const cost = costForUsage(rec.modelResolved || rec.model, rec, { settings });
     rec.costCny = cost.total;
     rec.costEstimated = cost.estimated;

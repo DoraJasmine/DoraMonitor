@@ -28,7 +28,16 @@ const { resolveModelName: resolveAntigravityModelName } = require("./tools/antig
  * working offline; a failed sync degrades to cached data with a status note.
  */
 
-const SUMMARY_VERSION = 4; // v4: wsDaily gains a tool level (day → tool → hashed ws → cell)
+const SUMMARY_VERSION = 6; // v6: + requests[] (7-day window, stable per-request ids) + requestsDays; v5: day-cell timing sums
+
+/** Timing guard for summary folds: finite non-negative ms or null.
+ *  null/undefined must stay null — Number(null) is 0, which would leak
+ *  fake zero timings into cells from tools that don't report timing. */
+function timingMs(value) {
+  if (value == null) return null;
+  const x = Number(value);
+  return Number.isFinite(x) && x >= 0 ? Math.round(x) : null;
+}
 const REMOTE_DIR = "ai-usage-monitor"; // keep: remote sync dir shared with other devices
 const CACHE_DIR = path.join(".doramonitor", "remote-cache");
 
@@ -159,6 +168,13 @@ function buildWsDaily(records, salt) {
 /** Build the device summary from local usage records. */
 function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [], deviceId = null, wsSalt = null) {
   const days = {};
+  const requests = [];
+  const requestDaySet = new Set();
+  // v6: request-level window — the last REQUEST_WINDOW_DAYS days INCLUDING
+  // today (today's rows are a snapshot; the next sync inserts the newly
+  // appeared ones downstream). Older days stay day-aggregate only, which
+  // keeps the summary bounded (~1MB instead of unbounded history).
+  const windowStartDay = dayKey(Date.now() - (REQUEST_WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000);
   let earliest = null;
   let latest = null;
   for (const r of records) {
@@ -182,6 +198,39 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
     }
     bucket.req += 1;
     bucket.credits += r.credits || 0;
+    // v5: optional request-timing sums. Peer cells may already carry SUMS
+    // (synthetic records below); local records carry per-request values —
+    // both fold additively. `dur` keeps the effective generation duration
+    // (tool-reported, else latency − TTFT) so consumers can divide output
+    // by it for a true weighted tok/s.
+    const lat = timingMs(r.latencyMs);
+    const ft = timingMs(r.firstTokenMs);
+    const dur = timingMs(r.durationMs) ?? (lat != null && ft != null ? Math.max(0, lat - ft) : null);
+    if (lat != null) bucket.lat = (bucket.lat || 0) + lat;
+    if (ft != null) bucket.ft = (bucket.ft || 0) + ft;
+    if (dur != null) bucket.dur = (bucket.dur || 0) + dur;
+    // v6: request-level rows for the recent window. Every row gets a stable
+    // identity — the tool's native id when the adapter captured one, else a
+    // content hash — so downstream writers can dedup at request level.
+    if (key >= windowStartDay) {
+      requestDaySet.add(key);
+      requests.push({
+        i: requestIdOf(r),
+        t: r.time,
+        l: tool,
+        m: model,
+        iv: r.inputOther || 0,
+        o: r.output || 0,
+        cr: r.inputCacheRead || 0,
+        cc: r.inputCacheCreation || 0,
+        ...(r.inputCacheCreationShort != null || r.inputCacheCreationLong != null
+          ? { cs: r.inputCacheCreationShort ?? undefined, cl: r.inputCacheCreationLong ?? undefined }
+          : {}),
+        ...(lat != null || ft != null || dur != null ? { la: lat ?? undefined, ft: ft ?? undefined, du: dur ?? undefined } : {}),
+        ...(r.credits ? { e: r.credits } : {}),
+        ...(r.session ? { s: r.session } : {}),
+      });
+    }
   }
   const summary = {
     version: SUMMARY_VERSION,
@@ -193,6 +242,10 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
     quotaUsage: buildQuotaUsage(records),
     quotaSamples: Array.isArray(quotaSamples) ? quotaSamples : [],
   };
+  if (requests.length) {
+    summary.requests = requests;
+    summary.requestsDays = [...requestDaySet].sort();
+  }
   const wsDaily = buildWsDaily(records, wsSalt);
   if (wsDaily) {
     summary.wsDaily = wsDaily.wsDaily;
@@ -202,6 +255,38 @@ function buildSummary(deviceName, records, codexQuota = null, quotaSamples = [],
   if (codexQuota && codexQuota.available) summary.codexQuota = codexQuota;
   if (deviceId) summary.deviceId = deviceId;
   return summary;
+}
+
+/** Days covered by the request-level window (inclusive range). */
+const REQUEST_WINDOW_DAYS = 7;
+
+/**
+ * Stable per-request identity. Prefer the adapter-captured native id
+ * (message id / response id / rowid — strong); fall back to a content hash
+ * of the immutable request fields (weak: two byte-identical requests in the
+ * same second of one session collapse into one row).
+ */
+function requestIdOf(r) {
+  if (r.nativeId && String(r.nativeId).trim()) {
+    return `n:${String(r.nativeId).trim().slice(0, 180)}`;
+  }
+  const h = crypto
+    .createHash("sha1")
+    .update(
+      [
+        r.tool || "",
+        r.time || 0,
+        r.model || "",
+        r.inputOther || 0,
+        r.output || 0,
+        r.inputCacheRead || 0,
+        r.inputCacheCreation || 0,
+        r.credits || 0,
+        r.session || "",
+      ].join("\u0000")
+    )
+    .digest("hex");
+  return `h:${h}`;
 }
 
 function normalizePeerSummary(summary) {
@@ -238,9 +323,11 @@ function quotaUsageRecords(summary) {
 }
 
 /**
- * Merge peer summaries into synthetic records (device-attributed, day
- * precision). Costs are computed here with the local pricing settings so
- * peer tokens carry real cost figures like local records do.
+ * Merge peer summaries into synthetic records (device-attributed). Days
+ * covered by the v6 request window yield ONE record per original request
+ * (request precision — recent requests, timing, session); older days stay
+ * day-aggregates. Costs are computed here with the local pricing settings
+ * so peer tokens carry real cost figures like local records do.
  */
 function summaryToRecords(summary) {
   const records = [];
@@ -253,7 +340,65 @@ function summaryToRecords(summary) {
   const { costForUsage } = require("./pricing");
   const device = String(summary.device || "peer");
   const days = summary.days || {};
+  const requests = Array.isArray(summary.requests) ? summary.requests : [];
+  const requestDays = new Set(
+    Array.isArray(summary.requestsDays) ? summary.requestsDays : []
+  );
+  for (const rq of requests) {
+    if (rq && typeof rq === "object" && rq.t) requestDays.add(dayKey(rq.t));
+  }
+
+  // --- request-level records for covered days ---
+  for (const rq of requests) {
+    if (!rq || typeof rq !== "object" || !rq.t) continue;
+    const tool = String(rq.l || "unknown");
+    const rawModel = String(rq.m || "unknown");
+    const agyName = tool === "antigravity" ? resolveAntigravityModelName(null, rawModel) : null;
+    const model = agyName ? agyName.model : rawModel;
+    const modelResolved = agyName && agyName.priceKey ? agyName.priceKey : model;
+    const inputOther = Number(rq.iv) || 0;
+    const output = Number(rq.o) || 0;
+    const cost = costForUsage(modelResolved, {
+      inputOther,
+      output,
+      inputCacheRead: Number(rq.cr) || 0,
+      inputCacheCreation: Number(rq.cc) || 0,
+      inputCacheCreationShort: rq.cs ?? null,
+      inputCacheCreationLong: rq.cl ?? null,
+    }, { settings });
+    const credits = Number(rq.e) || 0;
+    records.push({
+      tool,
+      time: Number(rq.t) || 0,
+      model,
+      modelDisplay: model,
+      modelResolved,
+      inputOther,
+      output,
+      inputCacheRead: Number(rq.cr) || 0,
+      inputCacheCreation: Number(rq.cc) || 0,
+      inputCacheCreationShort: rq.cs ?? null,
+      inputCacheCreationLong: rq.cl ?? null,
+      requests: 1,
+      latencyMs: timingMs(rq.la),
+      firstTokenMs: timingMs(rq.ft),
+      durationMs: timingMs(rq.du),
+      costCny: credits > 0 ? 0 : cost.total,
+      costEstimated: cost.estimated,
+      priceId: cost.priceId,
+      credits,
+      nativeId: rq.i ? String(rq.i).slice(0, 200) : null,
+      project: null,
+      session: rq.s ? String(rq.s).slice(0, 300) : null,
+      sessionHint: null,
+      device,
+      peer: true,
+    });
+  }
+
+  // --- day-aggregate records for days outside the request window ---
   for (const day of Object.keys(days)) {
+    if (requestDays.has(day)) continue;
     // Noon of that day (local) — day granularity is the sync resolution.
     const [y, m, d] = day.split("-").map(Number);
     const time = new Date(y, m - 1, d, 12, 0, 0).getTime();
@@ -289,6 +434,12 @@ function summaryToRecords(summary) {
           // retain its source request count so aggregate statistics do not
           // misleadingly display it as a single request.
           requests: Number.isFinite(Number(b.req)) && Number(b.req) >= 0 ? Number(b.req) : 1,
+          // v5 summaries carry timing SUMS per cell (unlike local records'
+          // per-request values) — folds stay additive either way. v4 peers
+          // simply leave these null.
+          latencyMs: timingMs(b.lat),
+          firstTokenMs: timingMs(b.ft),
+          durationMs: timingMs(b.dur),
           costCny: b.credits > 0 ? 0 : cost.total,
           costEstimated: cost.estimated,
           priceId: cost.priceId,

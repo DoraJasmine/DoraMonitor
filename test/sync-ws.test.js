@@ -14,7 +14,7 @@ test("sync v3: wsDaily hashes workspace keys deterministically and reserves __-s
     { tool: "qoder-cn-cli", time: Date.now(), model: "m", inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0, credits: 3, costCny: 1.5, project: "D:\\work\\demo" },
   ];
   const summary = buildSummary("dev", records, null, [], null, SALT);
-  assert.strictEqual(summary.version, 4);
+  assert.strictEqual(summary.version, 6);
   assert.strictEqual(summary.wsSalt, SALT);
   assert.ok(summary.wsDaily, "wsDaily present");
 

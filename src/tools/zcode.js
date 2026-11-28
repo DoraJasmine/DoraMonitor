@@ -14,7 +14,7 @@ const { loadSettings } = require("../settings");
  * Each row is one model request with full token accounting and timestamps.
  */
 const SQL_ALL = `
-SELECT m.model_id, m.session_id, m.input_tokens, m.output_tokens, m.reasoning_tokens,
+SELECT m.rowid AS usage_rowid, m.model_id, m.session_id, m.input_tokens, m.output_tokens, m.reasoning_tokens,
        m.cache_creation_input_tokens, m.cache_read_input_tokens,
        m.computed_total_tokens, m.started_at, m.status,
        s.directory AS session_directory
@@ -58,6 +58,9 @@ function toolRowToRecord(row, settings) {
     return null;
   }
   rec.session = row.session_id ? String(row.session_id) : null;
+  // Append-only table: the rowid is a stable per-request identity for
+  // request-level sync / CC Switch bridging.
+  rec.nativeId = row.usage_rowid != null ? `zcode:${Number(row.usage_rowid)}` : null;
   // Session workspace: the session row carries the real working directory
   // (verified against the live db — model_usage alone has no workspace, the
   // join is what makes ZCode usage attributable, contra tools.md's old note).

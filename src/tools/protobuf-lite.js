@@ -75,4 +75,15 @@ function timestampMs(buf) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-module.exports = { protoFields, firstField, varintField, dataField, timestampMs };
+/** google.protobuf.Duration inside a wrapper field → milliseconds. */
+function durationMs(buf) {
+  const sec = varintField(buf, 1);
+  const nanos = varintField(buf, 2);
+  if (sec == null && nanos == null) return null;
+  const s = sec == null ? 0n : BigInt(sec);
+  const n = nanos == null ? 0n : BigInt(nanos);
+  const ms = Number(s * 1000n + n / 1_000_000n);
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+module.exports = { protoFields, firstField, varintField, dataField, timestampMs, durationMs };

@@ -28,7 +28,7 @@ const crypto = require("crypto");
 
 const { DatabaseSync } = tryRequireSqlite();
 const { rateKeyFor, priceForCell, RATE_KEYS, cellCostCny } = require("./pricing");
-const { dayKey } = require("./aggregate");
+const { dayKey, timingAverages } = require("./aggregate");
 const { normalizeWorkspace } = require("./workspaces");
 const { validateRecord } = require("./record-schema");
 const { loadSettings } = require("./settings");
@@ -113,6 +113,22 @@ CREATE TABLE IF NOT EXISTS usage_daily_legacy (
   credits REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (day, tool, model, rate_key)
 );
+`,
+  },
+  {
+    version: 2,
+    name: "request-timing",
+    sql: `
+ALTER TABLE usage_records ADD COLUMN latency_ms INTEGER;
+ALTER TABLE usage_records ADD COLUMN first_token_ms INTEGER;
+ALTER TABLE usage_records ADD COLUMN duration_ms INTEGER;
+`,
+  },
+  {
+    version: 3,
+    name: "native-request-id",
+    sql: `
+ALTER TABLE usage_records ADD COLUMN native_id TEXT;
 `,
   },
 ];
@@ -216,19 +232,24 @@ function fingerprintOf(records, events) {
   let sumTime = 0;
   let sumTokens = 0;
   let sumReq = 0;
+  let sumTiming = 0;
   let derived = 0;
   for (const r of records || []) {
     sumTime += r.time || 0;
     sumTokens += (r.inputOther || 0) + (r.output || 0) + (r.inputCacheRead || 0) + (r.inputCacheCreation || 0);
     const n = Number(r.requests);
     sumReq += Number.isFinite(n) && n >= 0 ? n : 1;
+    // Timing fields participate too: a parser upgrade that starts deriving
+    // latency/TTFT for unchanged sessions must re-ingest, or the store keeps
+    // NULL timing forever.
+    sumTiming += (r.latencyMs || 0) + (r.firstTokenMs || 0) + (r.durationMs || 0);
     // Cheap order-sensitive mix of the model identity and derived fields;
     // collisions are harmless (a rare needless re-ingest), misses are not.
-    derived = (derived * 31 + hash32(String(r.model || "")) + hash32(String(r.modelDisplay || "")) + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + hash32(String(r.project || "")) + (r.costEstimated ? 7 : 0)) | 0;
+    derived = (derived * 31 + hash32(String(r.model || "")) + hash32(String(r.modelDisplay || "")) + hash32(String(r.modelResolved || "")) + hash32(String(r.priceId || "")) + hash32(String(r.project || "")) + hash32(String(r.nativeId || "")) + (r.costEstimated ? 7 : 0)) | 0;
   }
   let evCount = 0;
   for (const e of events || []) evCount += 1;
-  return `${(records || []).length}|${sumTime}|${sumTokens}|${sumReq}|${evCount}|${derived}`;
+  return `${(records || []).length}|${sumTime}|${sumTokens}|${sumReq}|${sumTiming}|${evCount}|${derived}`;
 }
 
 /** 32-bit FNV-1a; only used to mix strings into the fingerprint. */
@@ -260,6 +281,14 @@ function recordSig(rec) {
     .digest("hex");
 }
 
+/** Timing guard: keep only finite non-negative millisecond integers.
+ *  null/undefined stay null (Number(null) is 0 — never store fake zeros). */
+function nonNegMs(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
 /**
  * Replace one tool's rows with its current scan output. No-op when the
  * fingerprint is unchanged (light tools rescan on every collect tick).
@@ -273,8 +302,9 @@ function toolRowCount(tool) {
 function ingestTool({ tool, home, records, events, force = false }) {
   if (!open()) return { ok: false, skipped: true };
   const fp = fingerprintOf(records, events);
-  // fp10: refreshed price tables + Claude Code ephemeral_*_input_tokens TTL parsing.
-  if (!force && getMeta(`fp10:${tool}`) === fp) return { ok: true, skipped: true };
+  // fp12: native_id column + timing backfill — the bump forces one re-ingest
+  // per tool so existing history gains native ids and timing.
+  if (!force && getMeta(`fp12:${tool}`) === fp) return { ok: true, skipped: true };
 
   // 空扫描守卫:一次瞬态扫描失败(如对端 WAL 库短暂不可读)不应删光该工具
   // 的全部历史;真实的"数据清零"在源文件恢复可读后由下一次正常扫描完成。
@@ -286,8 +316,8 @@ function ingestTool({ tool, home, records, events, force = false }) {
     INSERT OR IGNORE INTO usage_records
       (tool, time, day, hour, device, workspace_key, workspace_name, model, model_display,
        model_resolved, model_provider, rate_key, i, o, cr, cc, cs, cl, req, est_req,
-       credits, price_id, cost_estimated, session, sig)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       credits, price_id, cost_estimated, session, sig, latency_ms, first_token_ms, duration_ms, native_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertEvent = db.prepare(`
     INSERT INTO event_counts (tool, day, name, count) VALUES (?, ?, ?, ?)
@@ -339,7 +369,11 @@ function ingestTool({ tool, home, records, events, force = false }) {
         rec.priceId || null,
         rec.costEstimated ? 1 : 0,
         rec.session || null,
-        recordSig(rec)
+        recordSig(rec),
+        nonNegMs(rec.latencyMs),
+        nonNegMs(rec.firstTokenMs),
+        nonNegMs(rec.durationMs),
+        rec.nativeId ? String(rec.nativeId).slice(0, 200) : null
       );
       rows += 1;
     }
@@ -348,7 +382,7 @@ function ingestTool({ tool, home, records, events, force = false }) {
       if (!ev || !ev.eventName) continue;
       insertEvent.run(tool, dayKey(ev.time || 0), ev.eventName, 1);
     }
-    setMeta(`fp10:${tool}`, fp);
+    setMeta(`fp12:${tool}`, fp);
     db.exec("COMMIT");
     return { ok: true, rows, invalid };
   } catch (err) {
@@ -372,6 +406,9 @@ function priceRows({ fxRate, customPrices }) {
   return { priceFor, cellCost: cellCostCny };
 }
 
+/** Cell totals for one grouped row set, priced at query time.
+ *  Timing sums stay 0 when no request carried timing — consumers treat a
+ *  zero sum as "unknown" and render "—" rather than a bogus zero average. */
 function cellTotals(cell) {
   return {
     requests: cell.req || 0,
@@ -382,6 +419,9 @@ function cellTotals(cell) {
     credits: cell.credits || 0,
     costCny: 0,
     totalTokens: (cell.i || 0) + (cell.o || 0) + (cell.cr || 0) + (cell.cc || 0),
+    durMs: cell.dur || 0,
+    ftMs: cell.ft || 0,
+    latMs: cell.lat || 0,
   };
 }
 
@@ -394,6 +434,9 @@ function addTotals(target, src) {
   target.credits += src.credits;
   target.costCny += src.costCny;
   target.totalTokens += src.totalTokens;
+  target.durMs = (target.durMs || 0) + (src.durMs || 0);
+  target.ftMs = (target.ftMs || 0) + (src.ftMs || 0);
+  target.latMs = (target.latMs || 0) + (src.latMs || 0);
 }
 
 function hitRateOf(t) {
@@ -441,7 +484,8 @@ function groupedCells(filters) {
   const { where, params } = filterSql(filters);
   const select = `SELECT day, tool, model, MAX(model_display) AS model_display, MAX(model_resolved) AS model_resolved,
               rate_key, SUM(i) AS i, SUM(o) AS o, SUM(cr) AS cr, SUM(cc) AS cc,
-              SUM(cs) AS cs, SUM(cl) AS cl, SUM(req) AS req, SUM(est_req) AS est_req, SUM(credits) AS credits`;
+              SUM(cs) AS cs, SUM(cl) AS cl, SUM(req) AS req, SUM(est_req) AS est_req, SUM(credits) AS credits,
+              SUM(latency_ms) AS lat, SUM(first_token_ms) AS ft, SUM(duration_ms) AS dur`;
   const group = `GROUP BY day, tool, model, rate_key`;
   const rows = db
     .prepare(`${select} FROM usage_records ${where.length ? "WHERE " + where.join(" AND ") : ""} ${group}`)
@@ -592,10 +636,11 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
 
   const daily = [...byDay.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRateOf(t) }));
+    .map(([date, t]) => ({ date, ...t, cacheHitRate: hitRateOf(t), ...timingAverages(t) }));
   for (const t of [totals, ...byWorkspace.values()]) {
     t.cacheHitRate = hitRateOf(t);
   }
+  Object.assign(totals, timingAverages(totals));
 
   // perRange: unfiltered-by-range totals for today/7d/30d/all so the UI can
   // keep its range switcher working while workspace/model filters stay active.
@@ -630,7 +675,7 @@ function usageQuery({ startDay, endDay = null, tool = "all", workspace = "all", 
     perRange: perRangeOut,
     daily,
     hourly,
-    models: [...byModel.values()].map((m) => ({ ...m, cacheHitRate: hitRateOf(m) })).sort((a, b) => b.totalTokens - a.totalTokens),
+    models: [...byModel.values()].map((m) => ({ ...m, cacheHitRate: hitRateOf(m), ...timingAverages(m) })).sort((a, b) => b.totalTokens - a.totalTokens),
     workspaces: [...byWorkspace.values()].sort((a, b) => b.totalTokens - a.totalTokens),
   };
 }
@@ -669,7 +714,7 @@ function recordsPage({ fromMs = 0, toMs = null, tool = "all", workspace = "all",
   const rows = db
     .prepare(
       `SELECT time, tool, model, model_display, model_resolved, workspace_key, workspace_name,
-              i, o, cr, cc, req, credits, cost_estimated, session
+              i, o, cr, cc, req, credits, cost_estimated, session, latency_ms, first_token_ms, duration_ms, native_id
        FROM usage_records ${whereSql}
        ORDER BY time DESC LIMIT ? OFFSET ?`
     )
@@ -692,6 +737,10 @@ function recordsPage({ fromMs = 0, toMs = null, tool = "all", workspace = "all",
       credits: r.credits,
       costEstimated: !!r.cost_estimated,
       session: r.session,
+      latencyMs: r.latency_ms,
+      firstTokenMs: r.first_token_ms,
+      durationMs: r.duration_ms,
+      nativeId: r.native_id,
     })),
     total,
     limit: Math.min(Math.max(1, limit | 0), 500),
@@ -740,6 +789,9 @@ function bucketView({ tool = "all" } = {}) {
     cell.cc += row.cc || 0;
     if (row.cs != null) cell.cs = (cell.cs || 0) + row.cs;
     if (row.cl != null) cell.cl = (cell.cl || 0) + row.cl;
+    if (row.lat != null) cell.lat = (cell.lat || 0) + row.lat;
+    if (row.ft != null) cell.ft = (cell.ft || 0) + row.ft;
+    if (row.dur != null) cell.dur = (cell.dur || 0) + row.dur;
     cell.req += row.req || 0;
     cell.estReq += row.est_req || 0;
     cell.credits += row.credits || 0;
@@ -751,7 +803,8 @@ function bucketView({ tool = "all" } = {}) {
     .prepare(
       `SELECT day, tool, model, MAX(model_display) AS model_display, MAX(model_resolved) AS model_resolved,
               rate_key, SUM(i) AS i, SUM(o) AS o, SUM(cr) AS cr, SUM(cc) AS cc,
-              SUM(cs) AS cs, SUM(cl) AS cl, SUM(req) AS req, SUM(est_req) AS est_req, SUM(credits) AS credits
+              SUM(cs) AS cs, SUM(cl) AS cl, SUM(req) AS req, SUM(est_req) AS est_req, SUM(credits) AS credits,
+              SUM(latency_ms) AS lat, SUM(first_token_ms) AS ft, SUM(duration_ms) AS dur
        FROM usage_records ${where} GROUP BY day, tool, model, rate_key`
     )
     .all(...params);

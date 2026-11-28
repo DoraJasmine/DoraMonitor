@@ -133,6 +133,15 @@ const tool = {
 /**
  * Parse one wire.jsonl: usage records (costed, pre-dedup) plus tool.call
  * events. Per-file output is cached by the scan skeleton.
+ *
+ * REQUEST TIMING: usage.record rows are emitted through a port of CC Switch's
+ * `kimi_session.rs` RequestIndex (via ccs-ssh-sync). A usage.record between
+ * step.begin and step.end is deferred until step.end closes the turn, then
+ * stamped with that turn's latency/TTFT (native llmFirstTokenLatencyMs +
+ * llmStreamDurationMs when present, otherwise the llm.request→response
+ * window excluding tool-execution pauses). Records whose step never closes
+ * flush unchanged at the next boundary — token totals are IDENTICAL to the
+ * pre-timing parser; only latencyMs/firstTokenMs get filled in.
  */
 function parseWireFile(file, sessionsRootPath, map, settings) {
   const parsed = { records: [], events: [], lines: 0, errors: [] };
@@ -144,6 +153,16 @@ function parseWireFile(file, sessionsRootPath, map, settings) {
     return parsed;
   }
   const lines = text.split(/\r?\n/);
+
+  // --- RequestIndex timing state (per file) ---
+  let activeStep = null; // { uuid, requestMs, responseMs, hasTools }
+  const msgIndex = new Map(); // messageId -> { latencyMs, firstTokenMs }
+  const pendingUsage = []; // { rec } awaiting this step's step.end
+  const flushPending = () => {
+    for (const item of pendingUsage) parsed.records.push(item.rec);
+    pendingUsage.length = 0;
+  };
+
   for (const line of lines) {
     if (!line) continue;
     parsed.lines += 1;
@@ -155,28 +174,117 @@ function parseWireFile(file, sessionsRootPath, map, settings) {
         call = null;
       }
       const ev = call && call.event;
-      if (call && call.type === "context.append_loop_event" && ev && ev.type === "tool.call" && ev.name) {
-        const rec = emptyRecord("kimi-code");
-        // Events without any timestamp are not attributable to a range
-        // (time 0 → only the "all" range counts them); attributing them to
-        // the file's mtime made old events drift into "today".
-        rec.time = n(call.time) || n(ev.time);
-        rec.model = "tool-call";
-        rec.modelDisplay = ev.name;
-        rec.eventName = ev.name;
-        rec.kind = "event";
-        parsed.events.push(rec);
+      if (call && call.type === "context.append_loop_event" && ev && ev.type === "tool.call") {
+        if (activeStep && ev.stepUuid === activeStep.uuid) activeStep.hasTools = true;
+        if (ev.name) {
+          const rec = emptyRecord("kimi-code");
+          // Events without any timestamp are not attributable to a range
+          // (time 0 → only the "all" range counts them); attributing them to
+          // the file's mtime made old events drift into "today".
+          rec.time = n(call.time) || n(ev.time);
+          rec.model = "tool-call";
+          rec.modelDisplay = ev.name;
+          rec.eventName = ev.name;
+          rec.kind = "event";
+          parsed.events.push(rec);
+        }
       }
       continue;
     }
-    // Fast reject without full parse
-    if (!line.includes('"usage.record"')) continue;
+    // Fast reject without full parse — usage records plus the RequestIndex
+    // state-machine event types.
+    if (
+      !line.includes('"usage.record"') &&
+      !line.includes('"step.begin"') &&
+      !line.includes('"step.end"') &&
+      !line.includes('"content.part"') &&
+      !line.includes('"llm.request"') &&
+      !line.includes('"agent.switched"') &&
+      !line.includes('"agent.turn.started"')
+    ) {
+      continue;
+    }
     let obj;
     try {
       obj = JSON.parse(line);
     } catch {
       continue;
     }
+    if (!obj || typeof obj !== "object") continue;
+    const lineTsMs = n(obj.time) || null;
+
+    // --- RequestIndex state machine ---
+    if (obj.type === "agent.switched" || obj.type === "agent.turn.started") {
+      flushPending();
+      activeStep = null;
+    } else if (obj.type === "llm.request") {
+      if ((!obj.kind || obj.kind === "loop") && activeStep) {
+        const expected = activeStep.turnStep;
+        const actual = typeof obj.turnStep === "string" ? obj.turnStep : null;
+        if (!expected || !actual || expected === actual) {
+          activeStep.requestMs = lineTsMs;
+          activeStep.responseMs = null;
+          activeStep.hasTools = false;
+        }
+      }
+    } else if (obj.type === "context.append_loop_event") {
+      const ev = obj.event || {};
+      if (ev.type === "step.begin") {
+        flushPending();
+        activeStep = ev.uuid
+          ? {
+              uuid: String(ev.uuid),
+              turnStep:
+                typeof ev.turnId === "string" && ev.step != null
+                  ? `${ev.turnId}.${ev.step}`
+                  : null,
+              requestMs: null,
+              responseMs: null,
+              hasTools: false,
+            }
+          : null;
+      } else if (activeStep && ev.stepUuid === activeStep.uuid && ev.type === "content.part") {
+        if (lineTsMs != null && (activeStep.responseMs == null || lineTsMs > activeStep.responseMs)) {
+          activeStep.responseMs = lineTsMs;
+        }
+      } else if (ev.type === "step.end" && (!activeStep || ev.uuid === activeStep.uuid)) {
+        const finished = activeStep || {};
+        activeStep = null;
+        const msgId = typeof ev.messageId === "string" && ev.messageId ? ev.messageId : null;
+        if (msgId) {
+          const ftMs = kimiDurationMs(ev.llmFirstTokenLatencyMs);
+          const streamMs = kimiDurationMs(ev.llmStreamDurationMs);
+          const native = ftMs != null && streamMs != null ? ftMs + streamMs : null;
+          const endMs =
+            finished.responseMs ?? (!finished.hasTools ? lineTsMs : null);
+          const latencyMs = native ?? estLatencyMs(finished.requestMs, endMs) ?? 0;
+          const prev = msgIndex.get(msgId) || { latencyMs: 0, firstTokenMs: null };
+          if (latencyMs > 0) {
+            prev.latencyMs = latencyMs;
+            const ft = ftMs != null && ftMs <= latencyMs ? ftMs : null;
+            if (ft != null) prev.firstTokenMs = ft;
+            else if (prev.firstTokenMs != null && prev.firstTokenMs > latencyMs) prev.firstTokenMs = null;
+          }
+          msgIndex.set(msgId, prev);
+        }
+        // Deferred usage records of this step now get their timing.
+        const info = msgId ? msgIndex.get(msgId) : null;
+        const stepPending = pendingUsage.splice(0, pendingUsage.length);
+        for (const item of stepPending) {
+          if (info && info.latencyMs > 0) {
+            item.rec.latencyMs = info.latencyMs;
+            if (info.firstTokenMs != null && info.firstTokenMs <= info.latencyMs) {
+              item.rec.firstTokenMs = info.firstTokenMs;
+            }
+          }
+          // Paired usage rows inherit the turn's message id as their stable
+          // request identity (usage.record carries no id of its own).
+          if (msgId) item.rec.nativeId = msgId;
+          parsed.records.push(item.rec);
+        }
+      }
+    }
+
     if (obj.type !== "usage.record") continue;
     // Prefer turn-level to avoid double counting session aggregates
     if (obj.usageScope && obj.usageScope !== "turn") continue;
@@ -209,9 +317,28 @@ function parseWireFile(file, sessionsRootPath, map, settings) {
     rec.sessionHint = sessionHintFromPath(file, sessionsRootPath);
     rec.session = rec.sessionHint.session;
     rec.project = rec.sessionHint.workspace;
-    parsed.records.push(rec);
+    // Inside an open step: defer so step.end can stamp timing (or flush
+    // unchanged at the next boundary). Outside steps: emit directly.
+    if (activeStep) pendingUsage.push({ rec });
+    else parsed.records.push(rec);
   }
+  flushPending();
   return parsed;
+}
+
+const MAX_PLAUSIBLE_LATENCY_MS = 3_600_000;
+
+function kimiDurationMs(val) {
+  const x = Number(val);
+  if (!Number.isFinite(x) || x < 0 || x > MAX_PLAUSIBLE_LATENCY_MS) return null;
+  return Math.round(x);
+}
+
+function estLatencyMs(startMs, endMs) {
+  if (startMs == null || endMs == null) return null;
+  const diff = endMs - startMs;
+  if (diff < 100 || diff > MAX_PLAUSIBLE_LATENCY_MS) return null;
+  return Math.round(diff);
 }
 
 function listWireFiles(root) {

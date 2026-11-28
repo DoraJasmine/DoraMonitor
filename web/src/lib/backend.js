@@ -213,6 +213,16 @@ export async function syncNow() {
   return httpJson("/api/sync", { method: "POST" });
 }
 
+/** GET /api/ccswitch — bridge status (incl. ccs-ssh-sync conflict pause) */
+export async function fetchCcSwitchStatus() {
+  return httpJson("/api/ccswitch");
+}
+
+/** POST /api/ccswitch — run one bridge pass now */
+export async function ccSwitchSyncNow() {
+  return httpJson("/api/ccswitch", { method: "POST" });
+}
+
 /** GET /api/tools — AI tool availability list */
 export async function fetchTools() {
   return httpJson("/api/tools");

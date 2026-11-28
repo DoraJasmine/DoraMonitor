@@ -28,6 +28,8 @@ Usage:
   doramonitor daemon [options]    后台守护进程，定时写状态缓存
   doramonitor stop                停止后台守护进程
   doramonitor sync                上传本机用量并拉取其他设备
+  doramonitor ccswitch sync       把多设备用量写入 CC Switch (cc-switch.db)
+  doramonitor ccswitch status     查看 CC Switch 桥接状态
   doramonitor tools               列出检测到的工具与数据源
   doramonitor -v | --version      显示版本
   doramonitor -h | --help         显示本帮助
@@ -51,7 +53,7 @@ Privacy: 只读取模型名、时间与 token 计数；不读取提示词、代�
 }
 
 function parseSub(argv) {
-  const known = new Set(["web", "status", "daemon", "stop", "tools", "sync"]);
+  const known = new Set(["web", "status", "daemon", "stop", "tools", "sync", "ccswitch"]);
   for (const a of argv) {
     if (a === "-h" || a === "--help") return { sub: "help", rest: argv };
     if (a === "-v" || a === "--version") return { sub: "version", rest: argv };
@@ -287,6 +289,78 @@ async function cmdSync() {
   }
 }
 
+async function cmdCcSwitch(rest) {
+  const sub = (rest[0] || "sync").toLowerCase();
+  const { runBridge, bridgeStatus } = require("./ccswitch-bridge");
+  const { loadSettings } = require("./settings");
+  const settings = loadSettings();
+  const cfg = settings.ccSwitch || {};
+
+  if (sub === "status") {
+    const st = bridgeStatus();
+    console.log(`启用: ${st.enabled ? "是" : "否"}`);
+    console.log(`CC Switch 库: ${st.dbPath}${st.dbExists ? "" : "（未找到）"}`);
+    console.log(`包含本机数据: ${st.includeLocal ? "是（注意与 CC Switch 原生采集重复计费）" : "否"}`);
+    if (st.pausedByConflict) {
+      console.log(`⚠ 已自动暂停（ccs-ssh-sync 正在运行）：${st.conflictDetail || st.conflictReason}`);
+      console.log("  停掉它的守护进程后，桥接会从其写入的最后时刻起增量接管。");
+    } else if (st.otherWriterData || Object.keys(st.watermarks || {}).length > 0) {
+      const wms = Object.entries(st.watermarks || {});
+      const latest = wms.length
+        ? wms.map(([app, sec]) => `${app}@${new Date(sec * 1000).toLocaleString("zh-CN", { hour12: false })}`).join(", ")
+        : "—";
+      console.log(`· 与 ccs-ssh-sync 共存：按工具时间水位线增量续写（${latest}）`);
+      console.log(`  remote_sync 行数 ${st.remoteSyncRows || 0}${st.remoteSyncLatest ? `，最新写入 ${new Date(st.remoteSyncLatest).toLocaleString("zh-CN", { hour12: false })}` : ""}；两者可随时切换，无需清理数据`);
+    }
+    if (st.lastRunAt) {
+      console.log(`最近写入: ${st.lastRunAt}`);
+      const r = st.lastResult || {};
+      console.log(`  新增 ${r.inserted || 0} 行，更新 ${r.updated || 0} 行，未变化 ${r.unchanged || 0} 行，已归档跳过 ${r.pruned || 0} 行${r.skippedOtherWriter ? `，水位线跳过 ${r.skippedOtherWriter} 行` : ""}`);
+      for (const [dev, n] of Object.entries(r.byDevice || {})) console.log(`  · ${dev}: ${n} 行`);
+      if (st.lastError) console.log(`  错误: ${st.lastError}`);
+    } else {
+      console.log("尚未执行过写入。运行 `doramonitor ccswitch sync` 立即执行。");
+    }
+    return;
+  }
+
+  if (sub === "watermark-reset") {
+    const { BridgeState } = require("./ccswitch-bridge");
+    const state = new BridgeState();
+    const wms = state.otherWriterWatermarks();
+    state.clearWatermarks();
+    state.close();
+    console.log(`已清除跨写者水位线（原记录 ${Object.keys(wms).length} 个工具）。若 ccs-ssh-sync 的数据仍在，下一次桥接会重新学习该水位线。`);
+    return;
+  }
+
+  if (sub === "sync") {
+    if (!cfg.enabled) {
+      console.log("CC Switch 桥接未启用。先在 /sync 设置页或 config.json 的 ccSwitch 段启用。");
+      process.exit(1);
+    }
+    const r = runBridge({ force: true });
+    if (r.paused) {
+      console.log(`⚠ 已自动暂停（检测到 ccs-ssh-sync）：${r.detail || r.reason}`);
+      console.log("  为避免同一远端用量重复计入 CC Switch，本次未写入。");
+      process.exitCode = 2;
+      return;
+    }
+    if (!r.ok) {
+      console.log(`写入失败: ${r.error || r.reason || "未知错误"}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`已写入 CC Switch：新增 ${r.inserted} 行，更新 ${r.updated} 行，未变化 ${r.unchanged} 行，已归档跳过 ${r.pruned} 行`);
+    for (const [dev, n] of Object.entries(r.byDevice || {})) console.log(`  · ${dev}: ${n} 行`);
+    for (const [t, n] of Object.entries(r.skippedTools || {})) console.log(`  · 跳过不支持的工具 ${t}: ${n} 格`);
+    return;
+  }
+
+  console.log("用法: doramonitor ccswitch [sync|status|watermark-reset]");
+  process.exitCode = 1;
+}
+
 function cmdTools() {
   const { listTools } = require("./tools");
   const rows = listTools();
@@ -330,6 +404,9 @@ function main() {
       break;
     case "sync":
       cmdSync();
+      break;
+    case "ccswitch":
+      cmdCcSwitch(rest);
       break;
     default:
       printHelp();

@@ -7,6 +7,15 @@ const crypto = require("crypto");
 const { dayKey } = require("./aggregate");
 const { rateKeyFor } = require("./pricing");
 
+/** Timing guard shared with the store ingest path: keep only finite
+ *  non-negative millisecond integers, null otherwise. null/undefined stay
+ *  null (Number(null) is 0 — a fake zero would pollute timing sums). */
+function nonNegMs(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
 /**
  * Day-bucket layer (phase 3) — see docs/plan-phase3-day-bucket.md.
  *
@@ -29,7 +38,7 @@ const { rateKeyFor } = require("./pricing");
  * the local timezone changed, or the fold logic version bumped.
  */
 
-const BUCKET_VERSION = 3;
+const BUCKET_VERSION = 5; // v5: records payload carries nativeId (v4: lat/ft/dur timing sums)
 const BUCKETS_DIR = path.join(os.homedir(), ".doramonitor", "buckets");
 /** git-index style guard: a file whose mtime is this fresh may have been
  *  written within the same timestamp granularity as our own scan — never
@@ -101,6 +110,17 @@ function foldRecordInto(bucket, rec) {
   }
   cell.req += reqs;
   cell.credits += rec.credits || 0;
+  // Request-timing sums (v4). `dur` stores the effective GENERATION duration:
+  // the tool-reported streaming duration when present, otherwise
+  // latency − TTFT — the denominator for output-per-second averages.
+  const lat = nonNegMs(rec.latencyMs);
+  const ft = nonNegMs(rec.firstTokenMs);
+  const dur =
+    nonNegMs(rec.durationMs) ??
+    (lat != null && ft != null ? Math.max(0, lat - ft) : null);
+  if (lat != null) cell.lat = (cell.lat || 0) + lat;
+  if (ft != null) cell.ft = (cell.ft || 0) + ft;
+  if (dur != null) cell.dur = (cell.dur || 0) + dur;
   // Fold record-derived estimated-ness (missing time or cache-write TTL).
   // Table-row estimated-ness (fallback pricing) is derived at query time by
   // priceForCell, so adding a price row retroactively clears the flag
@@ -178,6 +198,9 @@ function mergeBuckets(buckets) {
               outCell.cs = (outCell.cs || 0) + (cell.cs || 0);
               outCell.cl = (outCell.cl || 0) + (cell.cl || 0);
             }
+            if (cell.lat != null) outCell.lat = (outCell.lat || 0) + cell.lat;
+            if (cell.ft != null) outCell.ft = (outCell.ft || 0) + cell.ft;
+            if (cell.dur != null) outCell.dur = (outCell.dur || 0) + cell.dur;
             outCell.req += cell.req || 0;
             outCell.estReq += cell.estReq || 0;
             outCell.credits += cell.credits || 0;

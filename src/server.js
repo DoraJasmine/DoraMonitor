@@ -51,6 +51,7 @@ const { resolveQuotaTool } = require("./quota-tool");
 const { getToolQuota, getToolCapacityHistory, getToolSampleHistory, runToolCalibration, listToolQuotaAccounts } = require("./tool-quota-service");
 const { loadSettings, saveSettings, toDisplay } = require("./settings");
 const { runSync, peerRecordsCached, syncEnabled, syncConfigured, readSyncState, loadCachedPeers, peerWorkspaceSummaries } = require("./sync");
+const { runBridge, bridgeStatus } = require("./ccswitch-bridge");
 const { toolMeta } = require("./tools/base");
 const { detectLocale, messages } = require("./i18n");
 const {
@@ -799,6 +800,9 @@ async function handleApi(req, res, url, cliHome, bindHost = DEFAULT_HOST) {
               webdav: { ...current.sync?.webdav, ...body.sync.webdav },
             }
           : current.sync,
+        ccSwitch: body.ccSwitch
+          ? { ...current.ccSwitch, ...body.ccSwitch }
+          : current.ccSwitch,
       };
       const saved = saveSettings(merged);
       // Costs are computed during scans — force a full rescan so every saved
@@ -961,6 +965,20 @@ async function handleApi(req, res, url, cliHome, bindHost = DEFAULT_HOST) {
     } catch (err) {
       return json(res, 500, { ok: false, error: String((err && err.message) || err) });
     }
+  }
+
+  // --- CC Switch bridge (multi-device usage → cc-switch.db) ---
+  if (url.pathname === "/api/ccswitch" && req.method === "GET") {
+    return json(res, 200, bridgeStatus());
+  }
+
+  if (url.pathname === "/api/ccswitch" && req.method === "POST") {
+    const settings = loadSettings();
+    if (!(settings.ccSwitch && settings.ccSwitch.enabled)) {
+      return json(res, 400, { ok: false, error: "ccswitch_disabled" });
+    }
+    const result = runBridge({ force: false });
+    return json(res, result.ok ? 200 : 409, result);
   }
 
   // --- Session management (workspace-isolated) ---

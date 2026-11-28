@@ -45,7 +45,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DailyBars } from "@/components/DailyBars";
 import { Heatmap } from "@/components/Heatmap";
 import { QuotaToolCards } from "@/components/QuotaCard";
-import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits } from "@/format";
+import { fmtInt, fmtPct, fmtTime, fmtTokens, fmtMoney, fmtCredits, fmtSpeed, fmtTtft } from "@/format";
 import { detectBrowserLocale, fill, messages } from "@/i18n";
 import { fetchPaths, fetchPeerWorkspaces, fetchSummary, fetchSettings, fetchUsageQuery, fetchVersionCheck, fetchWorkspaceAliases, openExternal, saveSettings, syncNow } from "@/lib/backend";
 import { cn } from "@/lib/utils";
@@ -1327,6 +1327,8 @@ export default function App() {
                     {showToolColumn ? <TableHead>{t("tool")}</TableHead> : null}
                     <TableHead className="text-right">{t("requests")}</TableHead>
                     <TableHead className="text-right">{t("tokens")}</TableHead>
+                    <TableHead className="text-right" title={t("avgSpeedHint")}>{t("avgSpeed")}</TableHead>
+                    <TableHead className="text-right" title={t("avgTtftHint")}>{t("avgTtft")}</TableHead>
                     <TableHead className="text-right">{t("cacheHitRate")}</TableHead>
                     <TableHead className="text-right">{t("cost")}</TableHead>
                   </TableRow>
@@ -1335,7 +1337,7 @@ export default function App() {
                   {(stats.models || []).length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={showToolColumn ? 6 : 5}
+                        colSpan={showToolColumn ? 8 : 7}
                         className="text-center text-muted-foreground"
                       >
                         {t("noData")}
@@ -1399,6 +1401,12 @@ export default function App() {
                         </TableCell>
                         <TableCell className="text-right num">
                           {fmtTokens(m.totalTokens)}
+                        </TableCell>
+                        <TableCell className="text-right num" title={t("avgSpeedHint")}>
+                          {fmtSpeed(m.avgSpeed)}
+                        </TableCell>
+                        <TableCell className="text-right num" title={t("avgTtftHint")}>
+                          {fmtTtft(m.avgTtft)}
                         </TableCell>
                         <TableCell className="text-right num">
                           {fmtPct(m.cacheHitRate)}
@@ -1579,6 +1587,8 @@ export default function App() {
                     <TableHead className="text-right">{t("output")}</TableHead>
                     <TableHead className="text-right">{t("cacheRead")}</TableHead>
                     <TableHead className="text-right">{t("cacheCreate")}</TableHead>
+                    <TableHead className="text-right" title={t("avgSpeedHint")}>{t("avgSpeed")}</TableHead>
+                    <TableHead className="text-right" title={t("avgTtftHint")}>{t("avgTtft")}</TableHead>
                     <TableHead className="text-right">{t("cost")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1586,7 +1596,7 @@ export default function App() {
                   {pageSlice.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={showToolColumn ? 9 : 8}
+                        colSpan={showToolColumn ? 11 : 10}
                         className="text-center text-muted-foreground"
                       >
                         {t("noData")}
@@ -1665,6 +1675,21 @@ export default function App() {
                         </TableCell>
                         <TableCell className="text-right num">
                           {fmtTokens(r.inputCacheCreation)}
+                        </TableCell>
+                        <TableCell className="text-right num" title={t("avgSpeedHint")}>
+                          {fmtSpeed(
+                            r.output != null && r.latencyMs != null
+                              ? r.output /
+                                  ((r.durationMs ??
+                                    (r.firstTokenMs != null
+                                      ? Math.max(0, r.latencyMs - r.firstTokenMs)
+                                      : r.latencyMs)) /
+                                    1000)
+                              : null
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right num" title={t("avgTtftHint")}>
+                          {fmtTtft(r.firstTokenMs)}
                         </TableCell>
                         <TableCell className="text-right num">
                           {r.credits > 0
